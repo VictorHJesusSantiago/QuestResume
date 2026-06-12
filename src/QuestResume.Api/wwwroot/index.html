@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QuestResume</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-light: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-dark: #0284c7;
+    --ok: #4ade80;
+    --error: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--panel-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  nav {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--panel-light);
+  }
+  nav button {
+    background: transparent;
+    border: 1px solid var(--panel-light);
+    color: var(--text);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  nav button.active {
+    background: var(--accent-dark);
+    border-color: var(--accent-dark);
+    color: #fff;
+  }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+  section { display: none; }
+  section.active { display: block; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-light);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+  .panel h2 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 0.25rem;
+  }
+  .field { margin-bottom: 0.9rem; }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--panel-light);
+    background: #0b1220;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .row > .field { flex: 1; min-width: 160px; }
+  button.primary {
+    background: var(--accent-dark);
+    color: #fff;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  button.primary:hover { background: var(--accent); }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  .status-line {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 0.75rem;
+    white-space: pre-wrap;
+  }
+  .status-ok { color: var(--ok); }
+  .status-error { color: var(--error); }
+  .chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    margin-bottom: 1rem;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .msg {
+    padding: 0.7rem 0.9rem;
+    border-radius: 8px;
+    line-height: 1.4;
+  }
+  .msg.question { background: var(--panel-light); align-self: flex-end; max-width: 85%; }
+  .msg.answer { background: #0b1220; border: 1px solid var(--panel-light); }
+  .msg .sources {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .ask-row { display: flex; gap: 0.5rem; }
+  .ask-row input { flex: 1; }
+  .result-item {
+    border-bottom: 1px solid var(--panel-light);
+    padding: 0.6rem 0;
+    font-size: 0.9rem;
+  }
+  .result-item:last-child { border-bottom: none; }
+  .result-item .meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.2rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--panel-light);
+    color: var(--muted);
+    margin-left: 0.4rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>QuestResume</h1>
+    <p>Busca e perguntas offline sobre seus documentos locais</p>
+  </div>
+  <div id="statusBadge" class="status-line">Carregando status...</div>
+</header>
+
+<nav>
+  <button data-tab="chat" class="active">Perguntar</button>
+  <button data-tab="search">Buscar</button>
+  <button data-tab="config">Configurações</button>
+</nav>
+
+<main>
+  <section id="tab-chat" class="active">
+    <div class="panel">
+      <h2>Perguntas (RAG com IA local)</h2>
+      <div id="chatLog" class="chat-log"></div>
+      <div class="ask-row">
+        <input type="text" id="questionInput" placeholder="Digite sua pergunta..." />
+        <button class="primary" id="askButton">Perguntar</button>
+      </div>
+      <div id="askStatus" class="status-line"></div>
+    </div>
+  </section>
+
+  <section id="tab-search">
+    <div class="panel">
+      <h2>Busca por palavras-chave (sem IA)</h2>
+      <div class="ask-row">
+        <input type="text" id="searchInput" placeholder="Termo de busca..." />
+        <button class="primary" id="searchButton">Buscar</button>
+      </div>
+      <div id="searchResults" style="margin-top: 1rem;"></div>
+    </div>
+  </section>
+
+  <section id="tab-config">
+    <div class="panel">
+      <h2>Indexar pasta de documentos</h2>
+      <div class="field">
+        <label for="folderInput">Caminho da pasta com seus documentos</label>
+        <input type="text" id="folderInput" placeholder="C:\Users\voce\Documentos" />
+      </div>
+      <button class="primary" id="indexButton">Indexar</button>
+      <div id="indexStatus" class="status-line"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Configurações</h2>
+      <div class="field">
+        <label for="modelPathInput">Caminho do modelo de IA local (.gguf)</label>
+        <input type="text" id="modelPathInput" placeholder="C:\Modelos\Phi-3-mini-4k-instruct.Q4_K_M.gguf" />
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="indexPathInput">Pasta do índice</label>
+          <input type="text" id="indexPathInput" />
+        </div>
+        <div class="field">
+          <label for="topKInput">Trechos por pergunta (Top-K)</label>
+          <input type="number" id="topKInput" min="1" max="20" />
+        </div>
+        <div class="field">
+          <label for="contextSizeInput">Tamanho do contexto (tokens)</label>
+          <input type="number" id="contextSizeInput" min="512" max="32768" step="256" />
+        </div>
+      </div>
+      <button class="primary" id="saveConfigButton">Salvar configurações</button>
+      <div id="configStatus" class="status-line"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('main section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    $(`tab-${btn.dataset.tab}`).classList.add('active');
+  });
+});
+
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    const modelTxt = data.modelConfigured ? 'modelo de IA pronto' : 'modelo de IA não configurado';
+    const indexTxt = data.indexExists ? `${data.documentCount} trechos indexados` : 'sem índice ainda';
+    $('statusBadge').textContent = `${indexTxt} · ${modelTxt}`;
+    $('statusBadge').className = 'status-line ' + (data.indexExists ? 'status-ok' : '');
+    return data;
+  } catch (err) {
+    $('statusBadge').textContent = 'Não foi possível conectar à API';
+    $('statusBadge').className = 'status-line status-error';
+  }
+}
+
+async function loadConfig() {
+  const res = await fetch('/api/config');
+  const config = await res.json();
+  $('folderInput').value = config.documentsFolder || '';
+  $('modelPathInput').value = config.modelPath || '';
+  $('indexPathInput').value = config.indexPath || '';
+  $('topKInput').value = config.topK || 5;
+  $('contextSizeInput').value = config.contextSize || 4096;
+}
+
+$('saveConfigButton').addEventListener('click', async () => {
+  $('configStatus').textContent = 'Salvando...';
+  $('configStatus').className = 'status-line';
+  try {
+    const current = await (await fetch('/api/config')).json();
+    const updated = {
+      ...current,
+      documentsFolder: $('folderInput').value,
+      modelPath: $('modelPathInput').value,
+      indexPath: $('indexPathInput').value,
+      topK: parseInt($('topKInput').value, 10) || 5,
+      contextSize: parseInt($('contextSizeInput').value, 10) || 4096
+    };
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    $('configStatus').textContent = 'Configurações salvas.';
+    $('configStatus').className = 'status-line status-ok';
+    await loadStatus();
+  } catch (err) {
+    $('configStatus').textContent = `Erro ao salvar: ${err.message}`;
+    $('configStatus').className = 'status-line status-error';
+  }
+});
+
+$('indexButton').addEventListener('click', async () => {
+  const folderPath = $('folderInput').value.trim();
+  if (!folderPath) {
+    $('indexStatus').textContent = 'Informe a pasta a indexar.';
+    $('indexStatus').className = 'status-line status-error';
+    return;
+  }
+  $('indexButton').disabled = true;
+  $('indexStatus').textContent = 'Indexando... isso pode levar alguns minutos.';
+  $('indexStatus').className = 'status-line';
+  try {
+    const res = await fetch('/api/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderPath })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao indexar.');
+    $('indexStatus').textContent =
+      `Concluído: ${data.filesProcessed} arquivos processados, ` +
+      `${data.filesSkipped} ignorados, ${data.chunksIndexed} trechos indexados.` +
+      (data.errors && data.errors.length ? `\nErros: ${data.errors.join('\n')}` : '');
+    $('indexStatus').className = 'status-line status-ok';
+    await loadStatus();
+  } catch (err) {
+    $('indexStatus').textContent = `Erro: ${err.message}`;
+    $('indexStatus').className = 'status-line status-error';
+  } finally {
+    $('indexButton').disabled = false;
+  }
+});
+
+function addChatMessage(role, text, sources) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  if (sources && sources.length) {
+    const sourcesDiv = document.createElement('div');
+    sourcesDiv.className = 'sources';
+    const names = [...new Set(sources.map(s => s.fileName))];
+    sourcesDiv.textContent = `Fontes: ${names.join(', ')}`;
+    div.appendChild(sourcesDiv);
+  }
+  $('chatLog').appendChild(div);
+  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+}
+
+$('askButton').addEventListener('click', async () => {
+  const question = $('questionInput').value.trim();
+  if (!question) return;
+  addChatMessage('question', question);
+  $('questionInput').value = '';
+  $('askButton').disabled = true;
+  $('askStatus').textContent = 'Pensando... (pode demorar na primeira pergunta, enquanto o modelo carrega)';
+  $('askStatus').className = 'status-line';
+  try {
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao responder.');
+    addChatMessage('answer', data.answer, data.sources);
+    $('askStatus').textContent = '';
+  } catch (err) {
+    addChatMessage('answer', `Erro: ${err.message}`);
+    $('askStatus').textContent = '';
+  } finally {
+    $('askButton').disabled = false;
+  }
+});
+
+$('questionInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('askButton').click();
+});
+
+$('searchButton').addEventListener('click', async () => {
+  const query = $('searchInput').value.trim();
+  if (!query) return;
+  $('searchResults').innerHTML = 'Buscando...';
+  try {
+    const res = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha na busca.');
+    if (!data.length) {
+      $('searchResults').innerHTML = '<p>Nenhum resultado encontrado.</p>';
+      return;
+    }
+    $('searchResults').innerHTML = data.map(r => `
+      <div class="result-item">
+        <div class="meta">${r.fileName} <span class="badge">trecho ${r.chunkIndex}</span> <span class="badge">score ${r.score.toFixed(2)}</span></div>
+        <div>${r.chunkText.replace(/</g, '&lt;')}</div>
+        <div class="meta">${r.sourcePath}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    $('searchResults').innerHTML = `<p class="status-error">Erro: ${err.message}</p>`;
+  }
+});
+
+$('searchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('searchButton').click();
+});
+
+loadStatus();
+loadConfig();
+</script>
+</body>
+</html>

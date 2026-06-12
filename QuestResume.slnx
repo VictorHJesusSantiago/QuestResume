@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QuestResume.Api/QuestResume.Api.csproj" />
+    <Project Path="src/QuestResume.Cli/QuestResume.Cli.csproj" />
+    <Project Path="src/QuestResume.Core/QuestResume.Core.csproj" />
+    <Project Path="src/QuestResume.Desktop/QuestResume.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/QuestResume.Core.Tests/QuestResume.Core.Tests.csproj" />
+  </Folder>
+</Solution>

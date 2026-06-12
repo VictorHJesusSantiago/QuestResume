@@ -1,0 +1,15 @@
+## .NET
+bin/
+obj/
+
+## IDEs
+.vs/
+.idea/
+*.user
+
+## Rider/VS Code
+.vscode/
+
+## Build results
+*.dll
+*.pdb
