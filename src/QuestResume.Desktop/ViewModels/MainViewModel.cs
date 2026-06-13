@@ -75,6 +75,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private double hybridBm25Weight = 0.5;
 
     [ObservableProperty]
+    private bool sttEnabled;
+
+    [ObservableProperty]
+    private string whisperModelPath = string.Empty;
+
+    [ObservableProperty]
     private string questionText = string.Empty;
 
     [ObservableProperty]
@@ -107,6 +113,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         embeddingModelPath = _options.EmbeddingModelPath;
         embeddingTokenizerPath = _options.EmbeddingTokenizerPath;
         hybridBm25Weight = _options.HybridBm25Weight;
+        sttEnabled = _options.SttEnabled;
+        whisperModelPath = _options.WhisperModelPath;
 
         RefreshStatus();
     }
@@ -316,6 +324,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _options.EmbeddingModelPath = EmbeddingModelPath;
         _options.EmbeddingTokenizerPath = EmbeddingTokenizerPath;
         _options.HybridBm25Weight = HybridBm25Weight;
+        _options.SttEnabled = SttEnabled;
+        _options.WhisperModelPath = WhisperModelPath;
         _configService.Save(_options);
     }
 

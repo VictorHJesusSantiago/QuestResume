@@ -50,7 +50,12 @@
 
         <TabItem Header="Configurações">
             <StackPanel Margin="20" MaxWidth="550" HorizontalAlignment="Left">
-                <TextBlock Text="Modelo de IA local (.gguf)" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="Provedor de IA para geração de respostas" FontWeight="Bold" Margin="0,0,0,5"/>
+                <ComboBox Margin="0,0,0,15" Width="220" HorizontalAlignment="Left" Padding="5"
+                          ItemsSource="{Binding LlmProviderOptions}"
+                          SelectedItem="{Binding LlmProvider, UpdateSourceTrigger=PropertyChanged}"/>
+
+                <TextBlock Text="Modelo de IA local (.gguf) — usado quando o provedor é LLamaSharp" FontWeight="Bold" Margin="0,0,0,5"/>
                 <Grid Margin="0,0,0,15">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -60,6 +65,67 @@
                              Text="{Binding ModelPath, UpdateSourceTrigger=PropertyChanged}"/>
                     <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseModelCommand}" Padding="10,4"/>
                 </Grid>
+
+                <TextBlock Text="Ollama — usado quando o provedor é Ollama" FontWeight="Bold" Margin="0,0,0,5"/>
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                        <TextBlock Text="URL do servidor" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding OllamaBaseUrl, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                        <TextBlock Text="Modelo" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding OllamaModel, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="OCR (Tesseract) — texto em imagens e PDFs digitalizados" FontWeight="Bold" Margin="0,0,0,5"/>
+                <CheckBox Margin="0,0,0,8" Content="Habilitar OCR" IsChecked="{Binding OcrEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                        <TextBlock Text="Pasta tessdata" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding TessDataPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                        <TextBlock Text="Idiomas (ex.: por+eng)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding OcrLanguages, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="Embeddings e busca híbrida — melhora a busca semântica (opcional)" FontWeight="Bold" Margin="0,0,0,5"/>
+                <CheckBox Margin="0,0,0,8" Content="Habilitar embeddings/busca híbrida" IsChecked="{Binding EmbeddingsEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                        <TextBlock Text="Modelo de embeddings (.onnx)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding EmbeddingModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                        <TextBlock Text="Vocabulário do tokenizer (vocab.txt)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding EmbeddingTokenizerPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Grid>
+                <StackPanel Margin="0,0,0,15">
+                    <TextBlock Text="Peso do BM25 na busca híbrida (0-1)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                    <TextBox Padding="5" Width="100" HorizontalAlignment="Left" Text="{Binding HybridBm25Weight, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+
+                <TextBlock Text="Transcrição de áudio (Whisper) — arquivos .wav 16kHz mono" FontWeight="Bold" Margin="0,0,0,5"/>
+                <CheckBox Margin="0,0,0,8" Content="Habilitar transcrição de áudio" IsChecked="{Binding SttEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                <StackPanel Margin="0,0,0,15">
+                    <TextBlock Text="Modelo Whisper (ggml .bin)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                    <TextBox Padding="5" Text="{Binding WhisperModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
 
                 <TextBlock Text="Pasta do índice" FontWeight="Bold" Margin="0,0,0,5"/>
                 <TextBox Padding="5" Margin="0,0,0,15"

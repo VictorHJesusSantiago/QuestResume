@@ -1,11 +1,23 @@
 # QuestResume
 
 QuestResume é um sistema **100% offline** para indexar o conteúdo de arquivos locais e
-responder perguntas em linguagem natural sobre eles, usando busca full-text (Lucene.NET)
-combinada com um modelo de IA local (LLM via LLamaSharp/llama.cpp, rodando na sua CPU).
+responder perguntas em linguagem natural sobre eles, usando busca full-text (Lucene.NET),
+opcionalmente combinada com busca vetorial (embeddings), e um modelo de IA local para
+gerar as respostas (LLamaSharp/llama.cpp embutido, ou Ollama como alternativa).
 
-Nenhuma chamada de rede é feita em tempo de execução, não há custo por token/requisição,
-e seus arquivos nunca saem da máquina.
+Nenhuma chamada de rede é feita em tempo de execução (mesmo com Ollama, que roda
+localmente), não há custo por token/requisição, e seus arquivos nunca saem da máquina.
+
+Recursos opcionais (todos desabilitados por padrão, com degradação graciosa — o sistema
+funciona normalmente sem eles):
+
+- **OCR** (Tesseract 5): extrai texto de imagens e de PDFs digitalizados (sem texto
+  selecionável).
+- **Transcrição de áudio** (Whisper.net): extrai texto de arquivos `.wav` (16kHz mono).
+- **Embeddings + busca híbrida**: combina busca por palavras-chave (BM25) com busca por
+  similaridade semântica (vetores), melhorando a recuperação de contexto para o RAG.
+- **Ollama**: usa um servidor [Ollama](https://ollama.com) local como alternativa ao
+  modelo `.gguf` embutido.
 
 ## Estrutura da solução
 
@@ -35,9 +47,15 @@ Extração direta de texto, sem OCR nem transcrição:
 - E-books: EPUB
 - E-mails: EML, MSG
 
-Arquivos com extensões não suportadas (ex.: imagens, áudio, vídeo, executáveis) não derrubam
-a indexação: eles são listados como "ignorados" nas estatísticas. Veja [Próximos passos](#próximos-passos-grupos-2-4)
-para como esses formatos podem ser adicionados depois.
+Arquivos com extensões não suportadas (ex.: vídeo, executáveis) não derrubam a indexação:
+eles são listados como "ignorados" nas estatísticas.
+
+Com os recursos opcionais habilitados (veja abaixo), também são suportados:
+
+- **Imagens** (`.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.gif`) — via OCR (Tesseract).
+- **PDFs digitalizados** (sem texto selecionável) — páginas sem texto extraível são
+  rasterizadas e passadas pelo OCR automaticamente.
+- **Áudio** (`.wav`, 16kHz mono) — via transcrição (Whisper.net).
 
 ## Pré-requisitos
 
@@ -64,6 +82,102 @@ Baixe um arquivo `.gguf` (variante `Q4_K_M` é um bom equilíbrio entre tamanho 
 e salve em qualquer pasta local. Depois, configure o caminho via CLI, API ou Desktop
 (veja abaixo).
 
+## Alternativa: usando Ollama
+
+Em vez do modelo `.gguf` embutido (LLamaSharp), você pode usar um servidor
+[Ollama](https://ollama.com) já instalado na sua máquina:
+
+1. Instale o Ollama a partir de [ollama.com](https://ollama.com).
+2. Baixe um modelo: `ollama pull llama3.2`.
+3. Garanta que o servidor está rodando (`ollama serve`, ou já roda automaticamente após
+   a instalação) — por padrão em `http://localhost:11434`.
+4. Configure o QuestResume para usar o Ollama:
+
+```powershell
+dotnet run --project src/QuestResume.Cli -- config set-llm-provider Ollama
+dotnet run --project src/QuestResume.Cli -- config set-ollama-url "http://localhost:11434"
+dotnet run --project src/QuestResume.Cli -- config set-ollama-model "llama3.2"
+```
+
+Se o servidor Ollama não estiver acessível ao fazer uma pergunta, as três interfaces
+mostram uma mensagem explicando como instalar/iniciar o Ollama, em vez de travar.
+
+## OCR (Tesseract) — imagens e PDFs digitalizados
+
+Para extrair texto de imagens (`.png`, `.jpg`, `.tiff`, `.bmp`, `.gif`) e de páginas de PDF
+sem texto selecionável:
+
+1. Baixe os arquivos de idioma (`tessdata`) do Tesseract 5, por exemplo de
+   [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata) (ou
+   [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) para arquivos menores).
+   Salve os arquivos `.traineddata` (ex.: `por.traineddata`, `eng.traineddata`) em uma
+   pasta local, ex. `C:\tessdata`.
+2. Configure o caminho e habilite o OCR:
+
+```powershell
+dotnet run --project src/QuestResume.Cli -- config set-tessdata-path "C:\tessdata"
+dotnet run --project src/QuestResume.Cli -- config set-ocr-languages "por+eng"
+dotnet run --project src/QuestResume.Cli -- config set-ocr-enabled true
+```
+
+3. Reindexe a pasta de documentos (`index`) — imagens e PDFs digitalizados passam a ser
+   processados via OCR. Sem `TessDataPath` configurado (ou com `OcrEnabled=false`), esses
+   arquivos continuam sendo ignorados normalmente, sem erros.
+
+## Transcrição de áudio (Whisper.net) — arquivos .wav
+
+Para transcrever arquivos `.wav` (a transcrição entra no mesmo pipeline de indexação/RAG
+dos demais documentos):
+
+1. Baixe um modelo Whisper no formato ggml, por exemplo em
+   [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main)
+   (`ggml-base.bin` é um bom equilíbrio entre tamanho e qualidade; `ggml-small.bin` ou
+   maior para melhor precisão).
+2. Configure o caminho e habilite a transcrição:
+
+```powershell
+dotnet run --project src/QuestResume.Cli -- config set-whisper-model "C:\Modelos\whisper\ggml-base.bin"
+dotnet run --project src/QuestResume.Cli -- config set-stt-enabled true
+```
+
+3. Reindexe a pasta de documentos (`index`) — arquivos `.wav` passam a ser transcritos.
+
+**Importante**: o Whisper.net não faz resample — os arquivos `.wav` precisam estar em PCM
+16kHz mono. Se um arquivo estiver em outro formato/taxa, ele é ignorado com um aviso
+explicando como convertê-lo, por exemplo com [ffmpeg](https://ffmpeg.org):
+
+```powershell
+ffmpeg -i entrada.wav -ar 16000 -ac 1 saida.wav
+```
+
+## Embeddings e busca híbrida
+
+Por padrão, a busca usa apenas BM25 (palavras-chave, via Lucene). Habilitando embeddings,
+a busca passa a combinar BM25 com similaridade vetorial (semântica), o que melhora a
+recuperação de contexto para perguntas que não usam exatamente as mesmas palavras do texto.
+
+1. Baixe um modelo de embeddings multilíngue no formato ONNX — recomendado:
+   [sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
+   (exporte para ONNX, ex. com `optimum-cli export onnx --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 <pasta_saida>`,
+   ou baixe uma versão já convertida). Você precisa de dois arquivos: o modelo `.onnx` e o
+   `vocab.txt` do tokenizer (formato WordPiece/BERT).
+2. Configure os caminhos e habilite:
+
+```powershell
+dotnet run --project src/QuestResume.Cli -- config set-embedding-model "C:\Modelos\embeddings\model.onnx"
+dotnet run --project src/QuestResume.Cli -- config set-embedding-tokenizer "C:\Modelos\embeddings\vocab.txt"
+dotnet run --project src/QuestResume.Cli -- config set-embeddings-enabled true
+dotnet run --project src/QuestResume.Cli -- config set-hybrid-weight 0.5
+```
+
+`HybridBm25Weight` controla o peso do BM25 na combinação final (0 = só busca vetorial,
+1 = só BM25; o padrão 0.5 dá peso igual aos dois).
+
+3. Reindexe a pasta de documentos (`index`) — cada trecho indexado também é convertido em
+   embedding e salvo em `vectors.db` (na pasta do índice). Sem `EmbeddingModelPath`/
+   `EmbeddingTokenizerPath` configurados (ou com `EmbeddingsEnabled=false`), a busca
+   continua 100% BM25, sem erros.
+
 ## Configuração
 
 Todas as interfaces leem/gravam o mesmo arquivo: `%LOCALAPPDATA%\QuestResume\config.json`.
@@ -72,12 +186,24 @@ Principais campos:
 | Campo | Descrição | Padrão |
 |---|---|---|
 | `DocumentsFolder` | Última pasta indexada | (vazio) |
-| `IndexPath` | Pasta onde o índice Lucene é salvo | `%LOCALAPPDATA%\QuestResume\index` |
-| `ModelPath` | Caminho do arquivo `.gguf` | (vazio) |
+| `IndexPath` | Pasta onde o índice Lucene (e o vector store) é salvo | `%LOCALAPPDATA%\QuestResume\index` |
+| `ModelPath` | Caminho do arquivo `.gguf` (usado quando `LlmProvider=LlamaSharp`) | (vazio) |
 | `TopK` | Nº de trechos recuperados por pergunta | 5 |
 | `ChunkSize` | Tamanho (em caracteres) de cada trecho indexado | 1000 |
 | `ChunkOverlap` | Sobreposição entre trechos consecutivos | 150 |
 | `ContextSize` | Tamanho do contexto do LLM (tokens) | 4096 |
+| `LlmProvider` | Provedor de geração: `LlamaSharp` ou `Ollama` | `LlamaSharp` |
+| `OllamaBaseUrl` | URL do servidor Ollama local | `http://localhost:11434` |
+| `OllamaModel` | Nome do modelo Ollama (ex.: `llama3.2`) | `llama3.2` |
+| `OcrEnabled` | Habilita OCR (Tesseract) para imagens e PDFs digitalizados | `false` |
+| `TessDataPath` | Pasta com os arquivos de idioma (`tessdata`) do Tesseract | (vazio) |
+| `OcrLanguages` | Idiomas do OCR, formato `por+eng` | `por+eng` |
+| `EmbeddingsEnabled` | Habilita embeddings e busca híbrida (BM25 + vetorial) | `false` |
+| `EmbeddingModelPath` | Caminho do modelo de embeddings em formato ONNX | (vazio) |
+| `EmbeddingTokenizerPath` | Caminho do `vocab.txt` do tokenizer do modelo de embeddings | (vazio) |
+| `HybridBm25Weight` | Peso do BM25 na busca híbrida (0-1); o restante é o peso vetorial | 0.5 |
+| `SttEnabled` | Habilita transcrição de áudio (`.wav`) via Whisper.net | `false` |
+| `WhisperModelPath` | Caminho do modelo Whisper no formato ggml (`.bin`) | (vazio) |
 
 ## Usando a CLI
 
@@ -100,6 +226,26 @@ dotnet run --project src/QuestResume.Cli -- config set-model "C:\Modelos\Phi-3-m
 dotnet run --project src/QuestResume.Cli -- config set-folder "C:\Users\voce\Documentos"
 dotnet run --project src/QuestResume.Cli -- config set-index "C:\Users\voce\AppData\Local\QuestResume\index"
 dotnet run --project src/QuestResume.Cli -- config set-top-k 5
+
+# Provedor de IA (LlamaSharp embutido ou Ollama local)
+dotnet run --project src/QuestResume.Cli -- config set-llm-provider <LlamaSharp|Ollama>
+dotnet run --project src/QuestResume.Cli -- config set-ollama-url "http://localhost:11434"
+dotnet run --project src/QuestResume.Cli -- config set-ollama-model "llama3.2"
+
+# OCR (Tesseract) — veja "OCR (Tesseract)" acima
+dotnet run --project src/QuestResume.Cli -- config set-ocr-enabled <true|false>
+dotnet run --project src/QuestResume.Cli -- config set-tessdata-path "C:\tessdata"
+dotnet run --project src/QuestResume.Cli -- config set-ocr-languages "por+eng"
+
+# Embeddings e busca híbrida — veja "Embeddings e busca híbrida" acima
+dotnet run --project src/QuestResume.Cli -- config set-embeddings-enabled <true|false>
+dotnet run --project src/QuestResume.Cli -- config set-embedding-model "C:\Modelos\embeddings\model.onnx"
+dotnet run --project src/QuestResume.Cli -- config set-embedding-tokenizer "C:\Modelos\embeddings\vocab.txt"
+dotnet run --project src/QuestResume.Cli -- config set-hybrid-weight 0.5
+
+# Transcrição de áudio (Whisper) — veja "Transcrição de áudio" acima
+dotnet run --project src/QuestResume.Cli -- config set-stt-enabled <true|false>
+dotnet run --project src/QuestResume.Cli -- config set-whisper-model "C:\Modelos\whisper\ggml-base.bin"
 ```
 
 ## Usando a API + interface web
@@ -110,17 +256,18 @@ dotnet run --project src/QuestResume.Api
 
 Abra o endereço exibido no terminal (ex.: `http://localhost:5000`) no navegador para usar
 a interface web: indexar uma pasta, buscar por palavras-chave, fazer perguntas e configurar
-o caminho do modelo `.gguf`.
+o modelo de IA, OCR, transcrição de áudio e embeddings/busca híbrida na aba
+Configurações.
 
 Endpoints disponíveis:
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/status` | Status do índice e do modelo configurado |
+| `GET` | `/api/status` | Status do índice, do provedor de IA e dos recursos opcionais (OCR, embeddings, STT) |
 | `GET` | `/api/config` | Lê a configuração atual |
 | `PUT` | `/api/config` | Atualiza a configuração |
 | `POST` | `/api/index` | `{ "folderPath": "..." }` — indexa uma pasta |
-| `POST` | `/api/search` | `{ "query": "...", "topK": 5 }` — busca sem IA |
+| `POST` | `/api/search` | `{ "query": "...", "topK": 5 }` — busca (BM25 ou híbrida, conforme configuração) |
 | `POST` | `/api/ask` | `{ "question": "...", "topK": 5 }` — pergunta com RAG |
 
 ## Usando o app Desktop (WPF)
@@ -131,8 +278,9 @@ dotnet run --project src/QuestResume.Desktop
 
 A aba **Perguntas** permite escolher a pasta de documentos, indexar e conversar com a IA
 sobre o conteúdo indexado (mostrando os arquivos-fonte de cada resposta). A aba
-**Configurações** permite apontar o modelo `.gguf`, a pasta do índice, o Top-K e o tamanho
-do contexto.
+**Configurações** permite apontar o modelo `.gguf` (ou configurar o Ollama), a pasta do
+índice, o Top-K, o tamanho do contexto, além de habilitar e configurar OCR, transcrição
+de áudio (Whisper) e embeddings/busca híbrida.
 
 ## Sem modelo configurado?
 
@@ -147,24 +295,20 @@ em vez de travar ou lançar um erro genérico.
 dotnet test tests/QuestResume.Core.Tests
 ```
 
-## Próximos passos (Grupos 2-4)
+## Próximos passos
 
 A arquitetura de extração é baseada em `IFileExtractor` + `ExtractorRegistry`
 (`src/QuestResume.Core/Extraction`), permitindo plugar novos formatos sem alterar o
-restante do sistema (indexação, busca e RAG continuam iguais). Grupos planejados para o
-futuro:
+restante do sistema (indexação, busca e RAG continuam iguais). Possíveis extensões
+futuras:
 
-- **Grupo 2 — Metadados (imagens, vídeo, áudio, executáveis)**: um novo extrator usando
-  `MetadataExtractor` (ou `ExifTool`) preencheria apenas `ExtractedDocument.Metadata`
-  (autor, datas, dimensões, codec, etc.), com `Text` vazio — útil para busca por metadados
-  mesmo sem OCR/transcrição.
-- **Grupo 3 — OCR (PDFs digitalizados e imagens)**: um `TesseractOcrExtractor` usando o
-  pacote `Tesseract` rodaria OCR local sobre imagens e sobre páginas de PDF sem texto
-  extraível (renderizadas via PdfPig), preenchendo `ExtractedDocument.Text` normalmente.
-- **Grupo 4 — Transcrição de áudio/vídeo**: um `WhisperExtractor` usando `Whisper.net`
-  (whisper.cpp, também local) transcreveria a trilha de áudio para texto, que entraria no
-  mesmo pipeline de chunking/indexação/RAG.
+- **Metadados (vídeo, executáveis)**: um novo extrator usando `MetadataExtractor` (ou
+  `ExifTool`) preencheria apenas `ExtractedDocument.Metadata` (autor, datas, dimensões,
+  codec, etc.), com `Text` vazio — útil para busca por metadados.
+- **Transcrição de outros formatos de áudio/vídeo**: hoje a transcrição (Whisper.net)
+  exige `.wav` 16kHz mono; um pré-processamento com `ffmpeg` poderia ser integrado para
+  aceitar outros formatos diretamente.
 
-Em todos os casos, basta implementar `IFileExtractor` e registrá-lo em
+Para adicionar um novo formato, basta implementar `IFileExtractor` e registrá-lo em
 `ExtractorRegistry.DefaultExtractors()` — `DocumentIndexer`, `SearchService` e
 `RagQueryEngine` não precisam de nenhuma alteração.

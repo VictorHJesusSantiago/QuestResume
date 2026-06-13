@@ -44,7 +44,9 @@ app.MapGet("/api/status", async (ConfigService configService, IHttpClientFactory
         ocrEnabled = options.OcrEnabled,
         embeddingsEnabled = options.EmbeddingsEnabled,
         embeddingsConfigured = !string.IsNullOrWhiteSpace(options.EmbeddingModelPath) && File.Exists(options.EmbeddingModelPath)
-            && !string.IsNullOrWhiteSpace(options.EmbeddingTokenizerPath) && File.Exists(options.EmbeddingTokenizerPath)
+            && !string.IsNullOrWhiteSpace(options.EmbeddingTokenizerPath) && File.Exists(options.EmbeddingTokenizerPath),
+        sttEnabled = options.SttEnabled,
+        sttConfigured = !string.IsNullOrWhiteSpace(options.WhisperModelPath) && File.Exists(options.WhisperModelPath)
     });
 });
 

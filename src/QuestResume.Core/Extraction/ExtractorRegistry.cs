@@ -53,6 +53,11 @@ public sealed class ExtractorRegistry
         yield return new RtfExtractor();
         yield return new EpubExtractor();
         yield return new EmailExtractor();
+
+        if (options?.SttEnabled == true)
+        {
+            yield return new AudioTranscriptionExtractor(options.WhisperModelPath);
+        }
     }
 
     public IReadOnlyCollection<string> SupportedExtensions => _extractorsByExtension.Keys;

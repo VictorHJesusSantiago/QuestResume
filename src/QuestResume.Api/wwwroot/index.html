@@ -273,6 +273,20 @@
         </div>
       </div>
 
+      <div class="field">
+        <label>
+          <input type="checkbox" id="sttEnabledInput" style="width: auto; margin-right: 0.4rem;" />
+          Habilitar transcrição de áudio (.wav 16kHz mono) via Whisper
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="whisperModelPathInput">Modelo Whisper (ggml .bin)</label>
+          <input type="text" id="whisperModelPathInput" placeholder="C:\Modelos\whisper\ggml-base.bin" />
+        </div>
+      </div>
+
       <div class="row">
         <div class="field">
           <label for="indexPathInput">Pasta do índice</label>
@@ -345,6 +359,8 @@ async function loadConfig() {
   $('embeddingModelPathInput').value = config.embeddingModelPath || '';
   $('embeddingTokenizerPathInput').value = config.embeddingTokenizerPath || '';
   $('hybridBm25WeightInput').value = config.hybridBm25Weight ?? 0.5;
+  $('sttEnabledInput').checked = !!config.sttEnabled;
+  $('whisperModelPathInput').value = config.whisperModelPath || '';
 }
 
 $('saveConfigButton').addEventListener('click', async () => {
@@ -368,7 +384,9 @@ $('saveConfigButton').addEventListener('click', async () => {
       embeddingsEnabled: $('embeddingsEnabledInput').checked,
       embeddingModelPath: $('embeddingModelPathInput').value,
       embeddingTokenizerPath: $('embeddingTokenizerPathInput').value,
-      hybridBm25Weight: parseFloat($('hybridBm25WeightInput').value) || 0.5
+      hybridBm25Weight: parseFloat($('hybridBm25WeightInput').value) || 0.5,
+      sttEnabled: $('sttEnabledInput').checked,
+      whisperModelPath: $('whisperModelPathInput').value
     };
     const res = await fetch('/api/config', {
       method: 'PUT',

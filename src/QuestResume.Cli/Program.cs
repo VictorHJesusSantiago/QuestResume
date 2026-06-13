@@ -270,7 +270,7 @@ int RunConfig(string[] cmdArgs)
                                  "set-llm-provider|set-ollama-url|set-ollama-model|" +
                                  "set-ocr-enabled|set-tessdata-path|set-ocr-languages|" +
                                  "set-embeddings-enabled|set-embedding-model|set-embedding-tokenizer|" +
-                                 "set-hybrid-weight> [valor]");
+                                 "set-hybrid-weight|set-stt-enabled|set-whisper-model> [valor]");
         return 1;
     }
 
@@ -299,6 +299,8 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"EmbeddingModelPath:     {options.EmbeddingModelPath}");
             Console.WriteLine($"EmbeddingTokenizerPath: {options.EmbeddingTokenizerPath}");
             Console.WriteLine($"HybridBm25Weight:       {options.HybridBm25Weight}");
+            Console.WriteLine($"SttEnabled:             {options.SttEnabled}");
+            Console.WriteLine($"WhisperModelPath:       {options.WhisperModelPath}");
             return 0;
 
         case "set-model":
@@ -456,6 +458,28 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"HybridBm25Weight definido para: {hybridWeight}");
             return 0;
 
+        case "set-stt-enabled":
+            if (value is null || !bool.TryParse(value, out var sttEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-stt-enabled <true|false>");
+                return 1;
+            }
+            options.SttEnabled = sttEnabled;
+            configService.Save(options);
+            Console.WriteLine($"SttEnabled definido para: {sttEnabled}");
+            return 0;
+
+        case "set-whisper-model":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-whisper-model <caminho_para_modelo.bin>");
+                return 1;
+            }
+            options.WhisperModelPath = value;
+            configService.Save(options);
+            Console.WriteLine($"WhisperModelPath definido para: {value}");
+            return 0;
+
         default:
             Console.Error.WriteLine($"Subcomando de config desconhecido: {sub}");
             return 1;
@@ -518,6 +542,8 @@ static int PrintUsage()
           questresume config set-embedding-model <caminho_para_modelo.onnx>
           questresume config set-embedding-tokenizer <caminho_para_vocab.txt>
           questresume config set-hybrid-weight <peso entre 0 e 1>
+          questresume config set-stt-enabled <true|false>
+          questresume config set-whisper-model <caminho_para_modelo.bin>
         """);
     return 0;
 }

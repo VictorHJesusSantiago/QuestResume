@@ -77,4 +77,26 @@ public class ExtractorRegistryTests
         Assert.True(registry.IsSupported(".png"));
         Assert.True(registry.IsSupported(".pdf"));
     }
+
+    [Fact]
+    public void IsSupported_WavWithSttDisabled_ReturnsFalse()
+    {
+        var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(new AppOptions { SttEnabled = false }));
+
+        Assert.False(registry.IsSupported(".wav"));
+    }
+
+    [Fact]
+    public void IsSupported_WavWithSttEnabled_ReturnsTrue()
+    {
+        var options = new AppOptions
+        {
+            SttEnabled = true,
+            WhisperModelPath = Path.Combine(Path.GetTempPath(), $"whisper-{Guid.NewGuid()}.bin")
+        };
+
+        var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options));
+
+        Assert.True(registry.IsSupported(".wav"));
+    }
 }
