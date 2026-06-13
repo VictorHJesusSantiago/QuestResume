@@ -1,3 +1,4 @@
+using QuestResume.Core.Configuration;
 using QuestResume.Core.Extraction.Extractors;
 using QuestResume.Core.Models;
 
@@ -26,13 +27,26 @@ public sealed class ExtractorRegistry
     }
 
     /// <summary>
-    /// Default set of extractors covering Group 1 (direct text extraction) formats.
+    /// Default set of extractors covering Group 1 (direct text extraction) formats, plus the
+    /// OCR-based extractors from <paramref name="options"/> when <c>OcrEnabled</c> is true.
+    /// With <paramref name="options"/> <c>null</c> (or OCR disabled), the result is identical
+    /// to the original Group 1-only set.
     /// </summary>
-    public static IEnumerable<IFileExtractor> DefaultExtractors()
+    public static IEnumerable<IFileExtractor> DefaultExtractors(AppOptions? options = null)
     {
         yield return new PlainTextExtractor();
         yield return new IpynbExtractor();
-        yield return new PdfExtractor();
+
+        if (options?.OcrEnabled == true)
+        {
+            yield return new PdfExtractor(ocrEnabled: true, options.TessDataPath, options.OcrLanguages);
+            yield return new ImageOcrExtractor(options.TessDataPath, options.OcrLanguages);
+        }
+        else
+        {
+            yield return new PdfExtractor();
+        }
+
         yield return new OpenXmlExtractor();
         yield return new HtmlExtractor();
         yield return new OdtExtractor();

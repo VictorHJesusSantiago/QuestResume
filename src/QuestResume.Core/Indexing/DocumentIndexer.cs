@@ -3,6 +3,7 @@ using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Store;
 using Lucene.Net.Util;
+using QuestResume.Core.Embeddings;
 using QuestResume.Core.Extraction;
 using QuestResume.Core.Models;
 using IODirectory = System.IO.Directory;
@@ -18,10 +19,14 @@ public sealed class DocumentIndexer
     public const LuceneVersion MatchVersion = LuceneVersion.LUCENE_48;
 
     private readonly ExtractorRegistry _registry;
+    private readonly EmbeddingService? _embeddingService;
+    private readonly VectorStore? _vectorStore;
 
-    public DocumentIndexer(ExtractorRegistry? registry = null)
+    public DocumentIndexer(ExtractorRegistry? registry = null, EmbeddingService? embeddingService = null, VectorStore? vectorStore = null)
     {
         _registry = registry ?? new ExtractorRegistry();
+        _embeddingService = embeddingService;
+        _vectorStore = vectorStore;
     }
 
     /// <summary>
@@ -54,6 +59,9 @@ public sealed class DocumentIndexer
 
         using var writer = new IndexWriter(directory, config);
 
+        _vectorStore?.Clear();
+        var embeddingsAvailable = _embeddingService is not null && _vectorStore is not null;
+
         foreach (var filePath in IODirectory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -74,6 +82,20 @@ public sealed class DocumentIndexer
                 foreach (var chunk in chunks)
                 {
                     writer.AddDocument(ToLuceneDocument(chunk));
+
+                    if (embeddingsAvailable)
+                    {
+                        try
+                        {
+                            var embedding = await _embeddingService!.EmbedAsync(chunk.Text, cancellationToken).ConfigureAwait(false);
+                            _vectorStore!.Add(chunk.SourcePath, chunk.FileName, chunk.ChunkIndex, chunk.Text, embedding);
+                        }
+                        catch (EmbeddingsNotConfiguredException ex)
+                        {
+                            embeddingsAvailable = false;
+                            progress?.Report($"Embeddings desabilitados durante a indexação: {ex.Message}");
+                        }
+                    }
                 }
 
                 stats.FilesProcessed++;
