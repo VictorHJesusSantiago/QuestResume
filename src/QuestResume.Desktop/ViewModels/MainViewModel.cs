@@ -6,6 +6,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using QuestResume.Core.Configuration;
+using QuestResume.Core.Embeddings;
+using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Rag;
 
@@ -19,6 +21,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private RagQueryEngine? _engine;
     private string? _engineModelPath;
     private string? _engineIndexPath;
+    private string? _engineLlmProvider;
+    private string? _engineOllamaBaseUrl;
+    private string? _engineOllamaModel;
+    private bool _engineEmbeddingsEnabled;
+    private string? _engineEmbeddingModelPath;
+    private string? _engineEmbeddingTokenizerPath;
+    private double _engineHybridBm25Weight;
 
     [ObservableProperty]
     private string documentsFolder = string.Empty;
@@ -36,6 +45,36 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int contextSize = 4096;
 
     [ObservableProperty]
+    private string llmProvider = "LlamaSharp";
+
+    [ObservableProperty]
+    private string ollamaBaseUrl = "http://localhost:11434";
+
+    [ObservableProperty]
+    private string ollamaModel = "llama3.2";
+
+    [ObservableProperty]
+    private bool ocrEnabled;
+
+    [ObservableProperty]
+    private string tessDataPath = string.Empty;
+
+    [ObservableProperty]
+    private string ocrLanguages = "por+eng";
+
+    [ObservableProperty]
+    private bool embeddingsEnabled;
+
+    [ObservableProperty]
+    private string embeddingModelPath = string.Empty;
+
+    [ObservableProperty]
+    private string embeddingTokenizerPath = string.Empty;
+
+    [ObservableProperty]
+    private double hybridBm25Weight = 0.5;
+
+    [ObservableProperty]
     private string questionText = string.Empty;
 
     [ObservableProperty]
@@ -45,6 +84,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool isBusy;
 
     public ObservableCollection<ChatEntry> Messages { get; } = new();
+
+    public string[] LlmProviderOptions { get; } = { "LlamaSharp", "Ollama" };
 
     public MainViewModel()
     {
@@ -56,6 +97,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         indexPath = _options.IndexPath;
         topK = _options.TopK;
         contextSize = _options.ContextSize;
+        llmProvider = _options.LlmProvider;
+        ollamaBaseUrl = _options.OllamaBaseUrl;
+        ollamaModel = _options.OllamaModel;
+        ocrEnabled = _options.OcrEnabled;
+        tessDataPath = _options.TessDataPath;
+        ocrLanguages = _options.OcrLanguages;
+        embeddingsEnabled = _options.EmbeddingsEnabled;
+        embeddingModelPath = _options.EmbeddingModelPath;
+        embeddingTokenizerPath = _options.EmbeddingTokenizerPath;
+        hybridBm25Weight = _options.HybridBm25Weight;
 
         RefreshStatus();
     }
@@ -110,13 +161,27 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             SaveCurrentOptions();
 
-            var indexer = new DocumentIndexer();
-            var progress = new Progress<string>(message => StatusMessage = message);
-            var stats = await indexer.IndexFolderAsync(DocumentsFolder, IndexPath, _options.ChunkSize, _options.ChunkOverlap, progress);
+            var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(_options));
 
-            StatusMessage = $"Concluído: {stats.FilesProcessed} arquivos processados, " +
-                            $"{stats.FilesSkipped} ignorados, {stats.ChunksIndexed} trechos indexados." +
-                            (stats.Errors.Count > 0 ? $" ({stats.Errors.Count} erro(s))" : string.Empty);
+            EmbeddingService? embeddingService = null;
+            VectorStore? vectorStore = null;
+            if (EmbeddingsEnabled)
+            {
+                embeddingService = new EmbeddingService(EmbeddingModelPath, EmbeddingTokenizerPath);
+                vectorStore = new VectorStore(IndexPath);
+            }
+
+            using (embeddingService)
+            using (vectorStore)
+            {
+                var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
+                var progress = new Progress<string>(message => StatusMessage = message);
+                var stats = await indexer.IndexFolderAsync(DocumentsFolder, IndexPath, _options.ChunkSize, _options.ChunkOverlap, progress);
+
+                StatusMessage = $"Concluído: {stats.FilesProcessed} arquivos processados, " +
+                                $"{stats.FilesSkipped} ignorados, {stats.ChunksIndexed} trechos indexados." +
+                                (stats.Errors.Count > 0 ? $" ({stats.Errors.Count} erro(s))" : string.Empty);
+            }
         }
         catch (Exception ex)
         {
@@ -167,6 +232,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             Messages.Add(new ChatEntry { Role = "Erro", Text = ex.Message });
         }
+        catch (OllamaNotAvailableException ex)
+        {
+            Messages.Add(new ChatEntry { Role = "Erro", Text = ex.Message });
+        }
         catch (Exception ex)
         {
             Messages.Add(new ChatEntry { Role = "Erro", Text = $"Erro: {ex.Message}" });
@@ -187,14 +256,44 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private RagQueryEngine GetEngine()
     {
-        if (_engine is null || _engineModelPath != ModelPath || _engineIndexPath != IndexPath)
+        if (_engine is null
+            || _engineModelPath != ModelPath
+            || _engineIndexPath != IndexPath
+            || _engineLlmProvider != LlmProvider
+            || _engineOllamaBaseUrl != OllamaBaseUrl
+            || _engineOllamaModel != OllamaModel
+            || _engineEmbeddingsEnabled != EmbeddingsEnabled
+            || _engineEmbeddingModelPath != EmbeddingModelPath
+            || _engineEmbeddingTokenizerPath != EmbeddingTokenizerPath
+            || _engineHybridBm25Weight != HybridBm25Weight)
         {
             _engine?.Dispose();
 
             var search = new SearchService(IndexPath);
-            _engine = new RagQueryEngine(search, ModelPath, ContextSize, TopK);
+            var providerKind = Enum.TryParse<LlmProviderKind>(LlmProvider, ignoreCase: true, out var kind)
+                ? kind
+                : LlmProviderKind.LlamaSharp;
+
+            VectorStore? vectorStore = null;
+            EmbeddingService? embeddingService = null;
+            if (EmbeddingsEnabled)
+            {
+                vectorStore = new VectorStore(IndexPath);
+                embeddingService = new EmbeddingService(EmbeddingModelPath, EmbeddingTokenizerPath);
+            }
+
+            _engine = new RagQueryEngine(
+                search, ModelPath, ContextSize, TopK, providerKind, OllamaBaseUrl, OllamaModel,
+                vectorStore: vectorStore, embeddingService: embeddingService, hybridBm25Weight: HybridBm25Weight);
             _engineModelPath = ModelPath;
             _engineIndexPath = IndexPath;
+            _engineLlmProvider = LlmProvider;
+            _engineOllamaBaseUrl = OllamaBaseUrl;
+            _engineOllamaModel = OllamaModel;
+            _engineEmbeddingsEnabled = EmbeddingsEnabled;
+            _engineEmbeddingModelPath = EmbeddingModelPath;
+            _engineEmbeddingTokenizerPath = EmbeddingTokenizerPath;
+            _engineHybridBm25Weight = HybridBm25Weight;
         }
 
         return _engine;
@@ -207,6 +306,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _options.IndexPath = IndexPath;
         _options.TopK = TopK;
         _options.ContextSize = ContextSize;
+        _options.LlmProvider = LlmProvider;
+        _options.OllamaBaseUrl = OllamaBaseUrl;
+        _options.OllamaModel = OllamaModel;
+        _options.OcrEnabled = OcrEnabled;
+        _options.TessDataPath = TessDataPath;
+        _options.OcrLanguages = OcrLanguages;
+        _options.EmbeddingsEnabled = EmbeddingsEnabled;
+        _options.EmbeddingModelPath = EmbeddingModelPath;
+        _options.EmbeddingTokenizerPath = EmbeddingTokenizerPath;
+        _options.HybridBm25Weight = HybridBm25Weight;
         _configService.Save(_options);
     }
 

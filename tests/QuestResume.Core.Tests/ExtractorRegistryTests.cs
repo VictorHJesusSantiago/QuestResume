@@ -1,3 +1,4 @@
+using QuestResume.Core.Configuration;
 using QuestResume.Core.Extraction;
 
 namespace QuestResume.Core.Tests;
@@ -43,5 +44,37 @@ public class ExtractorRegistryTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void IsSupported_PngWithoutOptions_ReturnsFalse()
+    {
+        var registry = new ExtractorRegistry();
+
+        Assert.False(registry.IsSupported(".png"));
+    }
+
+    [Fact]
+    public void IsSupported_PngWithOcrDisabled_ReturnsFalse()
+    {
+        var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(new AppOptions { OcrEnabled = false }));
+
+        Assert.False(registry.IsSupported(".png"));
+    }
+
+    [Fact]
+    public void IsSupported_PngWithOcrEnabled_ReturnsTrue()
+    {
+        var options = new AppOptions
+        {
+            OcrEnabled = true,
+            TessDataPath = Path.Combine(Path.GetTempPath(), $"tessdata-{Guid.NewGuid()}"),
+            OcrLanguages = "por+eng"
+        };
+
+        var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options));
+
+        Assert.True(registry.IsSupported(".png"));
+        Assert.True(registry.IsSupported(".pdf"));
     }
 }
