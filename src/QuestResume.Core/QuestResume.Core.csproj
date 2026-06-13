@@ -14,11 +14,18 @@
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00017" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.22.0" />
     <PackageReference Include="MimeKit" Version="4.17.0" />
     <PackageReference Include="MsgReader" Version="6.0.12" />
+    <PackageReference Include="PDFtoImage" Version="5.2.1" />
     <PackageReference Include="RtfPipe" Version="2.0.7677.4303" />
+    <PackageReference Include="Tesseract" Version="5.2.0" />
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
     <PackageReference Include="VersOne.Epub" Version="3.3.6" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
   </ItemGroup>
 
 </Project>

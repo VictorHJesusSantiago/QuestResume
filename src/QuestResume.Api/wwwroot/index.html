@@ -86,7 +86,7 @@
     margin-bottom: 0.25rem;
   }
   .field { margin-bottom: 0.9rem; }
-  input[type="text"], input[type="number"] {
+  input[type="text"], input[type="number"], select {
     width: 100%;
     padding: 0.55rem 0.7rem;
     border-radius: 6px;
@@ -208,10 +208,71 @@
 
     <div class="panel">
       <h2>Configurações</h2>
+
       <div class="field">
-        <label for="modelPathInput">Caminho do modelo de IA local (.gguf)</label>
+        <label for="llmProviderInput">Provedor de IA para geração de respostas</label>
+        <select id="llmProviderInput">
+          <option value="LlamaSharp">LlamaSharp (embutido, padrão)</option>
+          <option value="Ollama">Ollama (servidor local)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="modelPathInput">Caminho do modelo de IA local (.gguf) — usado quando o provedor é LlamaSharp</label>
         <input type="text" id="modelPathInput" placeholder="C:\Modelos\Phi-3-mini-4k-instruct.Q4_K_M.gguf" />
       </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="ollamaUrlInput">URL do servidor Ollama — usado quando o provedor é Ollama</label>
+          <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434" />
+        </div>
+        <div class="field">
+          <label for="ollamaModelInput">Modelo Ollama</label>
+          <input type="text" id="ollamaModelInput" placeholder="llama3.2" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>
+          <input type="checkbox" id="ocrEnabledInput" style="width: auto; margin-right: 0.4rem;" />
+          Habilitar OCR (Tesseract) para imagens e PDFs digitalizados
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="tessDataPathInput">Pasta tessdata</label>
+          <input type="text" id="tessDataPathInput" placeholder="C:\tessdata" />
+        </div>
+        <div class="field">
+          <label for="ocrLanguagesInput">Idiomas do OCR (ex.: por+eng)</label>
+          <input type="text" id="ocrLanguagesInput" placeholder="por+eng" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>
+          <input type="checkbox" id="embeddingsEnabledInput" style="width: auto; margin-right: 0.4rem;" />
+          Habilitar embeddings e busca híbrida (BM25 + similaridade vetorial)
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="embeddingModelPathInput">Modelo de embeddings (.onnx)</label>
+          <input type="text" id="embeddingModelPathInput" placeholder="C:\Modelos\embeddings\model.onnx" />
+        </div>
+        <div class="field">
+          <label for="embeddingTokenizerPathInput">Vocabulário do tokenizer (vocab.txt)</label>
+          <input type="text" id="embeddingTokenizerPathInput" placeholder="C:\Modelos\embeddings\vocab.txt" />
+        </div>
+        <div class="field">
+          <label for="hybridBm25WeightInput">Peso do BM25 na busca híbrida (0-1)</label>
+          <input type="number" id="hybridBm25WeightInput" min="0" max="1" step="0.1" />
+        </div>
+      </div>
+
       <div class="row">
         <div class="field">
           <label for="indexPathInput">Pasta do índice</label>
@@ -248,9 +309,16 @@ async function loadStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    const modelTxt = data.modelConfigured ? 'modelo de IA pronto' : 'modelo de IA não configurado';
     const indexTxt = data.indexExists ? `${data.documentCount} trechos indexados` : 'sem índice ainda';
-    $('statusBadge').textContent = `${indexTxt} · ${modelTxt}`;
+
+    let providerTxt;
+    if (data.llmProvider === 'Ollama') {
+      providerTxt = data.ollamaAvailable ? `Ollama (${data.ollamaModel}) pronto` : 'Ollama não disponível';
+    } else {
+      providerTxt = data.modelConfigured ? 'modelo de IA pronto' : 'modelo de IA não configurado';
+    }
+
+    $('statusBadge').textContent = `${indexTxt} · ${providerTxt}`;
     $('statusBadge').className = 'status-line ' + (data.indexExists ? 'status-ok' : '');
     return data;
   } catch (err) {
@@ -267,6 +335,16 @@ async function loadConfig() {
   $('indexPathInput').value = config.indexPath || '';
   $('topKInput').value = config.topK || 5;
   $('contextSizeInput').value = config.contextSize || 4096;
+  $('llmProviderInput').value = config.llmProvider || 'LlamaSharp';
+  $('ollamaUrlInput').value = config.ollamaBaseUrl || 'http://localhost:11434';
+  $('ollamaModelInput').value = config.ollamaModel || 'llama3.2';
+  $('ocrEnabledInput').checked = !!config.ocrEnabled;
+  $('tessDataPathInput').value = config.tessDataPath || '';
+  $('ocrLanguagesInput').value = config.ocrLanguages || 'por+eng';
+  $('embeddingsEnabledInput').checked = !!config.embeddingsEnabled;
+  $('embeddingModelPathInput').value = config.embeddingModelPath || '';
+  $('embeddingTokenizerPathInput').value = config.embeddingTokenizerPath || '';
+  $('hybridBm25WeightInput').value = config.hybridBm25Weight ?? 0.5;
 }
 
 $('saveConfigButton').addEventListener('click', async () => {
@@ -280,7 +358,17 @@ $('saveConfigButton').addEventListener('click', async () => {
       modelPath: $('modelPathInput').value,
       indexPath: $('indexPathInput').value,
       topK: parseInt($('topKInput').value, 10) || 5,
-      contextSize: parseInt($('contextSizeInput').value, 10) || 4096
+      contextSize: parseInt($('contextSizeInput').value, 10) || 4096,
+      llmProvider: $('llmProviderInput').value,
+      ollamaBaseUrl: $('ollamaUrlInput').value,
+      ollamaModel: $('ollamaModelInput').value,
+      ocrEnabled: $('ocrEnabledInput').checked,
+      tessDataPath: $('tessDataPathInput').value,
+      ocrLanguages: $('ocrLanguagesInput').value,
+      embeddingsEnabled: $('embeddingsEnabledInput').checked,
+      embeddingModelPath: $('embeddingModelPathInput').value,
+      embeddingTokenizerPath: $('embeddingTokenizerPathInput').value,
+      hybridBm25Weight: parseFloat($('hybridBm25WeightInput').value) || 0.5
     };
     const res = await fetch('/api/config', {
       method: 'PUT',

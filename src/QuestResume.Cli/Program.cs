@@ -1,4 +1,6 @@
 using QuestResume.Core.Configuration;
+using QuestResume.Core.Embeddings;
+using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Rag;
 
@@ -49,21 +51,35 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
 
     Console.WriteLine($"Indexando '{folder}' em '{indexPath}'...");
 
-    var indexer = new DocumentIndexer();
-    var progress = new Progress<string>(Console.WriteLine);
-    var stats = await indexer.IndexFolderAsync(folder, indexPath, options.ChunkSize, options.ChunkOverlap, progress);
+    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options));
 
-    Console.WriteLine();
-    Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
-    Console.WriteLine($"Arquivos ignorados (formato não suportado): {stats.FilesSkipped}");
-    Console.WriteLine($"Trechos indexados: {stats.ChunksIndexed}");
-
-    if (stats.Errors.Count > 0)
+    EmbeddingService? embeddingService = null;
+    VectorStore? vectorStore = null;
+    if (options.EmbeddingsEnabled)
     {
-        Console.WriteLine($"Erros: {stats.Errors.Count}");
-        foreach (var error in stats.Errors)
+        embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
+        vectorStore = new VectorStore(indexPath);
+    }
+
+    using (embeddingService)
+    using (vectorStore)
+    {
+        var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
+        var progress = new Progress<string>(Console.WriteLine);
+        var stats = await indexer.IndexFolderAsync(folder, indexPath, options.ChunkSize, options.ChunkOverlap, progress);
+
+        Console.WriteLine();
+        Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
+        Console.WriteLine($"Arquivos ignorados (formato não suportado): {stats.FilesSkipped}");
+        Console.WriteLine($"Trechos indexados: {stats.ChunksIndexed}");
+
+        if (stats.Errors.Count > 0)
         {
-            Console.WriteLine($"  - {error}");
+            Console.WriteLine($"Erros: {stats.Errors.Count}");
+            foreach (var error in stats.Errors)
+            {
+                Console.WriteLine($"  - {error}");
+            }
         }
     }
 
@@ -132,7 +148,7 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         return 1;
     }
 
-    using var engine = new RagQueryEngine(search, options.ModelPath, options.ContextSize, topK);
+    using var engine = CreateEngine(search, options, topK);
 
     try
     {
@@ -155,6 +171,11 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         Console.Error.WriteLine("Configure o modelo com: questresume config set-model <caminho.gguf>");
         return 1;
     }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 
     return 0;
 }
@@ -171,7 +192,7 @@ async Task<int> RunChatAsync(string[] cmdArgs)
         return 1;
     }
 
-    using var engine = new RagQueryEngine(search, options.ModelPath, options.ContextSize, topK);
+    using var engine = CreateEngine(search, options, topK);
 
     Console.WriteLine("Modo chat. Digite 'sair' para encerrar.");
     while (true)
@@ -204,16 +225,52 @@ async Task<int> RunChatAsync(string[] cmdArgs)
             Console.Error.WriteLine("Configure o modelo com: questresume config set-model <caminho.gguf>");
             break;
         }
+        catch (OllamaNotAvailableException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            break;
+        }
     }
 
     return 0;
+}
+
+static RagQueryEngine CreateEngine(SearchService search, AppOptions options, int topK)
+{
+    var providerKind = Enum.TryParse<LlmProviderKind>(options.LlmProvider, ignoreCase: true, out var kind)
+        ? kind
+        : LlmProviderKind.LlamaSharp;
+
+    VectorStore? vectorStore = null;
+    EmbeddingService? embeddingService = null;
+    if (options.EmbeddingsEnabled)
+    {
+        vectorStore = new VectorStore(options.IndexPath);
+        embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
+    }
+
+    return new RagQueryEngine(
+        search,
+        options.ModelPath,
+        options.ContextSize,
+        topK,
+        providerKind,
+        options.OllamaBaseUrl,
+        options.OllamaModel,
+        vectorStore: vectorStore,
+        embeddingService: embeddingService,
+        hybridBm25Weight: options.HybridBm25Weight);
 }
 
 int RunConfig(string[] cmdArgs)
 {
     if (cmdArgs.Length == 0)
     {
-        Console.Error.WriteLine("Uso: questresume config <show|set-model|set-folder|set-index|set-top-k> [valor]");
+        Console.Error.WriteLine("Uso: questresume config <show|set-model|set-folder|set-index|set-top-k|" +
+                                 "set-llm-provider|set-ollama-url|set-ollama-model|" +
+                                 "set-ocr-enabled|set-tessdata-path|set-ocr-languages|" +
+                                 "set-embeddings-enabled|set-embedding-model|set-embedding-tokenizer|" +
+                                 "set-hybrid-weight> [valor]");
         return 1;
     }
 
@@ -232,6 +289,16 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"ChunkSize:       {options.ChunkSize}");
             Console.WriteLine($"ChunkOverlap:    {options.ChunkOverlap}");
             Console.WriteLine($"ContextSize:     {options.ContextSize}");
+            Console.WriteLine($"LlmProvider:     {options.LlmProvider}");
+            Console.WriteLine($"OllamaBaseUrl:   {options.OllamaBaseUrl}");
+            Console.WriteLine($"OllamaModel:     {options.OllamaModel}");
+            Console.WriteLine($"OcrEnabled:      {options.OcrEnabled}");
+            Console.WriteLine($"TessDataPath:    {options.TessDataPath}");
+            Console.WriteLine($"OcrLanguages:    {options.OcrLanguages}");
+            Console.WriteLine($"EmbeddingsEnabled:      {options.EmbeddingsEnabled}");
+            Console.WriteLine($"EmbeddingModelPath:     {options.EmbeddingModelPath}");
+            Console.WriteLine($"EmbeddingTokenizerPath: {options.EmbeddingTokenizerPath}");
+            Console.WriteLine($"HybridBm25Weight:       {options.HybridBm25Weight}");
             return 0;
 
         case "set-model":
@@ -276,6 +343,117 @@ int RunConfig(string[] cmdArgs)
             options.TopK = topK;
             configService.Save(options);
             Console.WriteLine($"TopK definido para: {topK}");
+            return 0;
+
+        case "set-llm-provider":
+            if (value is null || !Enum.TryParse<LlmProviderKind>(value, ignoreCase: true, out var providerKind))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-llm-provider <LlamaSharp|Ollama>");
+                return 1;
+            }
+            options.LlmProvider = providerKind.ToString();
+            configService.Save(options);
+            Console.WriteLine($"LlmProvider definido para: {options.LlmProvider}");
+            return 0;
+
+        case "set-ollama-url":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-ollama-url <url>");
+                return 1;
+            }
+            options.OllamaBaseUrl = value;
+            configService.Save(options);
+            Console.WriteLine($"OllamaBaseUrl definido para: {value}");
+            return 0;
+
+        case "set-ollama-model":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-ollama-model <nome>");
+                return 1;
+            }
+            options.OllamaModel = value;
+            configService.Save(options);
+            Console.WriteLine($"OllamaModel definido para: {value}");
+            return 0;
+
+        case "set-ocr-enabled":
+            if (value is null || !bool.TryParse(value, out var ocrEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-ocr-enabled <true|false>");
+                return 1;
+            }
+            options.OcrEnabled = ocrEnabled;
+            configService.Save(options);
+            Console.WriteLine($"OcrEnabled definido para: {ocrEnabled}");
+            return 0;
+
+        case "set-tessdata-path":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-tessdata-path <pasta>");
+                return 1;
+            }
+            options.TessDataPath = value;
+            configService.Save(options);
+            Console.WriteLine($"TessDataPath definido para: {value}");
+            return 0;
+
+        case "set-ocr-languages":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-ocr-languages <idiomas, ex.: por+eng>");
+                return 1;
+            }
+            options.OcrLanguages = value;
+            configService.Save(options);
+            Console.WriteLine($"OcrLanguages definido para: {value}");
+            return 0;
+
+        case "set-embeddings-enabled":
+            if (value is null || !bool.TryParse(value, out var embeddingsEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-embeddings-enabled <true|false>");
+                return 1;
+            }
+            options.EmbeddingsEnabled = embeddingsEnabled;
+            configService.Save(options);
+            Console.WriteLine($"EmbeddingsEnabled definido para: {embeddingsEnabled}");
+            return 0;
+
+        case "set-embedding-model":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-embedding-model <caminho_para_modelo.onnx>");
+                return 1;
+            }
+            options.EmbeddingModelPath = value;
+            configService.Save(options);
+            Console.WriteLine($"EmbeddingModelPath definido para: {value}");
+            return 0;
+
+        case "set-embedding-tokenizer":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-embedding-tokenizer <caminho_para_vocab.txt>");
+                return 1;
+            }
+            options.EmbeddingTokenizerPath = value;
+            configService.Save(options);
+            Console.WriteLine($"EmbeddingTokenizerPath definido para: {value}");
+            return 0;
+
+        case "set-hybrid-weight":
+            if (value is null || !double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var hybridWeight)
+                || hybridWeight < 0 || hybridWeight > 1)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-hybrid-weight <peso entre 0 e 1>");
+                return 1;
+            }
+            options.HybridBm25Weight = hybridWeight;
+            configService.Save(options);
+            Console.WriteLine($"HybridBm25Weight definido para: {hybridWeight}");
             return 0;
 
         default:
@@ -330,6 +508,16 @@ static int PrintUsage()
           questresume config set-folder <pasta>
           questresume config set-index <pasta>
           questresume config set-top-k <número>
+          questresume config set-llm-provider <LlamaSharp|Ollama>
+          questresume config set-ollama-url <url>
+          questresume config set-ollama-model <nome>
+          questresume config set-ocr-enabled <true|false>
+          questresume config set-tessdata-path <pasta>
+          questresume config set-ocr-languages <idiomas, ex.: por+eng>
+          questresume config set-embeddings-enabled <true|false>
+          questresume config set-embedding-model <caminho_para_modelo.onnx>
+          questresume config set-embedding-tokenizer <caminho_para_vocab.txt>
+          questresume config set-hybrid-weight <peso entre 0 e 1>
         """);
     return 0;
 }

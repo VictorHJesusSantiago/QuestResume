@@ -1,5 +1,7 @@
 using QuestResume.Api.Services;
 using QuestResume.Core.Configuration;
+using QuestResume.Core.Embeddings;
+using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Rag;
 
@@ -7,17 +9,25 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddSingleton<RagEngineProvider>();
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGet("/api/status", (ConfigService configService) =>
+app.MapGet("/api/status", async (ConfigService configService, IHttpClientFactory httpClientFactory) =>
 {
     var options = configService.Load();
     var search = new SearchService(options.IndexPath);
     var indexExists = search.IndexExists();
+    var llmProvider = options.LlmProvider;
+
+    bool? ollamaAvailable = null;
+    if (string.Equals(llmProvider, "Ollama", StringComparison.OrdinalIgnoreCase))
+    {
+        ollamaAvailable = await IsOllamaAvailableAsync(httpClientFactory, options.OllamaBaseUrl);
+    }
 
     return Results.Ok(new
     {
@@ -26,7 +36,15 @@ app.MapGet("/api/status", (ConfigService configService) =>
         modelPath = options.ModelPath,
         modelConfigured = !string.IsNullOrWhiteSpace(options.ModelPath) && File.Exists(options.ModelPath),
         indexExists,
-        documentCount = indexExists ? search.GetDocumentCount() : 0
+        documentCount = indexExists ? search.GetDocumentCount() : 0,
+        llmProvider,
+        ollamaBaseUrl = options.OllamaBaseUrl,
+        ollamaModel = options.OllamaModel,
+        ollamaAvailable,
+        ocrEnabled = options.OcrEnabled,
+        embeddingsEnabled = options.EmbeddingsEnabled,
+        embeddingsConfigured = !string.IsNullOrWhiteSpace(options.EmbeddingModelPath) && File.Exists(options.EmbeddingModelPath)
+            && !string.IsNullOrWhiteSpace(options.EmbeddingTokenizerPath) && File.Exists(options.EmbeddingTokenizerPath)
     });
 });
 
@@ -53,13 +71,27 @@ app.MapPost("/api/index", async (IndexRequest? request, ConfigService configServ
         return Results.BadRequest(new { error = $"A pasta '{folder}' não existe." });
     }
 
-    var indexer = new DocumentIndexer();
-    var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap);
+    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options));
 
-    options.DocumentsFolder = folder;
-    configService.Save(options);
+    EmbeddingService? embeddingService = null;
+    VectorStore? vectorStore = null;
+    if (options.EmbeddingsEnabled)
+    {
+        embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
+        vectorStore = new VectorStore(options.IndexPath);
+    }
 
-    return Results.Ok(stats);
+    using (embeddingService)
+    using (vectorStore)
+    {
+        var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
+        var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap);
+
+        options.DocumentsFolder = folder;
+        configService.Save(options);
+
+        return Results.Ok(stats);
+    }
 });
 
 app.MapPost("/api/search", (SearchRequest request, ConfigService configService) =>
@@ -106,9 +138,28 @@ app.MapPost("/api/ask", async (AskRequest request, ConfigService configService, 
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+    catch (OllamaNotAvailableException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.Run();
+
+static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFactory, string baseUrl)
+{
+    try
+    {
+        using var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(2);
+        var response = await client.GetAsync($"{baseUrl.TrimEnd('/')}/api/tags");
+        return response.IsSuccessStatusCode;
+    }
+    catch
+    {
+        return false;
+    }
+}
 
 internal sealed record IndexRequest(string? FolderPath);
 
