@@ -185,16 +185,19 @@ Por padrão, a busca usa apenas BM25 (palavras-chave, via Lucene). Habilitando e
 a busca passa a combinar BM25 com similaridade vetorial (semântica), o que melhora a
 recuperação de contexto para perguntas que não usam exatamente as mesmas palavras do texto.
 
-1. Baixe um modelo de embeddings multilíngue no formato ONNX — recomendado:
-   [sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
-   (exporte para ONNX, ex. com `optimum-cli export onnx --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 <pasta_saida>`,
-   ou baixe uma versão já convertida). Você precisa de dois arquivos: o modelo `.onnx` e o
-   `vocab.txt` do tokenizer (formato WordPiece/BERT).
+1. Baixe um modelo de embeddings multilíngue no formato ONNX com tokenizer **WordPiece/BERT**
+   (o `EmbeddingService` usa `BertTokenizer`, que exige um arquivo `vocab.txt` — modelos
+   baseados em XLM-RoBERTa/SentencePiece, como o `paraphrase-multilingual-MiniLM-L12-v2`,
+   **não são compatíveis**). Recomendado:
+   [sentence-transformers/distiluse-base-multilingual-cased-v2](https://huggingface.co/sentence-transformers/distiluse-base-multilingual-cased-v2)
+   — baixe os dois arquivos:
+   - [`onnx/model.onnx`](https://huggingface.co/sentence-transformers/distiluse-base-multilingual-cased-v2/resolve/main/onnx/model.onnx) (~539 MB)
+   - [`vocab.txt`](https://huggingface.co/sentence-transformers/distiluse-base-multilingual-cased-v2/resolve/main/vocab.txt) (~1 MB)
 2. Configure os caminhos e habilite:
 
 ```powershell
-dotnet run --project src/QuestResume.Cli -- config set-embedding-model "C:\Modelos\embeddings\model.onnx"
-dotnet run --project src/QuestResume.Cli -- config set-embedding-tokenizer "C:\Modelos\embeddings\vocab.txt"
+dotnet run --project src/QuestResume.Cli -- config set-embedding-model "C:\caminho\para\QuestResume\models\embeddings\model.onnx"
+dotnet run --project src/QuestResume.Cli -- config set-embedding-tokenizer "C:\caminho\para\QuestResume\models\embeddings\vocab.txt"
 dotnet run --project src/QuestResume.Cli -- config set-embeddings-enabled true
 dotnet run --project src/QuestResume.Cli -- config set-hybrid-weight 0.5
 ```
