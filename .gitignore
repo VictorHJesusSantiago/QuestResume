@@ -13,3 +13,6 @@ obj/
 ## Build results
 *.dll
 *.pdb
+
+## Modelos locais (LLM/OCR/STT/Embeddings) - binarios grandes, baixar via README
+models/

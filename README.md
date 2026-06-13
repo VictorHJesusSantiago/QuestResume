@@ -73,14 +73,41 @@ dotnet build QuestResume.sln
 
 A busca por palavras-chave (`search`) funciona sem nenhum modelo. Para perguntas em
 linguagem natural (`ask`/`chat`/aba "Perguntar"), é preciso um modelo `.gguf` compatível
-com llama.cpp. Modelos pequenos recomendados (gratuitos, baixados uma única vez):
+com llama.cpp. Todos os modelos abaixo são **gratuitos, executam 100% localmente (sem
+custo por token) e cabem em máquinas com 8 GB de RAM** usando a quantização `Q4_K_M`/`q4`.
 
-- [Phi-3-mini-4k-instruct (GGUF)](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf) — ~2.4 GB (Q4)
-- [Llama-3.2-3B-Instruct (GGUF)](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) — ~2 GB (Q4)
+### Modelos já incluídos neste projeto (em `models/llm/`)
+
+A pasta `models/llm/` (ignorada pelo Git — baixe novamente se clonar o repositório)
+já contém 3 modelos prontos para uso, configuráveis via `config set-model`:
+
+1. **[Llama-3.2-3B-Instruct](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF)**
+   (`Llama-3.2-3B-Instruct-Q4_K_M.gguf`, ~2 GB) — **modelo padrão configurado** (`ModelPath`).
+   Bom equilíbrio entre velocidade e qualidade para perguntas gerais em PT-BR.
+2. **[Phi-3-mini-4k-instruct](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf)**
+   (`Phi-3-mini-4k-instruct-q4.gguf`, ~2.4 GB) — ótimo em raciocínio/instruções, contexto
+   de 4k tokens.
+3. **[Qwen2.5-3B-Instruct](https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF)**
+   (`Qwen2.5-3B-Instruct-Q4_K_M.gguf`, ~1.9 GB) — forte em múltiplos idiomas e tarefas
+   estruturadas (tabelas, listas).
+
+Para trocar entre eles:
+
+```powershell
+dotnet run --project src/QuestResume.Cli -- config set-model "C:\caminho\para\QuestResume\models\llm\Phi-3-mini-4k-instruct-q4.gguf"
+```
+
+### Outras opções recomendadas (não incluídas, baixe se quiser comparar)
+
+4. **[Mistral-7B-Instruct-v0.3 (GGUF)](https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF)**
+   — ~4.4 GB (Q4_K_M), mais "pesado" porém com respostas mais consistentes; recomendado
+   para máquinas com 16 GB+ de RAM.
+5. **[Gemma-2-2b-it (GGUF)](https://huggingface.co/bartowski/gemma-2-2b-it-GGUF)**
+   — ~1.7 GB (Q4_K_M), o mais leve da lista, ideal para notebooks com poucos recursos.
 
 Baixe um arquivo `.gguf` (variante `Q4_K_M` é um bom equilíbrio entre tamanho e qualidade)
-e salve em qualquer pasta local. Depois, configure o caminho via CLI, API ou Desktop
-(veja abaixo).
+e salve em qualquer pasta local (ex.: `models/llm/`). Depois, configure o caminho via
+CLI, API ou Desktop (veja abaixo).
 
 ## Alternativa: usando Ollama
 
