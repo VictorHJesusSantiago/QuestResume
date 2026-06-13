@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using QuestResume.Core.Models;
 using Whisper.net;
@@ -9,8 +10,10 @@ namespace QuestResume.Core.Extraction.Extractors;
 /// Transcribes <c>.wav</c> audio files via Whisper.net. Requires <c>WhisperModelPath</c> to point
 /// to a ggml Whisper model; otherwise returns an empty document with a <c>Metadata["warning"]</c>
 /// explaining how to set it up, following the same graceful-degradation pattern as the other
-/// extractors. The input file must be PCM 16kHz mono (Whisper.net does not resample); other
-/// formats/rates produce a warning suggesting an ffmpeg conversion.
+/// extractors. Whisper.net itself only accepts PCM 16kHz mono; if the input file isn't in that
+/// format, this extractor tries to resample it on the fly via <c>ffmpeg</c> (if available on
+/// PATH), falling back to a warning with manual conversion instructions if ffmpeg is missing or
+/// the conversion fails.
 /// </summary>
 public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
 {
@@ -31,6 +34,7 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
         var info = new FileInfo(path);
         var text = string.Empty;
         string? warning;
+        string? resampledPath = null;
 
         if (!EnsureFactory(out warning))
         {
@@ -40,20 +44,26 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
         {
             try
             {
-                await using var stream = File.OpenRead(path);
-                var parser = new WaveParser(stream, new WaveParserOptions());
-                await parser.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                var samples = await LoadSamplesAsync(path, cancellationToken).ConfigureAwait(false);
 
-                if (parser.Channels != 1 || parser.SampleRate != 16000)
+                if (samples is null)
                 {
-                    warning = $"O arquivo de áudio '{info.Name}' precisa estar no formato WAV PCM " +
-                              $"16kHz mono (encontrado: {parser.SampleRate}Hz, {parser.Channels} canal(is)). " +
-                              $"Converta com 'ffmpeg -i \"{info.Name}\" -ar 16000 -ac 1 saida.wav' e tente novamente.";
+                    resampledPath = await TryResampleWithFfmpegAsync(path, cancellationToken).ConfigureAwait(false);
+                    if (resampledPath is not null)
+                    {
+                        samples = await LoadSamplesAsync(resampledPath, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                if (samples is null)
+                {
+                    warning = $"O arquivo de áudio '{info.Name}' precisa estar no formato WAV PCM 16kHz mono. " +
+                              "Tentamos convertê-lo automaticamente com ffmpeg, mas isso não foi possível " +
+                              "(verifique se o ffmpeg está instalado e disponível no PATH). Você também pode " +
+                              $"converter manualmente com 'ffmpeg -i \"{info.Name}\" -ar 16000 -ac 1 saida.wav'.";
                 }
                 else
                 {
-                    var samples = await parser.GetAvgSamplesAsync(cancellationToken).ConfigureAwait(false);
-
                     using var processor = _factory!.CreateBuilder()
                         .WithLanguage("auto")
                         .Build();
@@ -72,6 +82,13 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
             {
                 warning = $"Não foi possível ler o arquivo de áudio '{info.Name}': {ex.Message}";
             }
+            finally
+            {
+                if (resampledPath is not null)
+                {
+                    File.Delete(resampledPath);
+                }
+            }
         }
 
         var document = new ExtractedDocument
@@ -89,6 +106,68 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
         }
 
         return document;
+    }
+
+    /// <summary>
+    /// Reads <paramref name="path"/> as a WAV file and returns its samples, or <c>null</c> if the
+    /// file isn't PCM 16kHz mono. Throws <see cref="NotSupportedWaveException"/> or
+    /// <see cref="CorruptedWaveException"/> if the file isn't a readable WAV at all.
+    /// </summary>
+    private static async Task<float[]?> LoadSamplesAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = File.OpenRead(path);
+        var parser = new WaveParser(stream, new WaveParserOptions());
+        await parser.InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        if (parser.Channels != 1 || parser.SampleRate != 16000)
+        {
+            return null;
+        }
+
+        return await parser.GetAvgSamplesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Tries to resample <paramref name="sourcePath"/> to PCM 16kHz mono using <c>ffmpeg</c>,
+    /// returning the path to the resulting temporary file, or <c>null</c> if ffmpeg isn't
+    /// available on PATH or the conversion fails.
+    /// </summary>
+    private static async Task<string?> TryResampleWithFfmpegAsync(string sourcePath, CancellationToken cancellationToken)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"questresume-stt-{Guid.NewGuid()}.wav");
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "ffmpeg",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-i");
+        startInfo.ArgumentList.Add(sourcePath);
+        startInfo.ArgumentList.Add("-ar");
+        startInfo.ArgumentList.Add("16000");
+        startInfo.ArgumentList.Add("-ac");
+        startInfo.ArgumentList.Add("1");
+        startInfo.ArgumentList.Add("-y");
+        startInfo.ArgumentList.Add(tempPath);
+
+        try
+        {
+            using var process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return null;
+            }
+
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            return process.ExitCode == 0 && File.Exists(tempPath) ? tempPath : null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+        {
+            return null;
+        }
     }
 
     private bool EnsureFactory(out string? warning)

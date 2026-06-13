@@ -13,6 +13,7 @@ namespace QuestResume.Core.Embeddings;
 public sealed class VectorStore : IDisposable
 {
     private readonly SqliteConnection _connection;
+    private List<(SearchResultItem Item, float[] Embedding)>? _cache;
 
     public VectorStore(string indexPath)
     {
@@ -42,6 +43,7 @@ public sealed class VectorStore : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText = "DELETE FROM chunks";
         command.ExecuteNonQuery();
+        _cache = null;
     }
 
     public void Add(string sourcePath, string fileName, int chunkIndex, string text, float[] embedding)
@@ -57,6 +59,7 @@ public sealed class VectorStore : IDisposable
         command.Parameters.AddWithValue("$text", text);
         command.Parameters.AddWithValue("$embedding", ToBytes(embedding));
         command.ExecuteNonQuery();
+        _cache = null;
     }
 
     /// <summary>
@@ -65,23 +68,18 @@ public sealed class VectorStore : IDisposable
     /// </summary>
     public IReadOnlyList<SearchResultItem> Search(float[] queryEmbedding, int topK)
     {
-        var scored = new List<SearchResultItem>();
+        var entries = LoadCache();
+        var scored = new List<SearchResultItem>(entries.Count);
 
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT path, fileName, chunkIndex, text, embedding FROM chunks";
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        foreach (var (item, embedding) in entries)
         {
-            var embedding = FromBytes((byte[])reader["embedding"]);
-            var score = CosineSimilarity(queryEmbedding, embedding);
-
             scored.Add(new SearchResultItem
             {
-                SourcePath = reader.GetString(0),
-                FileName = reader.GetString(1),
-                ChunkIndex = reader.GetInt32(2),
-                ChunkText = reader.GetString(3),
-                Score = score
+                SourcePath = item.SourcePath,
+                FileName = item.FileName,
+                ChunkIndex = item.ChunkIndex,
+                ChunkText = item.ChunkText,
+                Score = CosineSimilarity(queryEmbedding, embedding)
             });
         }
 
@@ -89,6 +87,40 @@ public sealed class VectorStore : IDisposable
             .OrderByDescending(item => item.Score)
             .Take(topK)
             .ToList();
+    }
+
+    /// <summary>
+    /// Loads every stored chunk and its embedding into memory on first use, reusing the cache on
+    /// subsequent searches until <see cref="Add"/> or <see cref="Clear"/> invalidates it. Keeps
+    /// repeated queries from re-reading and re-deserializing the whole table from SQLite.
+    /// </summary>
+    private List<(SearchResultItem Item, float[] Embedding)> LoadCache()
+    {
+        if (_cache is not null)
+        {
+            return _cache;
+        }
+
+        var entries = new List<(SearchResultItem Item, float[] Embedding)>();
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT path, fileName, chunkIndex, text, embedding FROM chunks";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var item = new SearchResultItem
+            {
+                SourcePath = reader.GetString(0),
+                FileName = reader.GetString(1),
+                ChunkIndex = reader.GetInt32(2),
+                ChunkText = reader.GetString(3),
+                Score = 0
+            };
+            entries.Add((item, FromBytes((byte[])reader["embedding"])));
+        }
+
+        _cache = entries;
+        return entries;
     }
 
     private static byte[] ToBytes(float[] embedding)

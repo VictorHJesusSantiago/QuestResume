@@ -154,6 +154,89 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private void BrowseIndexPath()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Selecione a pasta do índice"
+        };
+
+        if (!string.IsNullOrWhiteSpace(IndexPath) && Directory.Exists(IndexPath))
+        {
+            dialog.InitialDirectory = IndexPath;
+        }
+
+        if (dialog.ShowDialog() == true)
+        {
+            IndexPath = dialog.FolderName;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseTessDataPath()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Selecione a pasta tessdata"
+        };
+
+        if (!string.IsNullOrWhiteSpace(TessDataPath) && Directory.Exists(TessDataPath))
+        {
+            dialog.InitialDirectory = TessDataPath;
+        }
+
+        if (dialog.ShowDialog() == true)
+        {
+            TessDataPath = dialog.FolderName;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseEmbeddingModel()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Selecione o modelo de embeddings (.onnx)",
+            Filter = "Modelos ONNX (*.onnx)|*.onnx|Todos os arquivos (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            EmbeddingModelPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseEmbeddingTokenizer()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Selecione o vocabulário do tokenizer (vocab.txt)",
+            Filter = "Vocabulário (*.txt)|*.txt|Todos os arquivos (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            EmbeddingTokenizerPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseWhisperModel()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Selecione o modelo Whisper (ggml .bin)",
+            Filter = "Modelos Whisper (*.bin)|*.bin|Todos os arquivos (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            WhisperModelPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
     private async Task IndexAsync()
     {
         if (string.IsNullOrWhiteSpace(DocumentsFolder) || !Directory.Exists(DocumentsFolder))
