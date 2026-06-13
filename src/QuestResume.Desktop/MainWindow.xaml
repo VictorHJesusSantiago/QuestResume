@@ -91,7 +91,14 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Margin="0,0,5,0">
                         <TextBlock Text="Pasta tessdata" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
-                        <TextBox Padding="5" Text="{Binding TessDataPath, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0" Text="{Binding TessDataPath, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseTessDataPathCommand}" Padding="10,4"/>
+                        </Grid>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="5,0,0,0">
                         <TextBlock Text="Idiomas (ex.: por+eng)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
@@ -108,11 +115,25 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Margin="0,0,5,0">
                         <TextBlock Text="Modelo de embeddings (.onnx)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
-                        <TextBox Padding="5" Text="{Binding EmbeddingModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0" Text="{Binding EmbeddingModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseEmbeddingModelCommand}" Padding="10,4"/>
+                        </Grid>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="5,0,0,0">
                         <TextBlock Text="Vocabulário do tokenizer (vocab.txt)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
-                        <TextBox Padding="5" Text="{Binding EmbeddingTokenizerPath, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0" Text="{Binding EmbeddingTokenizerPath, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseEmbeddingTokenizerCommand}" Padding="10,4"/>
+                        </Grid>
                     </StackPanel>
                 </Grid>
                 <StackPanel Margin="0,0,0,15">
@@ -124,12 +145,25 @@
                 <CheckBox Margin="0,0,0,8" Content="Habilitar transcrição de áudio" IsChecked="{Binding SttEnabled, UpdateSourceTrigger=PropertyChanged}"/>
                 <StackPanel Margin="0,0,0,15">
                     <TextBlock Text="Modelo Whisper (ggml .bin)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
-                    <TextBox Padding="5" Text="{Binding WhisperModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0" Text="{Binding WhisperModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseWhisperModelCommand}" Padding="10,4"/>
+                    </Grid>
                 </StackPanel>
 
                 <TextBlock Text="Pasta do índice" FontWeight="Bold" Margin="0,0,0,5"/>
-                <TextBox Padding="5" Margin="0,0,0,15"
-                         Text="{Binding IndexPath, UpdateSourceTrigger=PropertyChanged}"/>
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0" Text="{Binding IndexPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseIndexPathCommand}" Padding="10,4"/>
+                </Grid>
 
                 <TextBlock Text="Trechos por pergunta (Top-K)" FontWeight="Bold" Margin="0,0,0,5"/>
                 <TextBox Padding="5" Margin="0,0,0,15" Width="100" HorizontalAlignment="Left"

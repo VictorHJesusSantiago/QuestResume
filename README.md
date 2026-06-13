@@ -143,8 +143,10 @@ dotnet run --project src/QuestResume.Cli -- config set-stt-enabled true
 3. Reindexe a pasta de documentos (`index`) — arquivos `.wav` passam a ser transcritos.
 
 **Importante**: o Whisper.net não faz resample — os arquivos `.wav` precisam estar em PCM
-16kHz mono. Se um arquivo estiver em outro formato/taxa, ele é ignorado com um aviso
-explicando como convertê-lo, por exemplo com [ffmpeg](https://ffmpeg.org):
+16kHz mono. Se um arquivo estiver em outro formato/taxa, o extrator tenta convertê-lo
+automaticamente chamando o [ffmpeg](https://ffmpeg.org) (se estiver disponível no `PATH`).
+Se o ffmpeg não estiver instalado ou a conversão falhar, o arquivo é ignorado com um aviso
+explicando como convertê-lo manualmente:
 
 ```powershell
 ffmpeg -i entrada.wav -ar 16000 -ac 1 saida.wav
@@ -295,19 +297,64 @@ em vez de travar ou lançar um erro genérico.
 dotnet test tests/QuestResume.Core.Tests
 ```
 
+Os testes unitários cobrem o caminho de "recurso não configurado" (degradação graciosa)
+para OCR, transcrição e embeddings sem precisar de modelos reais. Há também testes de
+integração opcionais, no mesmo projeto, que só rodam se as variáveis de ambiente abaixo
+apontarem para arquivos/pastas existentes (caso contrário, passam sem fazer nada):
+
+| Variável | Para testar |
+|---|---|
+| `QUESTRESUME_TEST_TESSDATA_PATH` | OCR (Tesseract) com uma imagem gerada na hora |
+| `QUESTRESUME_TEST_OCR_LANGUAGES` | Idiomas do Tesseract (padrão `eng`) |
+| `QUESTRESUME_TEST_WHISPER_MODEL` | Transcrição (Whisper.net) com um `.wav` de teste |
+| `QUESTRESUME_TEST_EMBEDDING_MODEL` + `QUESTRESUME_TEST_EMBEDDING_TOKENIZER` | Embeddings (similaridade semântica) |
+
+```powershell
+$env:QUESTRESUME_TEST_TESSDATA_PATH = "C:\tessdata"
+$env:QUESTRESUME_TEST_WHISPER_MODEL = "C:\Modelos\whisper\ggml-base.bin"
+$env:QUESTRESUME_TEST_EMBEDDING_MODEL = "C:\Modelos\embeddings\model.onnx"
+$env:QUESTRESUME_TEST_EMBEDDING_TOKENIZER = "C:\Modelos\embeddings\vocab.txt"
+dotnet test tests/QuestResume.Core.Tests
+```
+
+## CI
+
+O workflow `.github/workflows/ci.yml` (GitHub Actions) compila a solução completa e roda
+os testes em `windows-latest` (necessário porque o Desktop usa WPF/`net8.0-windows`) a
+cada push/PR para `main`.
+
+## Empacotamento e distribuição
+
+**Desktop** — publica um executável Windows autocontido (não precisa do .NET instalado na
+máquina de destino):
+
+```powershell
+dotnet publish src/QuestResume.Desktop/QuestResume.Desktop.csproj -c Release -p:PublishProfile=win-x64
+```
+
+O executável fica em `src/QuestResume.Desktop/bin/Release/net8.0-windows/publish/win-x64/`.
+
+**API** — há um `Dockerfile` na raiz do repositório para empacotar a API em um container:
+
+```powershell
+docker build -t questresume-api .
+docker run -p 8080:8080 -v questresume-data:/root/.local/share/QuestResume questresume-api
+```
+
+O volume persiste a configuração e o índice (`%LOCALAPPDATA%\QuestResume` no Windows
+equivale a `~/.local/share/QuestResume` no Linux). OCR e transcrição de áudio continuam
+desabilitados por padrão dentro do container, já que dependem de arquivos (`tessdata`,
+modelo Whisper) que precisam ser montados/configurados separadamente.
+
 ## Próximos passos
 
 A arquitetura de extração é baseada em `IFileExtractor` + `ExtractorRegistry`
 (`src/QuestResume.Core/Extraction`), permitindo plugar novos formatos sem alterar o
-restante do sistema (indexação, busca e RAG continuam iguais). Possíveis extensões
-futuras:
+restante do sistema (indexação, busca e RAG continuam iguais). Possível extensão futura:
 
 - **Metadados (vídeo, executáveis)**: um novo extrator usando `MetadataExtractor` (ou
   `ExifTool`) preencheria apenas `ExtractedDocument.Metadata` (autor, datas, dimensões,
   codec, etc.), com `Text` vazio — útil para busca por metadados.
-- **Transcrição de outros formatos de áudio/vídeo**: hoje a transcrição (Whisper.net)
-  exige `.wav` 16kHz mono; um pré-processamento com `ffmpeg` poderia ser integrado para
-  aceitar outros formatos diretamente.
 
 Para adicionar um novo formato, basta implementar `IFileExtractor` e registrá-lo em
 `ExtractorRegistry.DefaultExtractors()` — `DocumentIndexer`, `SearchService` e

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    # The Desktop project targets net8.0-windows (WPF), so the full solution needs a Windows runner.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore QuestResume.slnx
+
+      - name: Build
+        run: dotnet build QuestResume.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/QuestResume.Core.Tests/QuestResume.Core.Tests.csproj --configuration Release --no-build
