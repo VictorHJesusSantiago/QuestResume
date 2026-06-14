@@ -165,6 +165,34 @@
     border-radius: 3px;
     padding: 0 0.1rem;
   }
+  .doc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--panel-light);
+    padding: 0.6rem 0;
+    font-size: 0.9rem;
+  }
+  .doc-item:last-child { border-bottom: none; }
+  .doc-item .meta { color: var(--muted); font-size: 0.8rem; }
+  button.danger {
+    background: transparent;
+    border: 1px solid var(--error);
+    color: var(--error);
+    padding: 0.4rem 0.9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+  button.danger:hover { background: var(--error); color: #fff; }
+  .report-list {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.85rem;
+  }
+  .report-list li { margin-bottom: 0.3rem; }
 </style>
 </head>
 <body>
@@ -179,6 +207,7 @@
 <nav>
   <button data-tab="chat" class="active">Perguntar</button>
   <button data-tab="search">Buscar</button>
+  <button data-tab="documents">Documentos</button>
   <button data-tab="config">Configurações</button>
 </nav>
 
@@ -213,6 +242,19 @@
         </div>
       </div>
       <div id="searchResults" style="margin-top: 1rem;"></div>
+    </div>
+  </section>
+
+  <section id="tab-documents">
+    <div class="panel">
+      <h2>Documentos indexados</h2>
+      <button class="primary" id="refreshDocumentsButton">Atualizar lista</button>
+      <div id="documentsList" style="margin-top: 1rem;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Relatório da última indexação</h2>
+      <div id="indexReport"></div>
     </div>
   </section>
 
@@ -472,6 +514,7 @@ $('indexButton').addEventListener('click', async () => {
       (data.errors && data.errors.length ? `\nErros: ${data.errors.join('\n')}` : '');
     $('indexStatus').className = 'status-line status-ok';
     await loadStatus();
+    await loadDocuments();
   } catch (err) {
     $('indexStatus').textContent = `Erro: ${err.message}`;
     $('indexStatus').className = 'status-line status-error';
@@ -638,8 +681,122 @@ $('searchInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('searchButton').click();
 });
 
+// Built via textContent/createElement (not innerHTML), since file names/paths come from the
+// user's indexed documents and could otherwise inject markup/scripts.
+async function loadDocuments() {
+  const listEl = $('documentsList');
+  listEl.replaceChildren();
+  listEl.append('Carregando...');
+
+  try {
+    const res = await fetch('/api/documents');
+    const docs = await res.json();
+
+    listEl.replaceChildren();
+    if (!docs.length) {
+      const empty = document.createElement('p');
+      empty.textContent = 'Nenhum documento indexado.';
+      listEl.appendChild(empty);
+    } else {
+      for (const doc of docs) {
+        const item = document.createElement('div');
+        item.className = 'doc-item';
+
+        const info = document.createElement('div');
+        const name = document.createElement('div');
+        name.textContent = doc.fileName;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = `${doc.sourcePath} · ${doc.chunkCount} trecho(s)`;
+        info.append(name, meta);
+
+        const removeButton = document.createElement('button');
+        removeButton.className = 'danger';
+        removeButton.textContent = 'Remover';
+        removeButton.addEventListener('click', () => removeDocument(doc.sourcePath));
+
+        item.append(info, removeButton);
+        listEl.appendChild(item);
+      }
+    }
+  } catch (err) {
+    listEl.replaceChildren();
+    const error = document.createElement('p');
+    error.className = 'status-error';
+    error.textContent = `Erro ao carregar documentos: ${err.message}`;
+    listEl.appendChild(error);
+  }
+
+  await loadIndexReport();
+}
+
+async function loadIndexReport() {
+  const reportEl = $('indexReport');
+  reportEl.replaceChildren();
+
+  try {
+    const res = await fetch('/api/index-report');
+    const report = await res.json();
+
+    if (!report.errors?.length && !report.duplicates?.length) {
+      const ok = document.createElement('p');
+      ok.className = 'status-ok';
+      ok.textContent = 'Nenhum erro ou duplicata na última indexação.';
+      reportEl.appendChild(ok);
+      return;
+    }
+
+    if (report.errors?.length) {
+      const title = document.createElement('p');
+      title.className = 'status-error';
+      title.textContent = `Erros (${report.errors.length}):`;
+      const list = document.createElement('ul');
+      list.className = 'report-list';
+      for (const error of report.errors) {
+        const li = document.createElement('li');
+        li.textContent = error;
+        list.appendChild(li);
+      }
+      reportEl.append(title, list);
+    }
+
+    if (report.duplicates?.length) {
+      const title = document.createElement('p');
+      title.textContent = `Arquivos duplicados, não indexados novamente (${report.duplicates.length}):`;
+      const list = document.createElement('ul');
+      list.className = 'report-list';
+      for (const dup of report.duplicates) {
+        const li = document.createElement('li');
+        li.textContent = `${dup.path} (idêntico a ${dup.duplicateOfPath})`;
+        list.appendChild(li);
+      }
+      reportEl.append(title, list);
+    }
+  } catch (err) {
+    const error = document.createElement('p');
+    error.className = 'status-error';
+    error.textContent = `Erro ao carregar relatório: ${err.message}`;
+    reportEl.appendChild(error);
+  }
+}
+
+async function removeDocument(path) {
+  try {
+    const res = await fetch(`/api/documents?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao remover documento.');
+    await loadDocuments();
+    await loadStatus();
+  } catch (err) {
+    alert(`Erro ao remover documento: ${err.message}`);
+  }
+}
+
+$('refreshDocumentsButton').addEventListener('click', loadDocuments);
+
 loadStatus();
 loadConfig();
+loadDocuments();
 </script>
 </body>
 </html>

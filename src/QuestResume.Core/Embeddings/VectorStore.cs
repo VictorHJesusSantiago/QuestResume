@@ -120,6 +120,23 @@ public sealed class VectorStore : IDisposable
     }
 
     /// <summary>
+    /// Removes every stored embedding for the given source file, used when a single document is
+    /// removed from the index without a full re-index.
+    /// </summary>
+    public void RemoveBySourcePath(string sourcePath)
+    {
+        lock (_lock)
+        {
+            using var command = _connection.CreateCommand();
+            command.Transaction = _activeTransaction;
+            command.CommandText = "DELETE FROM chunks WHERE path = $path";
+            command.Parameters.AddWithValue("$path", sourcePath);
+            command.ExecuteNonQuery();
+            _cache = null;
+        }
+    }
+
+    /// <summary>
     /// Drops the in-memory cache without touching the underlying table. Call this after a
     /// different <see cref="VectorStore"/> instance pointed at the same <c>vectors.db</c> has
     /// re-indexed, so this instance doesn't keep serving a stale pre-reindex snapshot.

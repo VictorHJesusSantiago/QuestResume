@@ -94,6 +94,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ChatEntry> Messages { get; } = new();
 
+    public ObservableCollection<IndexedFileInfo> IndexedDocuments { get; } = new();
+
+    public ObservableCollection<string> IndexErrors { get; } = new();
+
+    public ObservableCollection<DuplicateFile> IndexDuplicates { get; } = new();
+
     public string[] LlmProviderOptions { get; } = { "LlamaSharp", "Ollama" };
 
     public MainViewModel()
@@ -123,6 +129,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         rerankingTokenizerPath = _options.RerankingTokenizerPath;
 
         RefreshStatus();
+        LoadDocuments();
     }
 
     [RelayCommand]
@@ -314,6 +321,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // _engine — without this, AskAsync would keep serving the pre-reindex snapshot
             // until the engine is rebuilt for an unrelated config change.
             _engine?.InvalidateVectorCache();
+            LoadDocuments();
         }
         catch (Exception ex)
         {
@@ -322,6 +330,69 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the "Documentos" tab with the files currently in the index plus the errors
+    /// and duplicates detected during the last <see cref="IndexAsync"/> run.
+    /// </summary>
+    [RelayCommand]
+    private void LoadDocuments()
+    {
+        IndexedDocuments.Clear();
+        IndexErrors.Clear();
+        IndexDuplicates.Clear();
+
+        var search = new SearchService(IndexPath);
+        foreach (var file in search.GetIndexedFiles())
+        {
+            IndexedDocuments.Add(file);
+        }
+
+        var report = IndexReport.Load(IndexPath);
+        foreach (var error in report.Errors)
+        {
+            IndexErrors.Add(error);
+        }
+
+        foreach (var duplicate in report.Duplicates)
+        {
+            IndexDuplicates.Add(duplicate);
+        }
+    }
+
+    /// <summary>
+    /// Removes a single document from the Lucene index (and the vector store, if embeddings are
+    /// enabled) without rebuilding the whole index from the documents folder.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveDocument(string sourcePath)
+    {
+        try
+        {
+            var search = new SearchService(IndexPath);
+            var removed = search.RemoveDocument(sourcePath);
+
+            if (removed == 0)
+            {
+                StatusMessage = $"Documento não encontrado no índice: {sourcePath}";
+                return;
+            }
+
+            if (EmbeddingsEnabled)
+            {
+                using var vectorStore = new VectorStore(IndexPath);
+                vectorStore.RemoveBySourcePath(sourcePath);
+            }
+
+            _engine?.InvalidateVectorCache();
+            LoadDocuments();
+            StatusMessage = $"Documento removido do índice ({removed} trecho(s)): {sourcePath}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Erro ao remover documento: {ex.Message}";
         }
     }
 

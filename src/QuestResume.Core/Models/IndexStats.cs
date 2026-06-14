@@ -14,4 +14,6 @@ public sealed class IndexStats
     public List<string> SkippedFiles { get; } = new();
 
     public List<string> Errors { get; } = new();
+
+    public List<DuplicateFile> Duplicates { get; } = new();
 }

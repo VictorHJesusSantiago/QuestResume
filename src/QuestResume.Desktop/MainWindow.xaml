@@ -79,6 +79,75 @@
             </DockPanel>
         </TabItem>
 
+        <TabItem Header="Documentos">
+            <DockPanel Margin="10">
+                <Button DockPanel.Dock="Top" Content="Atualizar lista" Command="{Binding LoadDocumentsCommand}"
+                        Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0"
+                            Visibility="{Binding IndexErrors, Converter={StaticResource NullToVisibilityConverter}}">
+                    <TextBlock Text="Erros na última indexação" FontWeight="Bold" Foreground="#CC0000" Margin="0,0,0,5"/>
+                    <ItemsControl ItemsSource="{Binding IndexErrors}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="11" Foreground="#CC0000" Margin="0,0,0,2"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0"
+                            Visibility="{Binding IndexDuplicates, Converter={StaticResource NullToVisibilityConverter}}">
+                    <TextBlock Text="Arquivos duplicados (não indexados novamente)" FontWeight="Bold" Foreground="#CC8800" Margin="0,0,0,5"/>
+                    <ItemsControl ItemsSource="{Binding IndexDuplicates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#CC8800" Margin="0,0,0,2">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="{}{0}  (idêntico a {1})">
+                                            <Binding Path="Path"/>
+                                            <Binding Path="DuplicateOfPath"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding IndexedDocuments}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,3" Padding="8" CornerRadius="4" Background="#F0F0F0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding FileName}" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding SourcePath}" Foreground="Gray" FontSize="11" TextWrapping="Wrap"/>
+                                            <TextBlock Foreground="Gray" FontSize="11">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} trecho(s)">
+                                                        <Binding Path="ChunkCount"/>
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Remover" Padding="10,4" VerticalAlignment="Center"
+                                                Command="{Binding DataContext.RemoveDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding SourcePath}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+
         <TabItem Header="Configurações">
             <StackPanel Margin="20" MaxWidth="550" HorizontalAlignment="Left">
                 <TextBlock Text="Provedor de IA para geração de respostas" FontWeight="Bold" Margin="0,0,0,5"/>

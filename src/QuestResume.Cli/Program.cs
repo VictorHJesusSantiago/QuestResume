@@ -25,6 +25,9 @@ try
         "ask" => await RunAskAsync(rest),
         "chat" => await RunChatAsync(rest),
         "compare" => await RunCompareAsync(rest),
+        "documents" => RunDocuments(rest),
+        "remove" => RunRemove(rest),
+        "report" or "errors" => RunReport(rest),
         "config" => RunConfig(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
@@ -287,6 +290,98 @@ async Task<int> RunCompareAsync(string[] cmdArgs)
     {
         Console.Error.WriteLine(ex.Message);
         return 1;
+    }
+
+    return 0;
+}
+
+int RunDocuments(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+
+    if (!search.IndexExists())
+    {
+        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+        return 1;
+    }
+
+    var files = search.GetIndexedFiles();
+    if (files.Count == 0)
+    {
+        Console.WriteLine("Nenhum documento indexado.");
+        return 0;
+    }
+
+    foreach (var file in files)
+    {
+        Console.WriteLine($"{file.FileName} ({file.ChunkCount} trecho(s))");
+        Console.WriteLine($"    {file.SourcePath}");
+    }
+
+    return 0;
+}
+
+int RunRemove(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var path = cmdArgs.FirstOrDefault(a => !a.StartsWith("--"));
+
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        Console.Error.WriteLine("Uso: questresume remove <caminho_do_arquivo>");
+        return 1;
+    }
+
+    var search = new SearchService(options.IndexPath);
+    var removed = search.RemoveDocument(path);
+
+    if (removed == 0)
+    {
+        Console.WriteLine($"Documento não encontrado no índice: {path}");
+        return 0;
+    }
+
+    if (options.EmbeddingsEnabled)
+    {
+        using var vectorStore = new VectorStore(options.IndexPath);
+        vectorStore.RemoveBySourcePath(path);
+    }
+
+    Console.WriteLine($"Removido do índice: {path} ({removed} trecho(s))");
+    return 0;
+}
+
+int RunReport(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var report = IndexReport.Load(options.IndexPath);
+
+    Console.WriteLine($"Relatório gerado em: {report.GeneratedUtc:u}");
+
+    if (report.Errors.Count == 0 && report.Duplicates.Count == 0)
+    {
+        Console.WriteLine("Nenhum erro ou duplicata na última indexação.");
+        return 0;
+    }
+
+    if (report.Errors.Count > 0)
+    {
+        Console.WriteLine($"Erros ({report.Errors.Count}):");
+        foreach (var error in report.Errors)
+        {
+            Console.WriteLine($"  - {error}");
+        }
+    }
+
+    if (report.Duplicates.Count > 0)
+    {
+        Console.WriteLine($"Duplicatas ({report.Duplicates.Count}):");
+        foreach (var dup in report.Duplicates)
+        {
+            Console.WriteLine($"  - {dup.Path}");
+            Console.WriteLine($"    (idêntico a {dup.DuplicateOfPath})");
+        }
     }
 
     return 0;
@@ -595,6 +690,9 @@ static int PrintUsage()
           questresume ask "<pergunta>" [--top-k N]
           questresume chat [--top-k N]
           questresume compare <arquivoA> <arquivoB> ["<pergunta>"]
+          questresume documents
+          questresume remove <caminho_do_arquivo>
+          questresume report
           questresume config show
           questresume config set-model <caminho.gguf>
           questresume config set-folder <pasta>

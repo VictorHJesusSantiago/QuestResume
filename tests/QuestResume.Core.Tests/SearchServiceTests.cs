@@ -112,6 +112,71 @@ public class SearchServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetIndexedFiles_ReturnsFileWithChunkCount()
+    {
+        var (folder, indexPath) = await CreateIndexedFolderAsync();
+
+        try
+        {
+            var search = new SearchService(indexPath);
+            var files = search.GetIndexedFiles();
+
+            var filePath = Path.Combine(folder, "doc.txt");
+            var file = Assert.Single(files);
+            Assert.Equal(filePath, file.SourcePath);
+            Assert.Equal("doc.txt", file.FileName);
+            Assert.True(file.ChunkCount > 0);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RemoveDocument_RemovesAllChunksForPath()
+    {
+        var (folder, indexPath) = await CreateIndexedFolderAsync();
+
+        try
+        {
+            var search = new SearchService(indexPath);
+            var filePath = Path.Combine(folder, "doc.txt");
+
+            var removed = search.RemoveDocument(filePath);
+
+            Assert.True(removed > 0);
+            Assert.Empty(search.GetChunksByPath(filePath));
+            Assert.Empty(search.GetIndexedFiles());
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RemoveDocument_UnknownPath_ReturnsZero()
+    {
+        var (folder, indexPath) = await CreateIndexedFolderAsync();
+
+        try
+        {
+            var search = new SearchService(indexPath);
+            var removed = search.RemoveDocument(Path.Combine(folder, "nao-existe.txt"));
+
+            Assert.Equal(0, removed);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
     private static async Task<(string Folder, string IndexPath)> CreateIndexedFolderAsync()
     {
         var folder = Path.Combine(Path.GetTempPath(), $"search-docs-{Guid.NewGuid()}");

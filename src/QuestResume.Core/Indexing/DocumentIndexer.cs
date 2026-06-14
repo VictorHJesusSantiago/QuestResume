@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
@@ -81,6 +82,10 @@ public sealed class DocumentIndexer
                 // commit per chunk, which dominates indexing time for large folders.
                 using var batch = _vectorStore?.BeginBatch();
 
+                // Maps content hash -> path of the first file with that content seen in this
+                // run, so byte-identical duplicates are detected and indexed only once.
+                var seenHashes = new Dictionary<string, string>();
+
                 foreach (var filePath in IODirectory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -95,6 +100,16 @@ public sealed class DocumentIndexer
 
                     try
                     {
+                        var hash = await ComputeFileHashAsync(filePath, cancellationToken).ConfigureAwait(false);
+                        if (seenHashes.TryGetValue(hash, out var originalPath))
+                        {
+                            stats.Duplicates.Add(new DuplicateFile { Path = filePath, DuplicateOfPath = originalPath });
+                            progress?.Report($"Duplicado (idêntico a {Path.GetFileName(originalPath)}): {filePath}");
+                            continue;
+                        }
+
+                        seenHashes[hash] = filePath;
+
                         var document = await _registry.ExtractAsync(filePath, cancellationToken).ConfigureAwait(false);
                         var chunks = TextChunker.CodeExtensions.Contains(extension)
                             ? TextChunker.ChunkCode(document, chunkSize, overlap)
@@ -143,7 +158,22 @@ public sealed class DocumentIndexer
             }
         }
 
+        new IndexReport
+        {
+            GeneratedUtc = DateTime.UtcNow,
+            Errors = stats.Errors,
+            Duplicates = stats.Duplicates
+        }.Save(indexPath);
+
         return stats;
+    }
+
+    /// <summary>Computes the SHA-256 hash of a file's contents, used to detect duplicate files.</summary>
+    private static async Task<string> ComputeFileHashAsync(string filePath, CancellationToken cancellationToken)
+    {
+        using var stream = File.OpenRead(filePath);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash);
     }
 
     /// <summary>

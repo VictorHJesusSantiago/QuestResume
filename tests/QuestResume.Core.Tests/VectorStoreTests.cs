@@ -31,6 +31,31 @@ public class VectorStoreTests
     }
 
     [Fact]
+    public void RemoveBySourcePath_RemovesOnlyMatchingChunks()
+    {
+        var indexPath = Path.Combine(Path.GetTempPath(), $"vectorstore-{Guid.NewGuid()}");
+
+        try
+        {
+            using var store = new VectorStore(indexPath);
+
+            store.Add("a.txt", "a.txt", 0, "chunk a", new float[] { 1f, 0f, 0f, 0f });
+            store.Add("b.txt", "b.txt", 0, "chunk b", new float[] { 0f, 1f, 0f, 0f });
+
+            store.RemoveBySourcePath("a.txt");
+
+            var results = store.Search(new float[] { 1f, 0f, 0f, 0f }, topK: 5);
+
+            var remaining = Assert.Single(results);
+            Assert.Equal("b.txt", remaining.FileName);
+        }
+        finally
+        {
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Clear_RemovesAllStoredEmbeddings()
     {
         var indexPath = Path.Combine(Path.GetTempPath(), $"vectorstore-{Guid.NewGuid()}");

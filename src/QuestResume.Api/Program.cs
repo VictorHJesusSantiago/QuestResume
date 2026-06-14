@@ -251,6 +251,46 @@ app.MapPost("/api/compare", async (
     }
 });
 
+app.MapGet("/api/documents", (ConfigService configService) =>
+{
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+    return Results.Ok(search.GetIndexedFiles());
+});
+
+app.MapDelete("/api/documents", (string path, ConfigService configService, RagEngineProvider engineProvider) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    }
+
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+    var removedChunks = search.RemoveDocument(path);
+
+    if (removedChunks == 0)
+    {
+        return Results.NotFound(new { error = $"Documento não encontrado no índice: {path}" });
+    }
+
+    if (options.EmbeddingsEnabled)
+    {
+        using var vectorStore = new VectorStore(options.IndexPath);
+        vectorStore.RemoveBySourcePath(path);
+    }
+
+    engineProvider.InvalidateVectorCache();
+
+    return Results.Ok(new { removedChunks });
+});
+
+app.MapGet("/api/index-report", (ConfigService configService) =>
+{
+    var options = configService.Load();
+    return Results.Ok(IndexReport.Load(options.IndexPath));
+});
+
 app.Run();
 
 static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFactory, string baseUrl)

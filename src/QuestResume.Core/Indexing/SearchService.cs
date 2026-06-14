@@ -96,6 +96,78 @@ public sealed class SearchService
         return results.OrderBy(r => r.ChunkIndex).ToList();
     }
 
+    /// <summary>
+    /// Lists every source file currently present in the index, with how many chunks each one
+    /// contributed. Used by the "Documentos" UI to show what's indexed and let the user remove
+    /// individual files.
+    /// </summary>
+    public IReadOnlyList<IndexedFileInfo> GetIndexedFiles()
+    {
+        if (!IndexExists())
+        {
+            return Array.Empty<IndexedFileInfo>();
+        }
+
+        using var directory = FSDirectory.Open(_indexPath);
+        using var reader = DirectoryReader.Open(directory);
+        var searcher = new IndexSearcher(reader);
+
+        var hits = searcher.Search(new MatchAllDocsQuery(), Math.Max(reader.MaxDoc, 1));
+
+        var files = new Dictionary<string, IndexedFileInfo>();
+        foreach (var scoreDoc in hits.ScoreDocs)
+        {
+            var doc = searcher.Doc(scoreDoc.Doc);
+            var path = doc.Get("path") ?? string.Empty;
+            if (string.IsNullOrEmpty(path))
+            {
+                continue;
+            }
+
+            if (!files.TryGetValue(path, out var info))
+            {
+                info = new IndexedFileInfo { SourcePath = path, FileName = doc.Get("fileName") ?? string.Empty };
+                files[path] = info;
+            }
+
+            info.ChunkCount++;
+        }
+
+        return files.Values.OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Removes every indexed chunk for <paramref name="sourcePath"/> in place (without
+    /// rebuilding the whole index). Returns the number of chunks removed (0 if the path wasn't
+    /// indexed).
+    /// </summary>
+    public int RemoveDocument(string sourcePath)
+    {
+        if (!IndexExists())
+        {
+            return 0;
+        }
+
+        var chunkCount = GetChunksByPath(sourcePath).Count;
+        if (chunkCount == 0)
+        {
+            return 0;
+        }
+
+        using var directory = FSDirectory.Open(_indexPath);
+        using var analyzer = new StandardAnalyzer(DocumentIndexer.MatchVersion);
+        var config = new IndexWriterConfig(DocumentIndexer.MatchVersion, analyzer)
+        {
+            OpenMode = OpenMode.APPEND
+        };
+
+        using var writer = new IndexWriter(directory, config);
+        writer.DeleteDocuments(new Term("path", sourcePath));
+        writer.Commit();
+
+        return chunkCount;
+    }
+
     public IReadOnlyList<SearchResultItem> Search(string queryText, int topK = 5, SearchFilters? filters = null)
     {
         if (string.IsNullOrWhiteSpace(queryText) || !IndexExists())
