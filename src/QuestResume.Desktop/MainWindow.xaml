@@ -135,8 +135,20 @@
                                                     </MultiBinding>
                                                 </TextBlock.Text>
                                             </TextBlock>
+                                            <Grid Margin="0,5,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox Grid.Column="0" Padding="4" FontSize="11" Margin="0,0,5,0"
+                                                         Text="{Binding TagsInput, UpdateSourceTrigger=PropertyChanged}"
+                                                         ToolTip="Tags separadas por vírgula"/>
+                                                <Button Grid.Column="1" Content="Salvar tags" Padding="8,3" FontSize="11"
+                                                        Command="{Binding DataContext.SaveTagsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Remover" Padding="10,4" VerticalAlignment="Center"
+                                        <Button Grid.Column="1" Content="Remover" Padding="10,4" VerticalAlignment="Center" Margin="10,0,0,0"
                                                 Command="{Binding DataContext.RemoveDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding SourcePath}"/>
                                     </Grid>

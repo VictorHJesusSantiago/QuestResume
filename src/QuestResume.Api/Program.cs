@@ -174,7 +174,7 @@ app.MapPost("/api/search", (SearchRequest request, ConfigService configService) 
         return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
     }
 
-    var filters = new SearchFilters(request.Extension, request.FolderPath);
+    var filters = new SearchFilters(request.Extension, request.FolderPath, request.Tag);
     var results = search.Search(request.Query, request.TopK ?? options.TopK, filters);
     return Results.Ok(results);
 });
@@ -291,6 +291,27 @@ app.MapGet("/api/index-report", (ConfigService configService) =>
     return Results.Ok(IndexReport.Load(options.IndexPath));
 });
 
+app.MapGet("/api/tags", (ConfigService configService) =>
+{
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+    return Results.Ok(search.GetAllTags());
+});
+
+app.MapPut("/api/documents/tags", (SetTagsRequest request, ConfigService configService) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Path))
+    {
+        return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    }
+
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+    search.SetTags(request.Path, request.Tags ?? new List<string>());
+
+    return Results.Ok(new { path = request.Path, tags = search.GetTags(request.Path) });
+});
+
 app.Run();
 
 static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFactory, string baseUrl)
@@ -310,7 +331,9 @@ static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFact
 
 internal sealed record IndexRequest(string? FolderPath);
 
-internal sealed record SearchRequest(string Query, int? TopK, string? Extension = null, string? FolderPath = null);
+internal sealed record SearchRequest(string Query, int? TopK, string? Extension = null, string? FolderPath = null, string? Tag = null);
+
+internal sealed record SetTagsRequest(string Path, List<string>? Tags);
 
 internal sealed record AskRequest(string Question, int? TopK, IReadOnlyList<ChatTurn>? History = null);
 

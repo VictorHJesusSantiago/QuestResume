@@ -94,7 +94,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ChatEntry> Messages { get; } = new();
 
-    public ObservableCollection<IndexedFileInfo> IndexedDocuments { get; } = new();
+    public ObservableCollection<IndexedDocumentViewModel> IndexedDocuments { get; } = new();
 
     public ObservableCollection<string> IndexErrors { get; } = new();
 
@@ -347,7 +347,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var search = new SearchService(IndexPath);
         foreach (var file in search.GetIndexedFiles())
         {
-            IndexedDocuments.Add(file);
+            IndexedDocuments.Add(new IndexedDocumentViewModel
+            {
+                SourcePath = file.SourcePath,
+                FileName = file.FileName,
+                ChunkCount = file.ChunkCount,
+                TagsInput = string.Join(", ", file.Tags)
+            });
         }
 
         var report = IndexReport.Load(IndexPath);
@@ -393,6 +399,27 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             StatusMessage = $"Erro ao remover documento: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Saves the comma-separated tags the user typed into <see cref="IndexedDocumentViewModel.TagsInput"/>
+    /// for the given document, normalizing the displayed value to match what was actually stored.
+    /// </summary>
+    [RelayCommand]
+    private void SaveTags(IndexedDocumentViewModel document)
+    {
+        try
+        {
+            var search = new SearchService(IndexPath);
+            var tags = document.TagsInput.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            search.SetTags(document.SourcePath, tags);
+            document.TagsInput = string.Join(", ", search.GetTags(document.SourcePath));
+            StatusMessage = $"Tags atualizadas: {document.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Erro ao salvar tags: {ex.Message}";
         }
     }
 

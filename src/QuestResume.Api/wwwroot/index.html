@@ -176,6 +176,11 @@
   }
   .doc-item:last-child { border-bottom: none; }
   .doc-item .meta { color: var(--muted); font-size: 0.8rem; }
+  .doc-item .info { flex: 1; min-width: 0; }
+  .tags-row { display: flex; gap: 0.4rem; margin-top: 0.35rem; align-items: center; }
+  .tags-row input[type="text"] { width: auto; flex: 1; font-size: 0.8rem; padding: 0.3rem 0.5rem; }
+  .tags-row button { font-size: 0.8rem; padding: 0.3rem 0.7rem; }
+  .tags-row .status-line { font-size: 0.75rem; margin: 0; }
   button.danger {
     background: transparent;
     border: 1px solid var(--error);
@@ -239,6 +244,11 @@
         <div class="field">
           <label for="searchFolderInput">Filtrar por pasta (opcional)</label>
           <input type="text" id="searchFolderInput" placeholder="C:\Users\voce\Documentos\Contratos" />
+        </div>
+        <div class="field">
+          <label for="searchTagInput">Filtrar por tag (opcional)</label>
+          <input type="text" id="searchTagInput" placeholder="ex.: contrato" list="availableTagsList" />
+          <datalist id="availableTagsList"></datalist>
         </div>
       </div>
       <div id="searchResults" style="margin-top: 1rem;"></div>
@@ -615,13 +625,15 @@ $('searchButton').addEventListener('click', async () => {
   try {
     const extension = $('searchExtInput').value.trim();
     const folderPath = $('searchFolderInput').value.trim();
+    const tag = $('searchTagInput').value.trim();
     const res = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query,
         extension: extension || null,
-        folderPath: folderPath || null
+        folderPath: folderPath || null,
+        tag: tag || null
       })
     });
     const data = await res.json();
@@ -703,12 +715,32 @@ async function loadDocuments() {
         item.className = 'doc-item';
 
         const info = document.createElement('div');
+        info.className = 'info';
         const name = document.createElement('div');
         name.textContent = doc.fileName;
         const meta = document.createElement('div');
         meta.className = 'meta';
         meta.textContent = `${doc.sourcePath} · ${doc.chunkCount} trecho(s)`;
         info.append(name, meta);
+
+        const tagsRow = document.createElement('div');
+        tagsRow.className = 'tags-row';
+
+        const tagsInput = document.createElement('input');
+        tagsInput.type = 'text';
+        tagsInput.placeholder = 'tags separadas por vírgula';
+        tagsInput.value = (doc.tags || []).join(', ');
+
+        const saveTagsButton = document.createElement('button');
+        saveTagsButton.textContent = 'Salvar tags';
+
+        const tagsStatus = document.createElement('span');
+        tagsStatus.className = 'status-line';
+
+        saveTagsButton.addEventListener('click', () => saveTags(doc.sourcePath, tagsInput, tagsStatus));
+
+        tagsRow.append(tagsInput, saveTagsButton, tagsStatus);
+        info.append(tagsRow);
 
         const removeButton = document.createElement('button');
         removeButton.className = 'danger';
@@ -728,6 +760,45 @@ async function loadDocuments() {
   }
 
   await loadIndexReport();
+  await loadAvailableTags();
+}
+
+async function saveTags(path, inputEl, statusEl) {
+  const tags = inputEl.value.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+  statusEl.textContent = 'Salvando...';
+  statusEl.className = 'status-line';
+  try {
+    const res = await fetch('/api/documents/tags', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, tags })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao salvar tags.');
+    inputEl.value = (data.tags || []).join(', ');
+    statusEl.textContent = 'Salvo.';
+    statusEl.className = 'status-line status-ok';
+    await loadAvailableTags();
+  } catch (err) {
+    statusEl.textContent = `Erro: ${err.message}`;
+    statusEl.className = 'status-line status-error';
+  }
+}
+
+async function loadAvailableTags() {
+  try {
+    const res = await fetch('/api/tags');
+    const tags = await res.json();
+    const listEl = $('availableTagsList');
+    listEl.replaceChildren();
+    for (const tag of tags) {
+      const option = document.createElement('option');
+      option.value = tag;
+      listEl.appendChild(option);
+    }
+  } catch {
+    // Tag suggestions are a nice-to-have; ignore failures.
+  }
 }
 
 async function loadIndexReport() {

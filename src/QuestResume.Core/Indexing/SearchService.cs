@@ -19,9 +19,13 @@ namespace QuestResume.Core.Indexing;
 /// <param name="FolderPath">
 /// Restricts results to files whose indexed path starts with this prefix.
 /// </param>
-public sealed record SearchFilters(string? Extension = null, string? FolderPath = null)
+/// <param name="Tag">
+/// Restricts results to files that have this user-assigned tag (see <see cref="TagStore"/>),
+/// case-insensitive. Applied as a post-filter since tags aren't stored in the Lucene index.
+/// </param>
+public sealed record SearchFilters(string? Extension = null, string? FolderPath = null, string? Tag = null)
 {
-    public bool HasAny => !string.IsNullOrWhiteSpace(Extension) || !string.IsNullOrWhiteSpace(FolderPath);
+    public bool HasAny => !string.IsNullOrWhiteSpace(Extension) || !string.IsNullOrWhiteSpace(FolderPath) || !string.IsNullOrWhiteSpace(Tag);
 }
 
 /// <summary>
@@ -30,6 +34,12 @@ public sealed record SearchFilters(string? Extension = null, string? FolderPath 
 /// </summary>
 public sealed class SearchService
 {
+    /// <summary>
+    /// When a tag filter is applied, fetch this many times <c>topK</c> BM25 candidates before
+    /// filtering by tag, since tags aren't stored in the Lucene index.
+    /// </summary>
+    private const int TagFilterCandidateMultiplier = 5;
+
     private readonly string _indexPath;
 
     public SearchService(string indexPath)
@@ -113,6 +123,7 @@ public sealed class SearchService
         var searcher = new IndexSearcher(reader);
 
         var hits = searcher.Search(new MatchAllDocsQuery(), Math.Max(reader.MaxDoc, 1));
+        var tagStore = TagStore.Load(_indexPath);
 
         var files = new Dictionary<string, IndexedFileInfo>();
         foreach (var scoreDoc in hits.ScoreDocs)
@@ -126,7 +137,12 @@ public sealed class SearchService
 
             if (!files.TryGetValue(path, out var info))
             {
-                info = new IndexedFileInfo { SourcePath = path, FileName = doc.Get("fileName") ?? string.Empty };
+                info = new IndexedFileInfo
+                {
+                    SourcePath = path,
+                    FileName = doc.Get("fileName") ?? string.Empty,
+                    Tags = tagStore.GetTags(path).ToList()
+                };
                 files[path] = info;
             }
 
@@ -135,6 +151,20 @@ public sealed class SearchService
 
         return files.Values.OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    /// <summary>Returns the tags currently assigned to <paramref name="sourcePath"/>.</summary>
+    public IReadOnlyList<string> GetTags(string sourcePath) => TagStore.Load(_indexPath).GetTags(sourcePath);
+
+    /// <summary>Replaces the tags assigned to <paramref name="sourcePath"/>.</summary>
+    public void SetTags(string sourcePath, IEnumerable<string> tags)
+    {
+        var store = TagStore.Load(_indexPath);
+        store.SetTags(sourcePath, tags);
+        store.Save(_indexPath);
+    }
+
+    /// <summary>Returns every distinct tag assigned to any document, for building filter UIs.</summary>
+    public IReadOnlyList<string> GetAllTags() => TagStore.Load(_indexPath).GetAllTags();
 
     /// <summary>
     /// Removes every indexed chunk for <paramref name="sourcePath"/> in place (without
@@ -188,7 +218,13 @@ public sealed class SearchService
         var contentQuery = parser.Parse(QueryParserBase.Escape(queryText));
         var query = ApplyFilters(contentQuery, filters);
 
-        var hits = searcher.Search(query, topK);
+        // Tags aren't stored in the Lucene index, so a tag filter is applied as a post-filter
+        // below. Fetch extra candidates up front so filtering down to topK doesn't starve
+        // results.
+        var hasTagFilter = !string.IsNullOrWhiteSpace(filters?.Tag);
+        var fetchCount = hasTagFilter ? Math.Min(topK * TagFilterCandidateMultiplier, Math.Max(reader.MaxDoc, 1)) : topK;
+
+        var hits = searcher.Search(query, fetchCount);
 
         var highlighter = new Highlighter(new SimpleHTMLFormatter("", ""), new QueryScorer(contentQuery))
         {
@@ -222,6 +258,15 @@ public sealed class SearchService
                 Score = scoreDoc.Score,
                 Highlight = highlight
             });
+        }
+
+        if (hasTagFilter)
+        {
+            var tagStore = TagStore.Load(_indexPath);
+            return results
+                .Where(r => tagStore.GetTags(r.SourcePath).Contains(filters!.Tag!, StringComparer.OrdinalIgnoreCase))
+                .Take(topK)
+                .ToList();
         }
 
         return results;

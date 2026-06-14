@@ -186,9 +186,18 @@ public sealed class DocumentIndexer
     {
         foreach (var file in IODirectory.GetFiles(indexPath))
         {
+            var fileName = Path.GetFileName(file);
+
             // Skip vectors.db and its WAL/SHM/journal side-files (e.g. "vectors.db-wal"),
             // which remain open via VectorStore's connection.
-            if (Path.GetFileName(file).StartsWith(VectorStore.DatabaseFileName, StringComparison.Ordinal))
+            if (fileName.StartsWith(VectorStore.DatabaseFileName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // User-assigned tags are keyed by source file path, not by index content, so they
+            // must survive a re-index.
+            if (fileName == TagStore.FileName)
             {
                 continue;
             }

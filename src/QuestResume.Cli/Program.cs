@@ -27,6 +27,7 @@ try
         "compare" => await RunCompareAsync(rest),
         "documents" => RunDocuments(rest),
         "remove" => RunRemove(rest),
+        "tag" => RunTag(rest),
         "report" or "errors" => RunReport(rest),
         "config" => RunConfig(rest),
         "help" or "-h" or "--help" => PrintUsage(),
@@ -115,7 +116,7 @@ int RunSearch(string[] cmdArgs)
         return 1;
     }
 
-    var filters = new SearchFilters(GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"));
+    var filters = new SearchFilters(GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"), GetFlagValue(cmdArgs, "--tag"));
     var results = search.Search(query, topK, filters);
     if (results.Count == 0)
     {
@@ -317,8 +318,45 @@ int RunDocuments(string[] cmdArgs)
     {
         Console.WriteLine($"{file.FileName} ({file.ChunkCount} trecho(s))");
         Console.WriteLine($"    {file.SourcePath}");
+        if (file.Tags.Count > 0)
+        {
+            Console.WriteLine($"    Tags: {string.Join(", ", file.Tags)}");
+        }
     }
 
+    return 0;
+}
+
+int RunTag(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var path = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        Console.Error.WriteLine("Uso: questresume tag <caminho_do_arquivo> [tag1 tag2 ...]");
+        return 1;
+    }
+
+    var search = new SearchService(options.IndexPath);
+
+    if (positional.Length == 1)
+    {
+        var tags = search.GetTags(path);
+        Console.WriteLine(tags.Count == 0
+            ? $"Nenhuma tag definida para: {path}"
+            : $"Tags de {path}: {string.Join(", ", tags)}");
+        return 0;
+    }
+
+    var newTags = positional.Skip(1).ToArray();
+    search.SetTags(path, newTags);
+
+    var saved = search.GetTags(path);
+    Console.WriteLine(saved.Count == 0
+        ? $"Tags removidas de: {path}"
+        : $"Tags de {path} definidas para: {string.Join(", ", saved)}");
     return 0;
 }
 
@@ -686,12 +724,13 @@ static int PrintUsage()
 
         Uso:
           questresume index <pasta> [--index-path <pasta_indice>]
-          questresume search "<termo>" [--top-k N] [--ext <extensão>] [--folder <pasta>]
+          questresume search "<termo>" [--top-k N] [--ext <extensão>] [--folder <pasta>] [--tag <tag>]
           questresume ask "<pergunta>" [--top-k N]
           questresume chat [--top-k N]
           questresume compare <arquivoA> <arquivoB> ["<pergunta>"]
           questresume documents
           questresume remove <caminho_do_arquivo>
+          questresume tag <caminho_do_arquivo> [tag1 tag2 ...]
           questresume report
           questresume config show
           questresume config set-model <caminho.gguf>
