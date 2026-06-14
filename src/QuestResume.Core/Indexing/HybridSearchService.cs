@@ -11,21 +11,32 @@ namespace QuestResume.Core.Indexing;
 /// </summary>
 public sealed class HybridSearchService
 {
+    /// <summary>
+    /// When a cross-encoder is configured, how many times <paramref name="topK"/> candidates to
+    /// retrieve from BM25/vector search before re-ranking and trimming back down to
+    /// <paramref name="topK"/> — gives the cross-encoder a wider pool to pick the best matches
+    /// from than the raw BM25/vector ranking alone.
+    /// </summary>
+    private const int RerankCandidateMultiplier = 4;
+
     private readonly SearchService _searchService;
     private readonly VectorStore? _vectorStore;
     private readonly EmbeddingService? _embeddingService;
     private readonly double _bm25Weight;
+    private readonly CrossEncoderService? _crossEncoder;
 
     public HybridSearchService(
         SearchService searchService,
         VectorStore? vectorStore = null,
         EmbeddingService? embeddingService = null,
-        double bm25Weight = 0.5)
+        double bm25Weight = 0.5,
+        CrossEncoderService? crossEncoder = null)
     {
         _searchService = searchService;
         _vectorStore = vectorStore;
         _embeddingService = embeddingService;
         _bm25Weight = bm25Weight;
+        _crossEncoder = crossEncoder;
     }
 
     /// <summary>
@@ -38,25 +49,67 @@ public sealed class HybridSearchService
 
     public async Task<IReadOnlyList<SearchResultItem>> SearchAsync(string queryText, int topK, CancellationToken cancellationToken = default)
     {
-        var bm25Results = _searchService.Search(queryText, topK);
+        var candidateK = _crossEncoder is not null ? topK * RerankCandidateMultiplier : topK;
 
+        var bm25Results = _searchService.Search(queryText, candidateK);
+
+        IReadOnlyList<SearchResultItem> combined;
         if (_vectorStore is null || _embeddingService is null)
         {
-            return bm25Results;
+            combined = bm25Results;
+        }
+        else
+        {
+            IReadOnlyList<SearchResultItem> vectorResults;
+            try
+            {
+                var queryEmbedding = await _embeddingService.EmbedAsync(queryText, cancellationToken).ConfigureAwait(false);
+                vectorResults = _vectorStore.Search(queryEmbedding, candidateK);
+                combined = Combine(bm25Results, vectorResults, candidateK);
+            }
+            catch (EmbeddingsNotConfiguredException)
+            {
+                combined = bm25Results;
+            }
         }
 
-        IReadOnlyList<SearchResultItem> vectorResults;
+        return await ApplyRerankingAsync(queryText, combined, topK, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Re-scores each of <paramref name="candidates"/> against <paramref name="queryText"/>
+    /// using the configured <see cref="CrossEncoderService"/> and returns the top
+    /// <paramref name="topK"/> by that score. Falls back to the existing BM25/vector ordering
+    /// (just trimmed to <paramref name="topK"/>) when no cross-encoder is configured, or if it
+    /// isn't usable at query time.
+    /// </summary>
+    private async Task<IReadOnlyList<SearchResultItem>> ApplyRerankingAsync(
+        string queryText, IReadOnlyList<SearchResultItem> candidates, int topK, CancellationToken cancellationToken)
+    {
+        if (_crossEncoder is null || candidates.Count == 0)
+        {
+            return candidates.Take(topK).ToList();
+        }
+
         try
         {
-            var queryEmbedding = await _embeddingService.EmbedAsync(queryText, cancellationToken).ConfigureAwait(false);
-            vectorResults = _vectorStore.Search(queryEmbedding, topK);
-        }
-        catch (EmbeddingsNotConfiguredException)
-        {
-            return bm25Results;
-        }
+            var scored = new List<(SearchResultItem Item, float Score)>(candidates.Count);
+            foreach (var item in candidates)
+            {
+                var score = await _crossEncoder.ScoreAsync(queryText, item.ChunkText, cancellationToken).ConfigureAwait(false);
+                scored.Add((item, score));
+            }
 
-        return Combine(bm25Results, vectorResults, topK);
+            return scored
+                .OrderByDescending(s => s.Score)
+                .Take(topK)
+                .Select(s => s.Item)
+                .ToList();
+        }
+        catch (RerankingNotConfiguredException)
+        {
+            return candidates.Take(topK).ToList();
+        }
     }
 
     private IReadOnlyList<SearchResultItem> Combine(

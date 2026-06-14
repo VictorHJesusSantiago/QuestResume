@@ -22,7 +22,10 @@ public sealed record RagEngineKey(
     bool EmbeddingsEnabled,
     string EmbeddingModelPath,
     string EmbeddingTokenizerPath,
-    double HybridBm25Weight)
+    double HybridBm25Weight,
+    bool RerankingEnabled,
+    string RerankingModelPath,
+    string RerankingTokenizerPath)
 {
     public static RagEngineKey From(AppOptions options, int? topK = null) => new(
         options.ModelPath,
@@ -35,7 +38,10 @@ public sealed record RagEngineKey(
         options.EmbeddingsEnabled,
         options.EmbeddingModelPath,
         options.EmbeddingTokenizerPath,
-        options.HybridBm25Weight);
+        options.HybridBm25Weight,
+        options.RerankingEnabled,
+        options.RerankingModelPath,
+        options.RerankingTokenizerPath);
 }
 
 /// <summary>
@@ -61,6 +67,12 @@ public static class RagQueryEngineFactory
             embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
         }
 
+        CrossEncoderService? crossEncoderService = null;
+        if (options.RerankingEnabled)
+        {
+            crossEncoderService = new CrossEncoderService(options.RerankingModelPath, options.RerankingTokenizerPath);
+        }
+
         return new RagQueryEngine(
             search,
             options.ModelPath,
@@ -72,6 +84,7 @@ public static class RagQueryEngineFactory
             httpClient: httpClient,
             vectorStore: vectorStore,
             embeddingService: embeddingService,
-            hybridBm25Weight: options.HybridBm25Weight);
+            hybridBm25Weight: options.HybridBm25Weight,
+            crossEncoderService: crossEncoderService);
     }
 }

@@ -22,6 +22,7 @@ public sealed class RagQueryEngine : IDisposable
     private readonly HttpClient? _httpClient;
     private readonly VectorStore? _vectorStore;
     private readonly EmbeddingService? _embeddingService;
+    private readonly CrossEncoderService? _crossEncoderService;
 
     /// <summary>
     /// Guards the lazy initialization of <see cref="_llm"/>. This engine can be shared (e.g.
@@ -45,9 +46,10 @@ public sealed class RagQueryEngine : IDisposable
         HttpClient? httpClient = null,
         VectorStore? vectorStore = null,
         EmbeddingService? embeddingService = null,
-        double hybridBm25Weight = 0.5)
+        double hybridBm25Weight = 0.5,
+        CrossEncoderService? crossEncoderService = null)
     {
-        _searchService = new HybridSearchService(searchService, vectorStore, embeddingService, hybridBm25Weight);
+        _searchService = new HybridSearchService(searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService);
         _modelPath = modelPath;
         _contextSize = contextSize;
         _defaultTopK = defaultTopK;
@@ -57,6 +59,7 @@ public sealed class RagQueryEngine : IDisposable
         _httpClient = httpClient;
         _vectorStore = vectorStore;
         _embeddingService = embeddingService;
+        _crossEncoderService = crossEncoderService;
     }
 
     /// <summary>
@@ -282,6 +285,7 @@ public sealed class RagQueryEngine : IDisposable
     {
         _llm?.Dispose();
         _embeddingService?.Dispose();
+        _crossEncoderService?.Dispose();
         _vectorStore?.Dispose();
         _llmInitLock.Dispose();
     }
