@@ -148,7 +148,7 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         return 1;
     }
 
-    using var engine = CreateEngine(search, options, topK);
+    using var engine = RagQueryEngineFactory.Create(options, topK);
 
     try
     {
@@ -192,7 +192,7 @@ async Task<int> RunChatAsync(string[] cmdArgs)
         return 1;
     }
 
-    using var engine = CreateEngine(search, options, topK);
+    using var engine = RagQueryEngineFactory.Create(options, topK);
 
     Console.WriteLine("Modo chat. Digite 'sair' para encerrar.");
     while (true)
@@ -233,33 +233,6 @@ async Task<int> RunChatAsync(string[] cmdArgs)
     }
 
     return 0;
-}
-
-static RagQueryEngine CreateEngine(SearchService search, AppOptions options, int topK)
-{
-    var providerKind = Enum.TryParse<LlmProviderKind>(options.LlmProvider, ignoreCase: true, out var kind)
-        ? kind
-        : LlmProviderKind.LlamaSharp;
-
-    VectorStore? vectorStore = null;
-    EmbeddingService? embeddingService = null;
-    if (options.EmbeddingsEnabled)
-    {
-        vectorStore = new VectorStore(options.IndexPath);
-        embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
-    }
-
-    return new RagQueryEngine(
-        search,
-        options.ModelPath,
-        options.ContextSize,
-        topK,
-        providerKind,
-        options.OllamaBaseUrl,
-        options.OllamaModel,
-        vectorStore: vectorStore,
-        embeddingService: embeddingService,
-        hybridBm25Weight: options.HybridBm25Weight);
 }
 
 int RunConfig(string[] cmdArgs)

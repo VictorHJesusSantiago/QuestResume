@@ -483,7 +483,8 @@ $('questionInput').addEventListener('keydown', (e) => {
 $('searchButton').addEventListener('click', async () => {
   const query = $('searchInput').value.trim();
   if (!query) return;
-  $('searchResults').innerHTML = 'Buscando...';
+  const resultsEl = $('searchResults');
+  resultsEl.textContent = 'Buscando...';
   try {
     const res = await fetch('/api/search', {
       method: 'POST',
@@ -492,19 +493,50 @@ $('searchButton').addEventListener('click', async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha na busca.');
+
+    resultsEl.replaceChildren();
     if (!data.length) {
-      $('searchResults').innerHTML = '<p>Nenhum resultado encontrado.</p>';
+      const empty = document.createElement('p');
+      empty.textContent = 'Nenhum resultado encontrado.';
+      resultsEl.appendChild(empty);
       return;
     }
-    $('searchResults').innerHTML = data.map(r => `
-      <div class="result-item">
-        <div class="meta">${r.fileName} <span class="badge">trecho ${r.chunkIndex}</span> <span class="badge">score ${r.score.toFixed(2)}</span></div>
-        <div>${r.chunkText.replace(/</g, '&lt;')}</div>
-        <div class="meta">${r.sourcePath}</div>
-      </div>
-    `).join('');
+
+    // Built via textContent/createElement (not innerHTML), since fileName/chunkText/sourcePath
+    // come from the user's indexed documents and could otherwise inject markup/scripts.
+    for (const r of data) {
+      const item = document.createElement('div');
+      item.className = 'result-item';
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+
+      const chunkBadge = document.createElement('span');
+      chunkBadge.className = 'badge';
+      chunkBadge.textContent = `trecho ${r.chunkIndex}`;
+
+      const scoreBadge = document.createElement('span');
+      scoreBadge.className = 'badge';
+      scoreBadge.textContent = `score ${r.score.toFixed(2)}`;
+
+      meta.append(`${r.fileName} `, chunkBadge, ' ', scoreBadge);
+
+      const text = document.createElement('div');
+      text.textContent = r.chunkText;
+
+      const source = document.createElement('div');
+      source.className = 'meta';
+      source.textContent = r.sourcePath;
+
+      item.append(meta, text, source);
+      resultsEl.appendChild(item);
+    }
   } catch (err) {
-    $('searchResults').innerHTML = `<p class="status-error">Erro: ${err.message}</p>`;
+    resultsEl.replaceChildren();
+    const error = document.createElement('p');
+    error.className = 'status-error';
+    error.textContent = `Erro: ${err.message}`;
+    resultsEl.appendChild(error);
   }
 });
 

@@ -30,6 +30,12 @@ public sealed class ConfigService
         return Path.Combine(baseDir, "QuestResume", "index");
     }
 
+    /// <summary>
+    /// Loads <see cref="AppOptions"/> from <see cref="ConfigPath"/>. If the file is missing,
+    /// empty, or contains invalid JSON (e.g. truncated by a crash mid-write), falls back to
+    /// default options instead of throwing — the shared config file is read by three
+    /// independent front-ends, so a transient corruption in one must not crash the others.
+    /// </summary>
     public AppOptions Load()
     {
         if (!File.Exists(ConfigPath))
@@ -37,8 +43,17 @@ public sealed class ConfigService
             return new AppOptions { IndexPath = GetDefaultIndexPath() };
         }
 
-        var json = File.ReadAllText(ConfigPath);
-        var options = JsonSerializer.Deserialize<AppOptions>(json);
+        AppOptions? options;
+        try
+        {
+            var json = File.ReadAllText(ConfigPath);
+            options = JsonSerializer.Deserialize<AppOptions>(json);
+        }
+        catch (JsonException)
+        {
+            return new AppOptions { IndexPath = GetDefaultIndexPath() };
+        }
+
         if (options is null)
         {
             return new AppOptions { IndexPath = GetDefaultIndexPath() };
@@ -52,8 +67,16 @@ public sealed class ConfigService
         return options;
     }
 
+    /// <summary>
+    /// Validates and persists <paramref name="options"/> to <see cref="ConfigPath"/>.
+    /// The write is performed via a temp file + atomic <see cref="File.Move"/> so a crash
+    /// mid-write can never leave the shared config file truncated/corrupted.
+    /// </summary>
+    /// <exception cref="AppOptionsValidationException">When <paramref name="options"/> has an invalid combination of values.</exception>
     public void Save(AppOptions options)
     {
+        options.Validate();
+
         var directory = Path.GetDirectoryName(ConfigPath);
         if (!string.IsNullOrEmpty(directory))
         {
@@ -61,6 +84,8 @@ public sealed class ConfigService
         }
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
-        File.WriteAllText(ConfigPath, json);
+        var tempPath = ConfigPath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, ConfigPath, overwrite: true);
     }
 }

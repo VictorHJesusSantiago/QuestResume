@@ -1,88 +1,74 @@
 using QuestResume.Core.Configuration;
-using QuestResume.Core.Embeddings;
-using QuestResume.Core.Indexing;
+using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
 
 namespace QuestResume.Api.Services;
 
 /// <summary>
 /// Keeps a single <see cref="RagQueryEngine"/> (and the GGUF model it loads) alive across
-/// requests, recreating it only when the configured model or index path changes.
-/// Loading a multi-gigabyte model on every request would be far too slow.
+/// requests, recreating it only when the configuration captured by <see cref="RagEngineKey"/>
+/// changes. Loading a multi-gigabyte model on every request would be far too slow.
 /// </summary>
 public sealed class RagEngineProvider : IDisposable
 {
     private readonly object _lock = new();
+
+    /// <summary>
+    /// Serializes <see cref="RagQueryEngine.AskAsync"/> calls: a single LLamaSharp
+    /// <c>StatelessExecutor</c>/model context is not safe for concurrent inference, so
+    /// overlapping <c>/api/ask</c> requests must queue rather than race on the same model.
+    /// </summary>
+    private readonly SemaphoreSlim _askSemaphore = new(1, 1);
+
     private RagQueryEngine? _engine;
-    private string? _loadedModelPath;
-    private string? _loadedIndexPath;
-    private string? _loadedLlmProvider;
-    private string? _loadedOllamaBaseUrl;
-    private string? _loadedOllamaModel;
-    private bool _loadedEmbeddingsEnabled;
-    private string? _loadedEmbeddingModelPath;
-    private string? _loadedEmbeddingTokenizerPath;
-    private double _loadedHybridBm25Weight;
+    private RagEngineKey? _loadedKey;
 
     public RagQueryEngine GetEngine(AppOptions options)
     {
         lock (_lock)
         {
-            if (_engine is null
-                || _loadedModelPath != options.ModelPath
-                || _loadedIndexPath != options.IndexPath
-                || _loadedLlmProvider != options.LlmProvider
-                || _loadedOllamaBaseUrl != options.OllamaBaseUrl
-                || _loadedOllamaModel != options.OllamaModel
-                || _loadedEmbeddingsEnabled != options.EmbeddingsEnabled
-                || _loadedEmbeddingModelPath != options.EmbeddingModelPath
-                || _loadedEmbeddingTokenizerPath != options.EmbeddingTokenizerPath
-                || _loadedHybridBm25Weight != options.HybridBm25Weight)
+            var key = RagEngineKey.From(options);
+            if (_engine is null || _loadedKey != key)
             {
                 _engine?.Dispose();
-
-                var search = new SearchService(options.IndexPath);
-                var providerKind = Enum.TryParse<LlmProviderKind>(options.LlmProvider, ignoreCase: true, out var kind)
-                    ? kind
-                    : LlmProviderKind.LlamaSharp;
-
-                VectorStore? vectorStore = null;
-                EmbeddingService? embeddingService = null;
-                if (options.EmbeddingsEnabled)
-                {
-                    vectorStore = new VectorStore(options.IndexPath);
-                    embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
-                }
-
-                _engine = new RagQueryEngine(
-                    search,
-                    options.ModelPath,
-                    options.ContextSize,
-                    options.TopK,
-                    providerKind,
-                    options.OllamaBaseUrl,
-                    options.OllamaModel,
-                    vectorStore: vectorStore,
-                    embeddingService: embeddingService,
-                    hybridBm25Weight: options.HybridBm25Weight);
-
-                _loadedModelPath = options.ModelPath;
-                _loadedIndexPath = options.IndexPath;
-                _loadedLlmProvider = options.LlmProvider;
-                _loadedOllamaBaseUrl = options.OllamaBaseUrl;
-                _loadedOllamaModel = options.OllamaModel;
-                _loadedEmbeddingsEnabled = options.EmbeddingsEnabled;
-                _loadedEmbeddingModelPath = options.EmbeddingModelPath;
-                _loadedEmbeddingTokenizerPath = options.EmbeddingTokenizerPath;
-                _loadedHybridBm25Weight = options.HybridBm25Weight;
+                _engine = RagQueryEngineFactory.Create(options);
+                _loadedKey = key;
             }
 
             return _engine;
         }
     }
 
+    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await engine.AskAsync(question, topK, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Drops the cached engine's vector-search cache after a re-index, so <c>/api/ask</c>
+    /// immediately reflects newly indexed embeddings instead of a stale pre-reindex snapshot.
+    /// </summary>
+    public void InvalidateVectorCache()
+    {
+        lock (_lock)
+        {
+            _engine?.InvalidateVectorCache();
+        }
+    }
+
     public void Dispose()
     {
         _engine?.Dispose();
+        _askSemaphore.Dispose();
     }
 }

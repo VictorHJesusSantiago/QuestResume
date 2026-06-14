@@ -13,6 +13,53 @@ builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
+// Translates AppOptionsValidationException from ConfigService.Save (PUT /api/config) into a
+// 400 response instead of an unhandled-exception 500, and ensures any other unexpected error
+// is logged with the request path before falling through to the default error handler.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (AppOptionsValidationException ex)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { error = ex.Message });
+    }
+    catch (OperationCanceledException)
+    {
+        // Client disconnected/cancelled the request — not an application error.
+        throw;
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Erro não tratado em {Path}", context.Request.Path);
+        throw;
+    }
+});
+
+// Optional shared-secret auth for the HTTP API: set QUESTRESUME_API_KEY to require an
+// "X-Api-Key" header on every /api/* request. Left unset (the default for local single-user
+// use), the API remains open exactly as before.
+var apiKey = Environment.GetEnvironmentVariable("QUESTRESUME_API_KEY");
+if (!string.IsNullOrWhiteSpace(apiKey))
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api")
+            && !string.Equals(context.Request.Headers["X-Api-Key"], apiKey, StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { error = "API key inválida ou ausente." });
+            return;
+        }
+
+        await next();
+    });
+}
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -58,7 +105,12 @@ app.MapPut("/api/config", (AppOptions options, ConfigService configService) =>
     return Results.Ok(options);
 });
 
-app.MapPost("/api/index", async (IndexRequest? request, ConfigService configService) =>
+app.MapPost("/api/index", async (
+    IndexRequest? request,
+    ConfigService configService,
+    RagEngineProvider engineProvider,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
 {
     var options = configService.Load();
     var folder = string.IsNullOrWhiteSpace(request?.FolderPath) ? options.DocumentsFolder : request.FolderPath;
@@ -87,10 +139,20 @@ app.MapPost("/api/index", async (IndexRequest? request, ConfigService configServ
     using (vectorStore)
     {
         var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
-        var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap);
+
+        logger.LogInformation("Iniciando indexação de '{Folder}' em '{IndexPath}'", folder, options.IndexPath);
+        var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap, cancellationToken: cancellationToken);
+        logger.LogInformation(
+            "Indexação concluída: {FilesProcessed} arquivo(s), {ChunksIndexed} trecho(s), {Errors} erro(s)",
+            stats.FilesProcessed, stats.ChunksIndexed, stats.Errors.Count);
 
         options.DocumentsFolder = folder;
         configService.Save(options);
+
+        // The vectorStore opened above is a different instance than the one inside the cached
+        // engine — without this, /api/ask would keep serving the pre-reindex snapshot until
+        // the engine is rebuilt for an unrelated config change.
+        engineProvider.InvalidateVectorCache();
 
         return Results.Ok(stats);
     }
@@ -115,7 +177,11 @@ app.MapPost("/api/search", (SearchRequest request, ConfigService configService) 
     return Results.Ok(results);
 });
 
-app.MapPost("/api/ask", async (AskRequest request, ConfigService configService, RagEngineProvider engineProvider) =>
+app.MapPost("/api/ask", async (
+    AskRequest request,
+    ConfigService configService,
+    RagEngineProvider engineProvider,
+    CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.Question))
     {
@@ -132,8 +198,7 @@ app.MapPost("/api/ask", async (AskRequest request, ConfigService configService, 
 
     try
     {
-        var engine = engineProvider.GetEngine(options);
-        var result = await engine.AskAsync(request.Question, request.TopK ?? options.TopK);
+        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, cancellationToken);
         return Results.Ok(result);
     }
     catch (ModelNotConfiguredException ex)

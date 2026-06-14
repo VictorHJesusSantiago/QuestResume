@@ -12,8 +12,18 @@ namespace QuestResume.Core.Embeddings;
 /// </summary>
 public sealed class EmbeddingService : IDisposable
 {
+    /// <summary>
+    /// Max input sequence length accepted by typical BERT-family encoders
+    /// (<c>max_position_embeddings</c>). Longer chunks are truncated before being sent to the
+    /// ONNX model — without this, a chunk tokenizing past this length can make
+    /// <see cref="InferenceSession.Run"/> throw on a shape mismatch, aborting the whole file
+    /// being indexed.
+    /// </summary>
+    private const int MaxSequenceLength = 512;
+
     private readonly string _modelPath;
     private readonly string _vocabPath;
+    private readonly object _initLock = new();
 
     private InferenceSession? _session;
     private BertTokenizer? _tokenizer;
@@ -36,6 +46,11 @@ public sealed class EmbeddingService : IDisposable
         EnsureInitialized();
 
         var tokenIds = _tokenizer!.EncodeToIds(text, true, true);
+        if (tokenIds.Count > MaxSequenceLength)
+        {
+            tokenIds = tokenIds.Take(MaxSequenceLength).ToList();
+        }
+
         var inputIds = new long[tokenIds.Count];
         var attentionMask = new long[tokenIds.Count];
         for (var i = 0; i < tokenIds.Count; i++)
@@ -103,6 +118,12 @@ public sealed class EmbeddingService : IDisposable
         return embedding;
     }
 
+    /// <summary>
+    /// Lazily loads the ONNX session and tokenizer. Guarded by <see cref="_initLock"/> because
+    /// this <see cref="EmbeddingService"/> instance can be shared (via a singleton RAG engine)
+    /// across concurrent requests — without the lock, two threads racing through the
+    /// uninitialized check could both construct an <see cref="InferenceSession"/>, leaking one.
+    /// </summary>
     private void EnsureInitialized()
     {
         if (_session is not null && _tokenizer is not null)
@@ -110,30 +131,38 @@ public sealed class EmbeddingService : IDisposable
             return;
         }
 
-        if (_initAttempted)
+        lock (_initLock)
         {
-            throw new EmbeddingsNotConfiguredException(_modelPath, _vocabPath);
-        }
+            if (_session is not null && _tokenizer is not null)
+            {
+                return;
+            }
 
-        _initAttempted = true;
+            if (_initAttempted)
+            {
+                throw new EmbeddingsNotConfiguredException(_modelPath, _vocabPath);
+            }
 
-        if (string.IsNullOrWhiteSpace(_modelPath) || !File.Exists(_modelPath)
-            || string.IsNullOrWhiteSpace(_vocabPath) || !File.Exists(_vocabPath))
-        {
-            throw new EmbeddingsNotConfiguredException(_modelPath, _vocabPath);
-        }
+            _initAttempted = true;
 
-        try
-        {
-            _session = new InferenceSession(_modelPath);
-            _tokenizer = BertTokenizer.Create(_vocabPath, new BertOptions());
-        }
-        catch (Exception ex)
-        {
-            _session?.Dispose();
-            _session = null;
-            _tokenizer = null;
-            throw new EmbeddingsNotConfiguredException(_modelPath, _vocabPath, ex);
+            if (string.IsNullOrWhiteSpace(_modelPath) || !File.Exists(_modelPath)
+                || string.IsNullOrWhiteSpace(_vocabPath) || !File.Exists(_vocabPath))
+            {
+                throw new EmbeddingsNotConfiguredException(_modelPath, _vocabPath);
+            }
+
+            try
+            {
+                _session = new InferenceSession(_modelPath);
+                _tokenizer = BertTokenizer.Create(_vocabPath, new BertOptions());
+            }
+            catch (Exception ex)
+            {
+                _session?.Dispose();
+                _session = null;
+                _tokenizer = null;
+                throw new EmbeddingsNotConfiguredException(_modelPath, _vocabPath, ex);
+            }
         }
     }
 

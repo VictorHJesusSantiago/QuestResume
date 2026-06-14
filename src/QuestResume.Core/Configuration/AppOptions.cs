@@ -70,4 +70,45 @@ public sealed class AppOptions
 
     /// <summary>Caminho do modelo Whisper (.bin, formato ggml).</summary>
     public string WhisperModelPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
+    /// menor que <see cref="ChunkSize"/>), evitando que uma configuração inválida só seja
+    /// detectada arquivo a arquivo durante <c>DocumentIndexer.IndexFolderAsync</c>.
+    /// </summary>
+    /// <exception cref="AppOptionsValidationException">Quando algum valor é inválido.</exception>
+    public void Validate()
+    {
+        if (ChunkSize <= 0)
+        {
+            throw new AppOptionsValidationException("ChunkSize deve ser maior que zero.");
+        }
+
+        if (ChunkOverlap < 0 || ChunkOverlap >= ChunkSize)
+        {
+            throw new AppOptionsValidationException(
+                $"ChunkOverlap ({ChunkOverlap}) deve estar entre 0 e ChunkSize - 1 ({ChunkSize - 1}).");
+        }
+
+        if (TopK <= 0)
+        {
+            throw new AppOptionsValidationException("TopK deve ser maior que zero.");
+        }
+
+        if (ContextSize <= 0)
+        {
+            throw new AppOptionsValidationException("ContextSize deve ser maior que zero.");
+        }
+
+        if (HybridBm25Weight < 0 || HybridBm25Weight > 1)
+        {
+            throw new AppOptionsValidationException("HybridBm25Weight deve estar entre 0 e 1.");
+        }
+
+        if (!Enum.TryParse<Rag.LlmProviderKind>(LlmProvider, ignoreCase: true, out _))
+        {
+            throw new AppOptionsValidationException(
+                $"LlmProvider '{LlmProvider}' é inválido. Valores aceitos: LlamaSharp, Ollama.");
+        }
+    }
 }
