@@ -71,6 +71,17 @@ public sealed class AppOptions
     /// <summary>Caminho do modelo Whisper (.bin, formato ggml).</summary>
     public string WhisperModelPath { get; set; } = string.Empty;
 
+    // --- Re-ranking (cross-encoder) ---
+
+    /// <summary>Habilita re-ranking dos resultados da busca híbrida com um modelo cross-encoder.</summary>
+    public bool RerankingEnabled { get; set; } = false;
+
+    /// <summary>Caminho do modelo de re-ranking (cross-encoder) no formato ONNX.</summary>
+    public string RerankingModelPath { get; set; } = string.Empty;
+
+    /// <summary>Caminho do vocabulário (vocab.txt) do tokenizer do modelo de re-ranking.</summary>
+    public string RerankingTokenizerPath { get; set; } = string.Empty;
+
     /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
     /// menor que <see cref="ChunkSize"/>), evitando que uma configuração inválida só seja

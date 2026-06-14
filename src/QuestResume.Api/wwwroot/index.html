@@ -136,6 +136,11 @@
     font-size: 0.8rem;
     color: var(--muted);
   }
+  .msg .sources a {
+    color: #6ea8fe;
+    text-decoration: underline;
+    margin: 0 0.15rem;
+  }
   .ask-row { display: flex; gap: 0.5rem; }
   .ask-row input { flex: 1; }
   .result-item {
@@ -291,6 +296,24 @@
 
       <div class="field">
         <label>
+          <input type="checkbox" id="rerankingEnabledInput" style="width: auto; margin-right: 0.4rem;" />
+          Habilitar re-ranking dos resultados com modelo cross-encoder
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="rerankingModelPathInput">Modelo de re-ranking (.onnx)</label>
+          <input type="text" id="rerankingModelPathInput" placeholder="C:\Modelos\reranking\model.onnx" />
+        </div>
+        <div class="field">
+          <label for="rerankingTokenizerPathInput">Vocabulário do tokenizer (vocab.txt)</label>
+          <input type="text" id="rerankingTokenizerPathInput" placeholder="C:\Modelos\reranking\vocab.txt" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>
           <input type="checkbox" id="sttEnabledInput" style="width: auto; margin-right: 0.4rem;" />
           Habilitar transcrição de áudio (.wav 16kHz mono) via Whisper
         </label>
@@ -375,6 +398,9 @@ async function loadConfig() {
   $('embeddingModelPathInput').value = config.embeddingModelPath || '';
   $('embeddingTokenizerPathInput').value = config.embeddingTokenizerPath || '';
   $('hybridBm25WeightInput').value = config.hybridBm25Weight ?? 0.5;
+  $('rerankingEnabledInput').checked = !!config.rerankingEnabled;
+  $('rerankingModelPathInput').value = config.rerankingModelPath || '';
+  $('rerankingTokenizerPathInput').value = config.rerankingTokenizerPath || '';
   $('sttEnabledInput').checked = !!config.sttEnabled;
   $('whisperModelPathInput').value = config.whisperModelPath || '';
 }
@@ -401,6 +427,9 @@ $('saveConfigButton').addEventListener('click', async () => {
       embeddingModelPath: $('embeddingModelPathInput').value,
       embeddingTokenizerPath: $('embeddingTokenizerPathInput').value,
       hybridBm25Weight: parseFloat($('hybridBm25WeightInput').value) || 0.5,
+      rerankingEnabled: $('rerankingEnabledInput').checked,
+      rerankingModelPath: $('rerankingModelPathInput').value,
+      rerankingTokenizerPath: $('rerankingTokenizerPathInput').value,
       sttEnabled: $('sttEnabledInput').checked,
       whisperModelPath: $('whisperModelPathInput').value
     };
@@ -472,8 +501,26 @@ function addChatMessage(role, text, sources) {
   if (sources && sources.length) {
     const sourcesDiv = document.createElement('div');
     sourcesDiv.className = 'sources';
-    const names = [...new Set(sources.map(s => s.fileName))];
-    sourcesDiv.textContent = `Fontes: ${names.join(', ')}`;
+    sourcesDiv.append('Fontes: ');
+
+    const seen = new Map();
+    for (const s of sources) {
+      if (!seen.has(s.sourcePath)) seen.set(s.sourcePath, s.fileName);
+    }
+
+    let first = true;
+    for (const [path, fileName] of seen) {
+      if (!first) sourcesDiv.append(', ');
+      first = false;
+
+      const link = document.createElement('a');
+      link.href = 'file:///' + path.replace(/\\/g, '/');
+      link.textContent = fileName;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      sourcesDiv.appendChild(link);
+    }
+
     div.appendChild(sourcesDiv);
   }
   $('chatLog').appendChild(div);

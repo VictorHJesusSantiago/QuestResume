@@ -300,7 +300,8 @@ int RunConfig(string[] cmdArgs)
                                  "set-llm-provider|set-ollama-url|set-ollama-model|" +
                                  "set-ocr-enabled|set-tessdata-path|set-ocr-languages|" +
                                  "set-embeddings-enabled|set-embedding-model|set-embedding-tokenizer|" +
-                                 "set-hybrid-weight|set-stt-enabled|set-whisper-model> [valor]");
+                                 "set-hybrid-weight|set-stt-enabled|set-whisper-model|" +
+                                 "set-reranking-enabled|set-reranking-model|set-reranking-tokenizer> [valor]");
         return 1;
     }
 
@@ -331,6 +332,9 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"HybridBm25Weight:       {options.HybridBm25Weight}");
             Console.WriteLine($"SttEnabled:             {options.SttEnabled}");
             Console.WriteLine($"WhisperModelPath:       {options.WhisperModelPath}");
+            Console.WriteLine($"RerankingEnabled:       {options.RerankingEnabled}");
+            Console.WriteLine($"RerankingModelPath:     {options.RerankingModelPath}");
+            Console.WriteLine($"RerankingTokenizerPath: {options.RerankingTokenizerPath}");
             return 0;
 
         case "set-model":
@@ -510,6 +514,39 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"WhisperModelPath definido para: {value}");
             return 0;
 
+        case "set-reranking-enabled":
+            if (value is null || !bool.TryParse(value, out var rerankingEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-reranking-enabled <true|false>");
+                return 1;
+            }
+            options.RerankingEnabled = rerankingEnabled;
+            configService.Save(options);
+            Console.WriteLine($"RerankingEnabled definido para: {rerankingEnabled}");
+            return 0;
+
+        case "set-reranking-model":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-reranking-model <caminho_para_modelo.onnx>");
+                return 1;
+            }
+            options.RerankingModelPath = value;
+            configService.Save(options);
+            Console.WriteLine($"RerankingModelPath definido para: {value}");
+            return 0;
+
+        case "set-reranking-tokenizer":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-reranking-tokenizer <caminho_para_vocab.txt>");
+                return 1;
+            }
+            options.RerankingTokenizerPath = value;
+            configService.Save(options);
+            Console.WriteLine($"RerankingTokenizerPath definido para: {value}");
+            return 0;
+
         default:
             Console.Error.WriteLine($"Subcomando de config desconhecido: {sub}");
             return 1;
@@ -575,6 +612,9 @@ static int PrintUsage()
           questresume config set-hybrid-weight <peso entre 0 e 1>
           questresume config set-stt-enabled <true|false>
           questresume config set-whisper-model <caminho_para_modelo.bin>
+          questresume config set-reranking-enabled <true|false>
+          questresume config set-reranking-model <caminho_para_modelo.onnx>
+          questresume config set-reranking-tokenizer <caminho_para_vocab.txt>
         """);
     return 0;
 }

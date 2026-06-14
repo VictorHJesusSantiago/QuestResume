@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -74,6 +75,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private string whisperModelPath = string.Empty;
 
     [ObservableProperty]
+    private bool rerankingEnabled;
+
+    [ObservableProperty]
+    private string rerankingModelPath = string.Empty;
+
+    [ObservableProperty]
+    private string rerankingTokenizerPath = string.Empty;
+
+    [ObservableProperty]
     private string questionText = string.Empty;
 
     [ObservableProperty]
@@ -108,6 +118,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         hybridBm25Weight = _options.HybridBm25Weight;
         sttEnabled = _options.SttEnabled;
         whisperModelPath = _options.WhisperModelPath;
+        rerankingEnabled = _options.RerankingEnabled;
+        rerankingModelPath = _options.RerankingModelPath;
+        rerankingTokenizerPath = _options.RerankingTokenizerPath;
 
         RefreshStatus();
     }
@@ -230,6 +243,36 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private void BrowseRerankingModel()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Selecione o modelo de re-ranking (cross-encoder, .onnx)",
+            Filter = "Modelos ONNX (*.onnx)|*.onnx|Todos os arquivos (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            RerankingModelPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseRerankingTokenizer()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Selecione o vocabulário do tokenizer de re-ranking (vocab.txt)",
+            Filter = "Vocabulário (*.txt)|*.txt|Todos os arquivos (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            RerankingTokenizerPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
     private async Task IndexAsync()
     {
         if (string.IsNullOrWhiteSpace(DocumentsFolder) || !Directory.Exists(DocumentsFolder))
@@ -332,11 +375,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             var engine = GetEngine();
             var result = await engine.AskAsync(question, TopK, history);
 
-            var sources = result.Sources.Count > 0
-                ? $"Fontes: {string.Join(", ", result.Sources.Select(s => s.FileName).Distinct())}"
-                : null;
+            var sources = result.Sources
+                .Select(s => new SourceReference { FileName = s.FileName, SourcePath = s.SourcePath })
+                .DistinctBy(s => s.SourcePath)
+                .ToList();
 
-            Messages.Add(new ChatEntry { Role = "QuestResume", Text = result.Answer, Sources = sources });
+            Messages.Add(new ChatEntry { Role = "QuestResume", Text = result.Answer, Sources = sources.Count > 0 ? sources : null });
         }
         catch (ModelNotConfiguredException ex)
         {
@@ -362,6 +406,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         SaveCurrentOptions();
         RefreshStatus();
+    }
+
+    /// <summary>
+    /// Opens an indexed source file in its associated default application (e.g. PDF viewer,
+    /// Word), so the user can jump from a citation in the chat directly to the original
+    /// document. <see cref="ProcessStartInfo.UseShellExecute"/> delegates to the OS's file
+    /// association instead of trying to execute the file directly.
+    /// </summary>
+    [RelayCommand]
+    private void OpenSource(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            StatusMessage = "Arquivo não encontrado: " + path;
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Não foi possível abrir o arquivo: {ex.Message}";
+        }
     }
 
     private RagQueryEngine GetEngine()
@@ -396,6 +465,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _options.HybridBm25Weight = HybridBm25Weight;
         _options.SttEnabled = SttEnabled;
         _options.WhisperModelPath = WhisperModelPath;
+        _options.RerankingEnabled = RerankingEnabled;
+        _options.RerankingModelPath = RerankingModelPath;
+        _options.RerankingTokenizerPath = RerankingTokenizerPath;
         _configService.Save(_options);
     }
 
