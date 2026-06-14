@@ -64,13 +64,13 @@ public sealed class HybridSearchService
         foreach (var item in bm25Results)
         {
             var key = (item.SourcePath, item.ChunkIndex);
-            combined[key] = (item, _bm25Weight * bm25Scores[item]);
+            combined[key] = (item, _bm25Weight * bm25Scores[key]);
         }
 
         foreach (var item in vectorResults)
         {
             var key = (item.SourcePath, item.ChunkIndex);
-            var vectorScore = (1 - _bm25Weight) * vectorScores[item];
+            var vectorScore = (1 - _bm25Weight) * vectorScores[key];
 
             combined[key] = combined.TryGetValue(key, out var existing)
                 ? (existing.Item, existing.Score + vectorScore)
@@ -84,9 +84,16 @@ public sealed class HybridSearchService
             .ToList();
     }
 
-    private static Dictionary<SearchResultItem, double> NormalizeScores(IReadOnlyList<SearchResultItem> items)
+    /// <summary>
+    /// Keyed by <c>(SourcePath, ChunkIndex)</c> rather than the <see cref="SearchResultItem"/>
+    /// instance itself — <see cref="SearchResultItem"/> doesn't override
+    /// <see cref="object.Equals(object?)"/>/<see cref="object.GetHashCode"/>, so a
+    /// reference-identity dictionary would silently break (KeyNotFoundException) if either
+    /// result list were ever rebuilt/cloned instead of reusing the same instances.
+    /// </summary>
+    private static Dictionary<(string SourcePath, int ChunkIndex), double> NormalizeScores(IReadOnlyList<SearchResultItem> items)
     {
-        var normalized = new Dictionary<SearchResultItem, double>();
+        var normalized = new Dictionary<(string SourcePath, int ChunkIndex), double>();
         if (items.Count == 0)
         {
             return normalized;
@@ -98,7 +105,7 @@ public sealed class HybridSearchService
 
         foreach (var item in items)
         {
-            normalized[item] = range > 0 ? (item.Score - min) / range : 1.0;
+            normalized[(item.SourcePath, item.ChunkIndex)] = range > 0 ? (item.Score - min) / range : 1.0;
         }
 
         return normalized;

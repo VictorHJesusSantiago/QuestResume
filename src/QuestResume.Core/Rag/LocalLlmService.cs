@@ -50,7 +50,7 @@ public sealed class LocalLlmService : IDisposable
         var inferenceParams = new InferenceParams
         {
             MaxTokens = 512,
-            AntiPrompts = new List<string> { "Pergunta:", "Contexto:" }
+            AntiPrompts = new List<string> { "PERGUNTA_DO_USUARIO:", "<documento" }
         };
 
         var builder = new StringBuilder();

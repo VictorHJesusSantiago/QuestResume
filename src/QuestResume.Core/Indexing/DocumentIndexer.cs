@@ -50,67 +50,125 @@ public sealed class DocumentIndexer
 
         var stats = new IndexStats();
 
-        using var directory = FSDirectory.Open(indexPath);
-        using var analyzer = new StandardAnalyzer(MatchVersion);
-        var config = new IndexWriterConfig(MatchVersion, analyzer)
+        // Built in a temporary sibling directory and only swapped into place once the new
+        // Lucene index has been fully committed. With the previous OpenMode.CREATE-on-indexPath
+        // approach, a crash or cancellation midway through a (potentially long) re-index left
+        // the search index empty/corrupted for the rest of the session.
+        var tempIndexDir = Path.Combine(indexPath, "_index_tmp");
+        if (IODirectory.Exists(tempIndexDir))
         {
-            OpenMode = OpenMode.CREATE
-        };
+            IODirectory.Delete(tempIndexDir, recursive: true);
+        }
 
-        using var writer = new IndexWriter(directory, config);
+        IODirectory.CreateDirectory(tempIndexDir);
 
-        _vectorStore?.Clear();
-        var embeddingsAvailable = _embeddingService is not null && _vectorStore is not null;
-
-        foreach (var filePath in IODirectory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var extension = Path.GetExtension(filePath);
-            if (!_registry.IsSupported(extension))
+            using (var directory = FSDirectory.Open(tempIndexDir))
+            using (var analyzer = new StandardAnalyzer(MatchVersion))
             {
-                stats.FilesSkipped++;
-                stats.SkippedFiles.Add(filePath);
-                continue;
-            }
-
-            try
-            {
-                var document = await _registry.ExtractAsync(filePath, cancellationToken).ConfigureAwait(false);
-                var chunks = TextChunker.Chunk(document, chunkSize, overlap);
-
-                foreach (var chunk in chunks)
+                var config = new IndexWriterConfig(MatchVersion, analyzer)
                 {
-                    writer.AddDocument(ToLuceneDocument(chunk));
+                    OpenMode = OpenMode.CREATE
+                };
 
-                    if (embeddingsAvailable)
+                using var writer = new IndexWriter(directory, config);
+
+                _vectorStore?.Clear();
+                var embeddingsAvailable = _embeddingService is not null && _vectorStore is not null;
+
+                // Wrap all vector inserts in a single SQLite transaction instead of one
+                // commit per chunk, which dominates indexing time for large folders.
+                using var batch = _vectorStore?.BeginBatch();
+
+                foreach (var filePath in IODirectory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var extension = Path.GetExtension(filePath);
+                    if (!_registry.IsSupported(extension))
                     {
-                        try
+                        stats.FilesSkipped++;
+                        stats.SkippedFiles.Add(filePath);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var document = await _registry.ExtractAsync(filePath, cancellationToken).ConfigureAwait(false);
+                        var chunks = TextChunker.Chunk(document, chunkSize, overlap);
+
+                        foreach (var chunk in chunks)
                         {
-                            var embedding = await _embeddingService!.EmbedAsync(chunk.Text, cancellationToken).ConfigureAwait(false);
-                            _vectorStore!.Add(chunk.SourcePath, chunk.FileName, chunk.ChunkIndex, chunk.Text, embedding);
+                            writer.AddDocument(ToLuceneDocument(chunk));
+
+                            if (embeddingsAvailable)
+                            {
+                                try
+                                {
+                                    var embedding = await _embeddingService!.EmbedAsync(chunk.Text, cancellationToken).ConfigureAwait(false);
+                                    _vectorStore!.Add(chunk.SourcePath, chunk.FileName, chunk.ChunkIndex, chunk.Text, embedding);
+                                }
+                                catch (EmbeddingsNotConfiguredException ex)
+                                {
+                                    embeddingsAvailable = false;
+                                    progress?.Report($"Embeddings desabilitados durante a indexação: {ex.Message}");
+                                }
+                            }
                         }
-                        catch (EmbeddingsNotConfiguredException ex)
-                        {
-                            embeddingsAvailable = false;
-                            progress?.Report($"Embeddings desabilitados durante a indexação: {ex.Message}");
-                        }
+
+                        stats.FilesProcessed++;
+                        stats.ChunksIndexed += chunks.Count;
+                        progress?.Report($"Indexado: {document.FileName} ({chunks.Count} trecho(s))");
+                    }
+                    catch (Exception ex)
+                    {
+                        stats.Errors.Add($"{filePath}: {ex.Message}");
+                        progress?.Report($"Erro ao processar {filePath}: {ex.Message}");
                     }
                 }
 
-                stats.FilesProcessed++;
-                stats.ChunksIndexed += chunks.Count;
-                progress?.Report($"Indexado: {document.FileName} ({chunks.Count} trecho(s))");
+                writer.Commit();
             }
-            catch (Exception ex)
+
+            SwapIndexDirectory(indexPath, tempIndexDir);
+        }
+        finally
+        {
+            if (IODirectory.Exists(tempIndexDir))
             {
-                stats.Errors.Add($"{filePath}: {ex.Message}");
-                progress?.Report($"Erro ao processar {filePath}: {ex.Message}");
+                IODirectory.Delete(tempIndexDir, recursive: true);
             }
         }
 
-        writer.Commit();
         return stats;
+    }
+
+    /// <summary>
+    /// Replaces the Lucene index files in <paramref name="indexPath"/> with the freshly built
+    /// ones from <paramref name="tempIndexDir"/>, leaving <see cref="VectorStore.DatabaseFileName"/>
+    /// untouched (it's managed separately by <see cref="VectorStore"/> and may have an open
+    /// connection/lock on it).
+    /// </summary>
+    private static void SwapIndexDirectory(string indexPath, string tempIndexDir)
+    {
+        foreach (var file in IODirectory.GetFiles(indexPath))
+        {
+            // Skip vectors.db and its WAL/SHM/journal side-files (e.g. "vectors.db-wal"),
+            // which remain open via VectorStore's connection.
+            if (Path.GetFileName(file).StartsWith(VectorStore.DatabaseFileName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            File.Delete(file);
+        }
+
+        foreach (var file in IODirectory.GetFiles(tempIndexDir))
+        {
+            var destination = Path.Combine(indexPath, Path.GetFileName(file));
+            File.Move(file, destination, overwrite: true);
+        }
     }
 
     private static Document ToLuceneDocument(TextChunk chunk) => new()

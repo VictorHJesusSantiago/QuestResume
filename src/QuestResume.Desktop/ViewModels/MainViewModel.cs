@@ -19,15 +19,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly AppOptions _options;
 
     private RagQueryEngine? _engine;
-    private string? _engineModelPath;
-    private string? _engineIndexPath;
-    private string? _engineLlmProvider;
-    private string? _engineOllamaBaseUrl;
-    private string? _engineOllamaModel;
-    private bool _engineEmbeddingsEnabled;
-    private string? _engineEmbeddingModelPath;
-    private string? _engineEmbeddingTokenizerPath;
-    private double _engineHybridBm25Weight;
+    private RagEngineKey? _engineKey;
 
     [ObservableProperty]
     private string documentsFolder = string.Empty;
@@ -273,6 +265,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                                 $"{stats.FilesSkipped} ignorados, {stats.ChunksIndexed} trechos indexados." +
                                 (stats.Errors.Count > 0 ? $" ({stats.Errors.Count} erro(s))" : string.Empty);
             }
+
+            // The vectorStore opened above is a different instance than the one inside
+            // _engine — without this, AskAsync would keep serving the pre-reindex snapshot
+            // until the engine is rebuilt for an unrelated config change.
+            _engine?.InvalidateVectorCache();
         }
         catch (Exception ex)
         {
@@ -347,44 +344,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private RagQueryEngine GetEngine()
     {
-        if (_engine is null
-            || _engineModelPath != ModelPath
-            || _engineIndexPath != IndexPath
-            || _engineLlmProvider != LlmProvider
-            || _engineOllamaBaseUrl != OllamaBaseUrl
-            || _engineOllamaModel != OllamaModel
-            || _engineEmbeddingsEnabled != EmbeddingsEnabled
-            || _engineEmbeddingModelPath != EmbeddingModelPath
-            || _engineEmbeddingTokenizerPath != EmbeddingTokenizerPath
-            || _engineHybridBm25Weight != HybridBm25Weight)
+        var key = RagEngineKey.From(_options, TopK);
+        if (_engine is null || _engineKey != key)
         {
             _engine?.Dispose();
-
-            var search = new SearchService(IndexPath);
-            var providerKind = Enum.TryParse<LlmProviderKind>(LlmProvider, ignoreCase: true, out var kind)
-                ? kind
-                : LlmProviderKind.LlamaSharp;
-
-            VectorStore? vectorStore = null;
-            EmbeddingService? embeddingService = null;
-            if (EmbeddingsEnabled)
-            {
-                vectorStore = new VectorStore(IndexPath);
-                embeddingService = new EmbeddingService(EmbeddingModelPath, EmbeddingTokenizerPath);
-            }
-
-            _engine = new RagQueryEngine(
-                search, ModelPath, ContextSize, TopK, providerKind, OllamaBaseUrl, OllamaModel,
-                vectorStore: vectorStore, embeddingService: embeddingService, hybridBm25Weight: HybridBm25Weight);
-            _engineModelPath = ModelPath;
-            _engineIndexPath = IndexPath;
-            _engineLlmProvider = LlmProvider;
-            _engineOllamaBaseUrl = OllamaBaseUrl;
-            _engineOllamaModel = OllamaModel;
-            _engineEmbeddingsEnabled = EmbeddingsEnabled;
-            _engineEmbeddingModelPath = EmbeddingModelPath;
-            _engineEmbeddingTokenizerPath = EmbeddingTokenizerPath;
-            _engineHybridBm25Weight = HybridBm25Weight;
+            _engine = RagQueryEngineFactory.Create(_options, TopK);
+            _engineKey = key;
         }
 
         return _engine;
