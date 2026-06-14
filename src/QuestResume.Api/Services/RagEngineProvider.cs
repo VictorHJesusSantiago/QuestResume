@@ -39,14 +39,29 @@ public sealed class RagEngineProvider : IDisposable
         }
     }
 
-    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, CancellationToken cancellationToken)
+    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken)
     {
         var engine = GetEngine(options);
 
         await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await engine.AskAsync(question, topK, cancellationToken).ConfigureAwait(false);
+            return await engine.AskAsync(question, topK, history, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    public async Task<AskResult> CompareAsync(AppOptions options, string pathA, string pathB, string question, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await engine.CompareAsync(pathA, pathB, question, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

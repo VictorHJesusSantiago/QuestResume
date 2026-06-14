@@ -28,6 +28,14 @@ public sealed class HybridSearchService
         _bm25Weight = bm25Weight;
     }
 
+    /// <summary>
+    /// Returns every indexed chunk for the given source file path, ordered by chunk index.
+    /// Bypasses the hybrid BM25/vector ranking entirely — used when the caller wants a whole
+    /// document's content (e.g. <see cref="QuestResume.Core.Rag.RagQueryEngine.CompareAsync"/>),
+    /// not chunks relevant to a query.
+    /// </summary>
+    public IReadOnlyList<SearchResultItem> GetChunksByPath(string path) => _searchService.GetChunksByPath(path);
+
     public async Task<IReadOnlyList<SearchResultItem>> SearchAsync(string queryText, int topK, CancellationToken cancellationToken = default)
     {
         var bm25Results = _searchService.Search(queryText, topK);

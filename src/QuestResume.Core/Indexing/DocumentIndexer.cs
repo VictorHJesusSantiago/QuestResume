@@ -177,6 +177,7 @@ public sealed class DocumentIndexer
     {
         new StringField("path", chunk.SourcePath, Field.Store.YES),
         new StringField("fileName", chunk.FileName, Field.Store.YES),
+        new StringField("extension", Path.GetExtension(chunk.FileName).ToLowerInvariant(), Field.Store.YES),
         new StoredField("chunkIndex", chunk.ChunkIndex.ToString()),
         new TextField("content", chunk.Text, Field.Store.YES),
         new StringField("modifiedUtc", chunk.ModifiedUtc.Ticks.ToString(), Field.Store.YES)

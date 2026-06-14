@@ -154,6 +154,12 @@
     color: var(--muted);
     margin-left: 0.4rem;
   }
+  .result-item mark, .msg mark {
+    background: var(--accent-dark);
+    color: #fff;
+    border-radius: 3px;
+    padding: 0 0.1rem;
+  }
 </style>
 </head>
 <body>
@@ -190,6 +196,16 @@
       <div class="ask-row">
         <input type="text" id="searchInput" placeholder="Termo de busca..." />
         <button class="primary" id="searchButton">Buscar</button>
+      </div>
+      <div class="row" style="margin-top: 0.75rem;">
+        <div class="field">
+          <label for="searchExtInput">Filtrar por extensão (opcional)</label>
+          <input type="text" id="searchExtInput" placeholder=".pdf" />
+        </div>
+        <div class="field">
+          <label for="searchFolderInput">Filtrar por pasta (opcional)</label>
+          <input type="text" id="searchFolderInput" placeholder="C:\Users\voce\Documentos\Contratos" />
+        </div>
       </div>
       <div id="searchResults" style="margin-top: 1rem;"></div>
     </div>
@@ -435,6 +451,20 @@ $('indexButton').addEventListener('click', async () => {
   }
 });
 
+// Splits a highlight string on the U+0001/U+0002 markers produced by the Lucene highlighter
+// (SearchService) and appends the result to `container` as text nodes plus <mark> elements,
+// so matched terms can be styled without using innerHTML on document-derived content.
+function appendHighlighted(container, highlight) {
+  const parts = highlight.split('');
+  container.append(parts[0]);
+  for (let i = 1; i < parts.length; i++) {
+    const [matched, rest] = parts[i].split('');
+    const mark = document.createElement('mark');
+    mark.textContent = matched;
+    container.append(mark, rest ?? '');
+  }
+}
+
 function addChatMessage(role, text, sources) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
@@ -450,6 +480,12 @@ function addChatMessage(role, text, sources) {
   $('chatLog').scrollTop = $('chatLog').scrollHeight;
 }
 
+// Last few question/answer pairs, sent with each /api/ask request so the model has
+// short-term conversational memory (e.g. for follow-up questions). Capped to mirror
+// RagQueryEngine.MaxHistoryTurns.
+const MAX_HISTORY_TURNS = 4;
+const chatHistory = [];
+
 $('askButton').addEventListener('click', async () => {
   const question = $('questionInput').value.trim();
   if (!question) return;
@@ -462,11 +498,12 @@ $('askButton').addEventListener('click', async () => {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
+      body: JSON.stringify({ question, history: chatHistory.slice(-MAX_HISTORY_TURNS) })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao responder.');
     addChatMessage('answer', data.answer, data.sources);
+    chatHistory.push({ question, answer: data.answer });
     $('askStatus').textContent = '';
   } catch (err) {
     addChatMessage('answer', `Erro: ${err.message}`);
@@ -486,10 +523,16 @@ $('searchButton').addEventListener('click', async () => {
   const resultsEl = $('searchResults');
   resultsEl.textContent = 'Buscando...';
   try {
+    const extension = $('searchExtInput').value.trim();
+    const folderPath = $('searchFolderInput').value.trim();
     const res = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({
+        query,
+        extension: extension || null,
+        folderPath: folderPath || null
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha na busca.');
@@ -522,7 +565,11 @@ $('searchButton').addEventListener('click', async () => {
       meta.append(`${r.fileName} `, chunkBadge, ' ', scoreBadge);
 
       const text = document.createElement('div');
-      text.textContent = r.chunkText;
+      if (r.highlight) {
+        appendHighlighted(text, r.highlight);
+      } else {
+        text.textContent = r.chunkText;
+      }
 
       const source = document.createElement('div');
       source.className = 'meta';

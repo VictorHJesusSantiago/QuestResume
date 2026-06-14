@@ -9,6 +9,7 @@ using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
+using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
 
 namespace QuestResume.Desktop.ViewModels;
@@ -281,6 +282,25 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Pairs up consecutive "Você"/"QuestResume" entries from <see cref="Messages"/> into
+    /// <see cref="ChatTurn"/>s so <see cref="RagQueryEngine.AskAsync"/> can use them as
+    /// short-term conversational memory for the next question.
+    /// </summary>
+    private IReadOnlyList<ChatTurn> BuildHistory()
+    {
+        var history = new List<ChatTurn>();
+        for (var i = 0; i < Messages.Count - 1; i++)
+        {
+            if (Messages[i].Role == "Você" && Messages[i + 1].Role == "QuestResume")
+            {
+                history.Add(new ChatTurn(Messages[i].Text, Messages[i + 1].Text));
+            }
+        }
+
+        return history;
+    }
+
     [RelayCommand]
     private async Task AskAsync()
     {
@@ -289,6 +309,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             return;
         }
+
+        var history = BuildHistory();
 
         Messages.Add(new ChatEntry { Role = "Você", Text = question });
         QuestionText = string.Empty;
@@ -308,7 +330,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             var engine = GetEngine();
-            var result = await engine.AskAsync(question, TopK);
+            var result = await engine.AskAsync(question, TopK, history);
 
             var sources = result.Sources.Count > 0
                 ? $"Fontes: {string.Join(", ", result.Sources.Select(s => s.FileName).Distinct())}"

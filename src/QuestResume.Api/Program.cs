@@ -3,6 +3,7 @@ using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
+using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -173,7 +174,8 @@ app.MapPost("/api/search", (SearchRequest request, ConfigService configService) 
         return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
     }
 
-    var results = search.Search(request.Query, request.TopK ?? options.TopK);
+    var filters = new SearchFilters(request.Extension, request.FolderPath);
+    var results = search.Search(request.Query, request.TopK ?? options.TopK, filters);
     return Results.Ok(results);
 });
 
@@ -198,7 +200,45 @@ app.MapPost("/api/ask", async (
 
     try
     {
-        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, cancellationToken);
+        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, request.History, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/compare", async (
+    CompareRequest request,
+    ConfigService configService,
+    RagEngineProvider engineProvider,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.PathA) || string.IsNullOrWhiteSpace(request.PathB))
+    {
+        return Results.BadRequest(new { error = "Informe os dois arquivos a comparar (pathA e pathB)." });
+    }
+
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+
+    if (!search.IndexExists())
+    {
+        return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
+    }
+
+    var question = string.IsNullOrWhiteSpace(request.Question)
+        ? "Compare estes dois documentos, destacando as principais diferenças e semelhanças."
+        : request.Question;
+
+    try
+    {
+        var result = await engineProvider.CompareAsync(options, request.PathA, request.PathB, question, cancellationToken);
         return Results.Ok(result);
     }
     catch (ModelNotConfiguredException ex)
@@ -230,6 +270,8 @@ static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFact
 
 internal sealed record IndexRequest(string? FolderPath);
 
-internal sealed record SearchRequest(string Query, int? TopK);
+internal sealed record SearchRequest(string Query, int? TopK, string? Extension = null, string? FolderPath = null);
 
-internal sealed record AskRequest(string Question, int? TopK);
+internal sealed record AskRequest(string Question, int? TopK, IReadOnlyList<ChatTurn>? History = null);
+
+internal sealed record CompareRequest(string PathA, string PathB, string? Question);

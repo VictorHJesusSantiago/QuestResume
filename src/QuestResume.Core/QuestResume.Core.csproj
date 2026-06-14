@@ -13,6 +13,7 @@
     <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.27.0" />
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00017" />
+    <PackageReference Include="Lucene.Net.Highlighter" Version="4.8.0-beta00017" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00017" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />

@@ -2,6 +2,7 @@ using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
+using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
 
 var configService = new ConfigService();
@@ -23,6 +24,7 @@ try
         "search" => RunSearch(rest),
         "ask" => await RunAskAsync(rest),
         "chat" => await RunChatAsync(rest),
+        "compare" => await RunCompareAsync(rest),
         "config" => RunConfig(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
@@ -110,7 +112,8 @@ int RunSearch(string[] cmdArgs)
         return 1;
     }
 
-    var results = search.Search(query, topK);
+    var filters = new SearchFilters(GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"));
+    var results = search.Search(query, topK, filters);
     if (results.Count == 0)
     {
         Console.WriteLine("Nenhum resultado encontrado.");
@@ -194,6 +197,8 @@ async Task<int> RunChatAsync(string[] cmdArgs)
 
     using var engine = RagQueryEngineFactory.Create(options, topK);
 
+    var history = new List<ChatTurn>();
+
     Console.WriteLine("Modo chat. Digite 'sair' para encerrar.");
     while (true)
     {
@@ -212,12 +217,14 @@ async Task<int> RunChatAsync(string[] cmdArgs)
 
         try
         {
-            var result = await engine.AskAsync(line, topK);
+            var result = await engine.AskAsync(line, topK, history);
             Console.WriteLine(result.Answer);
             if (result.Sources.Count > 0)
             {
                 Console.WriteLine($"(fontes: {string.Join(", ", result.Sources.Select(s => s.FileName).Distinct())})");
             }
+
+            history.Add(new ChatTurn(line, result.Answer));
         }
         catch (ModelNotConfiguredException ex)
         {
@@ -230,6 +237,56 @@ async Task<int> RunChatAsync(string[] cmdArgs)
             Console.Error.WriteLine(ex.Message);
             break;
         }
+    }
+
+    return 0;
+}
+
+async Task<int> RunCompareAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+
+    if (positional.Length < 2)
+    {
+        Console.Error.WriteLine("Uso: questresume compare <arquivoA> <arquivoB> [\"<pergunta>\"]");
+        return 1;
+    }
+
+    var pathA = positional[0];
+    var pathB = positional[1];
+    var question = positional.Length > 2
+        ? string.Join(' ', positional.Skip(2))
+        : "Compare estes dois documentos, destacando as principais diferenças e semelhanças.";
+
+    var search = new SearchService(options.IndexPath);
+    if (!search.IndexExists())
+    {
+        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+        return 1;
+    }
+
+    using var engine = RagQueryEngineFactory.Create(options);
+
+    try
+    {
+        Console.WriteLine("Comparando documentos (isso pode demorar na primeira pergunta, enquanto o modelo carrega)...");
+        var result = await engine.CompareAsync(pathA, pathB, question);
+
+        Console.WriteLine();
+        Console.WriteLine("Resposta:");
+        Console.WriteLine(result.Answer);
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine("Configure o modelo com: questresume config set-model <caminho.gguf>");
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
     }
 
     return 0;
@@ -497,9 +554,10 @@ static int PrintUsage()
 
         Uso:
           questresume index <pasta> [--index-path <pasta_indice>]
-          questresume search "<termo>" [--top-k N]
+          questresume search "<termo>" [--top-k N] [--ext <extensão>] [--folder <pasta>]
           questresume ask "<pergunta>" [--top-k N]
           questresume chat [--top-k N]
+          questresume compare <arquivoA> <arquivoB> ["<pergunta>"]
           questresume config show
           questresume config set-model <caminho.gguf>
           questresume config set-folder <pasta>
