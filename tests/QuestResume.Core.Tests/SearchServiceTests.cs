@@ -159,6 +159,79 @@ public class SearchServiceTests
     }
 
     [Fact]
+    public async Task SetTags_ThenGetTags_RoundTrips()
+    {
+        var (folder, indexPath) = await CreateIndexedFolderAsync();
+
+        try
+        {
+            var search = new SearchService(indexPath);
+            var filePath = Path.Combine(folder, "doc.txt");
+
+            search.SetTags(filePath, new[] { "Contrato", "Urgente" });
+
+            Assert.Equal(new[] { "Contrato", "Urgente" }, search.GetTags(filePath));
+            Assert.Equal(new[] { "Contrato", "Urgente" }, search.GetAllTags());
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GetIndexedFiles_IncludesAssignedTags()
+    {
+        var (folder, indexPath) = await CreateIndexedFolderAsync();
+
+        try
+        {
+            var search = new SearchService(indexPath);
+            var filePath = Path.Combine(folder, "doc.txt");
+
+            search.SetTags(filePath, new[] { "Contrato" });
+
+            var file = Assert.Single(search.GetIndexedFiles());
+            Assert.Equal(new[] { "Contrato" }, file.Tags);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Search_WithTagFilter_OnlyReturnsTaggedFiles()
+    {
+        var (folder, indexPath) = await CreateIndexedFolderAsync();
+
+        try
+        {
+            var search = new SearchService(indexPath);
+            var filePath = Path.Combine(folder, "doc.txt");
+
+            var matching = search.Search("documentos", topK: 5, new SearchFilters(Tag: "Contrato"));
+            Assert.Empty(matching);
+
+            search.SetTags(filePath, new[] { "Contrato" });
+
+            matching = search.Search("documentos", topK: 5, new SearchFilters(Tag: "contrato"));
+            Assert.NotEmpty(matching);
+            Assert.All(matching, r => Assert.Equal(filePath, r.SourcePath));
+
+            var nonMatching = search.Search("documentos", topK: 5, new SearchFilters(Tag: "Outra"));
+            Assert.Empty(nonMatching);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RemoveDocument_UnknownPath_ReturnsZero()
     {
         var (folder, indexPath) = await CreateIndexedFolderAsync();

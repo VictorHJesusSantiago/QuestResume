@@ -70,6 +70,36 @@ public class DocumentIndexerTests
     }
 
     [Fact]
+    public async Task IndexFolderAsync_PreservesTagsAcrossReindex()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"tags-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"tags-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            var filePath = Path.Combine(folder, "doc.txt");
+            await File.WriteAllTextAsync(filePath, "Conteúdo do documento.");
+
+            var indexer = new DocumentIndexer();
+            await indexer.IndexFolderAsync(folder, indexPath);
+
+            var search = new SearchService(indexPath);
+            search.SetTags(filePath, new[] { "Contrato" });
+
+            await indexer.IndexFolderAsync(folder, indexPath);
+
+            Assert.Equal(new[] { "Contrato" }, search.GetTags(filePath));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public void IndexReport_Load_MissingFile_ReturnsEmptyReport()
     {
         var indexPath = Path.Combine(Path.GetTempPath(), $"missing-report-{Guid.NewGuid()}");
