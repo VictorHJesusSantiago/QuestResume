@@ -310,7 +310,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
                 var progress = new Progress<string>(message => StatusMessage = message);
-                var stats = await indexer.IndexFolderAsync(DocumentsFolder, IndexPath, _options.ChunkSize, _options.ChunkOverlap, progress);
+                var stats = await indexer.IndexFolderAsync(DocumentsFolder, IndexPath, _options.ChunkSize, _options.ChunkOverlap, progress,
+                    maxFileSizeBytes: _options.MaxFileSizeBytes, excludedFolders: _options.ExcludedFolders);
 
                 StatusMessage = $"Concluído: {stats.FilesProcessed} arquivos processados, " +
                                 $"{stats.FilesSkipped} ignorados, {stats.ChunksIndexed} trechos indexados." +

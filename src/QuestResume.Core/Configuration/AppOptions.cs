@@ -82,6 +82,17 @@ public sealed class AppOptions
     /// <summary>Caminho do vocabulário (vocab.txt) do tokenizer do modelo de re-ranking.</summary>
     public string RerankingTokenizerPath { get; set; } = string.Empty;
 
+    // --- Indexação avançada ---
+
+    /// <summary>Tamanho máximo (em bytes) de um arquivo para ser indexado; 0 = sem limite.</summary>
+    public long MaxFileSizeBytes { get; set; } = 0;
+
+    /// <summary>
+    /// Pastas (caminhos completos) que nunca devem ser indexadas nem aparecer nos resultados,
+    /// mesmo estando dentro de <see cref="DocumentsFolder"/>.
+    /// </summary>
+    public List<string> ExcludedFolders { get; set; } = new();
+
     /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
     /// menor que <see cref="ChunkSize"/>), evitando que uma configuração inválida só seja
@@ -120,6 +131,11 @@ public sealed class AppOptions
         {
             throw new AppOptionsValidationException(
                 $"LlmProvider '{LlmProvider}' é inválido. Valores aceitos: LlamaSharp, Ollama.");
+        }
+
+        if (MaxFileSizeBytes < 0)
+        {
+            throw new AppOptionsValidationException("MaxFileSizeBytes não pode ser negativo.");
         }
     }
 }

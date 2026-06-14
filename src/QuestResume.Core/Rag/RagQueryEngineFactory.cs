@@ -85,6 +85,7 @@ public static class RagQueryEngineFactory
             vectorStore: vectorStore,
             embeddingService: embeddingService,
             hybridBm25Weight: options.HybridBm25Weight,
-            crossEncoderService: crossEncoderService);
+            crossEncoderService: crossEncoderService,
+            indexPath: options.IndexPath);
     }
 }

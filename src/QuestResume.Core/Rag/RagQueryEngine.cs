@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Indexing;
@@ -23,6 +24,14 @@ public sealed class RagQueryEngine : IDisposable
     private readonly VectorStore? _vectorStore;
     private readonly EmbeddingService? _embeddingService;
     private readonly CrossEncoderService? _crossEncoderService;
+    private readonly string? _indexPath;
+
+    /// <summary>
+    /// Caches answers for repeated questions (same question + topK, no conversation history),
+    /// keyed by <see cref="BuildCacheKey"/>. Cleared by <see cref="InvalidateVectorCache"/> so
+    /// answers don't go stale after a re-index.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, AskResult> _answerCache = new();
 
     /// <summary>
     /// Guards the lazy initialization of <see cref="_llm"/>. This engine can be shared (e.g.
@@ -47,7 +56,8 @@ public sealed class RagQueryEngine : IDisposable
         VectorStore? vectorStore = null,
         EmbeddingService? embeddingService = null,
         double hybridBm25Weight = 0.5,
-        CrossEncoderService? crossEncoderService = null)
+        CrossEncoderService? crossEncoderService = null,
+        string? indexPath = null)
     {
         _searchService = new HybridSearchService(searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService);
         _modelPath = modelPath;
@@ -60,6 +70,7 @@ public sealed class RagQueryEngine : IDisposable
         _vectorStore = vectorStore;
         _embeddingService = embeddingService;
         _crossEncoderService = crossEncoderService;
+        _indexPath = indexPath;
     }
 
     /// <summary>
@@ -84,6 +95,16 @@ public sealed class RagQueryEngine : IDisposable
 
     public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default)
     {
+        // Only cache standalone questions: a follow-up's correct answer depends on the
+        // conversation history, so it can't reuse an answer computed without it.
+        var useCache = history is null || history.Count == 0;
+        var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK) : null;
+
+        if (cacheKey is not null && _answerCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
         var sources = await _searchService.SearchAsync(question, topK ?? _defaultTopK, cancellationToken).ConfigureAwait(false);
 
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
@@ -91,8 +112,28 @@ public sealed class RagQueryEngine : IDisposable
         var prompt = BuildPrompt(question, sources, history);
         var answer = await llm.CompleteAsync(prompt, cancellationToken).ConfigureAwait(false);
 
-        return new AskResult { Answer = answer, Sources = sources };
+        var result = new AskResult { Answer = answer, Sources = sources };
+
+        if (cacheKey is not null)
+        {
+            _answerCache[cacheKey] = result;
+        }
+
+        if (_indexPath is not null)
+        {
+            AuditLog.Append(_indexPath, new AuditLogEntry
+            {
+                TimestampUtc = DateTime.UtcNow,
+                Question = question,
+                Sources = sources.Select(s => s.FileName).Distinct().ToList()
+            });
+        }
+
+        return result;
     }
+
+    private static string BuildCacheKey(string question, int topK) =>
+        $"{topK}|{question.Trim().ToLowerInvariant()}";
 
     /// <summary>
     /// Answers <paramref name="question"/> about two specific indexed files, e.g. "what
@@ -128,7 +169,11 @@ public sealed class RagQueryEngine : IDisposable
     /// embeddings written by a re-index that happened through a different
     /// <see cref="VectorStore"/> instance pointed at the same database file.
     /// </summary>
-    public void InvalidateVectorCache() => _vectorStore?.InvalidateCache();
+    public void InvalidateVectorCache()
+    {
+        _vectorStore?.InvalidateCache();
+        _answerCache.Clear();
+    }
 
     private async Task<ILlmProvider> GetOrCreateLlmAsync(CancellationToken cancellationToken)
     {

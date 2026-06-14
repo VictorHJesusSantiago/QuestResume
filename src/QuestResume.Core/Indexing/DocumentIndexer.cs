@@ -40,7 +40,9 @@ public sealed class DocumentIndexer
         int chunkSize = 1000,
         int overlap = 150,
         IProgress<string>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long maxFileSizeBytes = 0,
+        IReadOnlyList<string>? excludedFolders = null)
     {
         if (!IODirectory.Exists(folderPath))
         {
@@ -90,11 +92,26 @@ public sealed class DocumentIndexer
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    if (excludedFolders is not null && IsUnderExcludedFolder(filePath, excludedFolders))
+                    {
+                        stats.FilesSkipped++;
+                        stats.SkippedFiles.Add(filePath);
+                        continue;
+                    }
+
                     var extension = Path.GetExtension(filePath);
                     if (!_registry.IsSupported(extension))
                     {
                         stats.FilesSkipped++;
                         stats.SkippedFiles.Add(filePath);
+                        continue;
+                    }
+
+                    if (maxFileSizeBytes > 0 && new FileInfo(filePath).Length > maxFileSizeBytes)
+                    {
+                        stats.FilesSkipped++;
+                        stats.SkippedFiles.Add(filePath);
+                        progress?.Report($"Arquivo excede o tamanho máximo configurado, ignorado: {filePath}");
                         continue;
                     }
 
@@ -146,6 +163,12 @@ public sealed class DocumentIndexer
                 }
 
                 writer.Commit();
+
+                // Re-indexing rebuilds the whole index from scratch (CREATE mode), which can
+                // leave many small segments. Merge down to a single segment for faster searches
+                // and a smaller on-disk footprint, then commit the merge.
+                writer.ForceMerge(1);
+                writer.Commit();
             }
 
             SwapIndexDirectory(indexPath, tempIndexDir);
@@ -166,6 +189,34 @@ public sealed class DocumentIndexer
         }.Save(indexPath);
 
         return stats;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="filePath"/> is inside any folder listed in
+    /// <paramref name="excludedFolders"/> (or equal to one of them), so it's never indexed even
+    /// if it's under <c>folderPath</c>.
+    /// </summary>
+    private static bool IsUnderExcludedFolder(string filePath, IReadOnlyList<string> excludedFolders)
+    {
+        var fullFilePath = Path.GetFullPath(filePath);
+
+        foreach (var folder in excludedFolders)
+        {
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                continue;
+            }
+
+            var fullFolderPath = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            if (fullFilePath.Equals(fullFolderPath, StringComparison.OrdinalIgnoreCase)
+                || fullFilePath.StartsWith(fullFolderPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Computes the SHA-256 hash of a file's contents, used to detect duplicate files.</summary>
