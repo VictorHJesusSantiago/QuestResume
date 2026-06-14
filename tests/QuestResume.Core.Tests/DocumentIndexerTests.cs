@@ -109,4 +109,62 @@ public class DocumentIndexerTests
         Assert.Empty(report.Errors);
         Assert.Empty(report.Duplicates);
     }
+
+    [Fact]
+    public async Task IndexFolderAsync_SkipsFilesLargerThanMaxFileSizeBytes()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"maxsize-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"maxsize-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(folder, "pequeno.txt"), "conteúdo pequeno");
+            await File.WriteAllTextAsync(Path.Combine(folder, "grande.txt"), new string('x', 1000));
+
+            var indexer = new DocumentIndexer();
+            var stats = await indexer.IndexFolderAsync(folder, indexPath, maxFileSizeBytes: 100);
+
+            Assert.Equal(1, stats.FilesProcessed);
+            Assert.Equal(1, stats.FilesSkipped);
+            Assert.Contains(stats.SkippedFiles, p => Path.GetFileName(p) == "grande.txt");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IndexFolderAsync_SkipsFilesUnderExcludedFolders()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"excluded-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"excluded-index-{Guid.NewGuid()}");
+        var subFolder = Path.Combine(folder, "privado");
+
+        Directory.CreateDirectory(subFolder);
+
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(folder, "publico.txt"), "documento público");
+            await File.WriteAllTextAsync(Path.Combine(subFolder, "secreto.txt"), "documento privado");
+
+            var indexer = new DocumentIndexer();
+            var stats = await indexer.IndexFolderAsync(folder, indexPath, excludedFolders: new[] { subFolder });
+
+            Assert.Equal(1, stats.FilesProcessed);
+            Assert.Contains(stats.SkippedFiles, p => Path.GetFileName(p) == "secreto.txt");
+
+            var search = new SearchService(indexPath);
+            var results = search.Search("documento", 10);
+            Assert.DoesNotContain(results, r => r.FileName == "secreto.txt");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
 }
