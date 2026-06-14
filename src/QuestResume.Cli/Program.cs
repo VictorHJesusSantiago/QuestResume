@@ -29,6 +29,7 @@ try
         "remove" => RunRemove(rest),
         "tag" => RunTag(rest),
         "report" or "errors" => RunReport(rest),
+        "audit" => RunAudit(rest),
         "config" => RunConfig(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
@@ -72,7 +73,8 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
     {
         var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
         var progress = new Progress<string>(Console.WriteLine);
-        var stats = await indexer.IndexFolderAsync(folder, indexPath, options.ChunkSize, options.ChunkOverlap, progress);
+        var stats = await indexer.IndexFolderAsync(folder, indexPath, options.ChunkSize, options.ChunkOverlap, progress,
+            maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders);
 
         Console.WriteLine();
         Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
@@ -425,6 +427,42 @@ int RunReport(string[] cmdArgs)
     return 0;
 }
 
+int RunAudit(string[] cmdArgs)
+{
+    var options = configService.Load();
+
+    int? limit = 20;
+    if (cmdArgs.Length > 0)
+    {
+        if (!int.TryParse(cmdArgs[0], out var parsed) || parsed <= 0)
+        {
+            Console.Error.WriteLine("Uso: questresume audit [N]  (N = quantidade de perguntas recentes, padrão 20)");
+            return 1;
+        }
+
+        limit = parsed;
+    }
+
+    var entries = AuditLog.Load(options.IndexPath, limit);
+
+    if (entries.Count == 0)
+    {
+        Console.WriteLine("Nenhuma pergunta registrada ainda.");
+        return 0;
+    }
+
+    foreach (var entry in entries)
+    {
+        Console.WriteLine($"[{entry.TimestampUtc:u}] {entry.Question}");
+        if (entry.Sources.Count > 0)
+        {
+            Console.WriteLine($"  Fontes: {string.Join(", ", entry.Sources)}");
+        }
+    }
+
+    return 0;
+}
+
 int RunConfig(string[] cmdArgs)
 {
     if (cmdArgs.Length == 0)
@@ -434,7 +472,8 @@ int RunConfig(string[] cmdArgs)
                                  "set-ocr-enabled|set-tessdata-path|set-ocr-languages|" +
                                  "set-embeddings-enabled|set-embedding-model|set-embedding-tokenizer|" +
                                  "set-hybrid-weight|set-stt-enabled|set-whisper-model|" +
-                                 "set-reranking-enabled|set-reranking-model|set-reranking-tokenizer> [valor]");
+                                 "set-reranking-enabled|set-reranking-model|set-reranking-tokenizer|" +
+                                 "set-max-file-size|set-excluded-folders> [valor]");
         return 1;
     }
 
@@ -468,6 +507,8 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"RerankingEnabled:       {options.RerankingEnabled}");
             Console.WriteLine($"RerankingModelPath:     {options.RerankingModelPath}");
             Console.WriteLine($"RerankingTokenizerPath: {options.RerankingTokenizerPath}");
+            Console.WriteLine($"MaxFileSizeBytes:       {options.MaxFileSizeBytes}");
+            Console.WriteLine($"ExcludedFolders:        {string.Join(';', options.ExcludedFolders)}");
             return 0;
 
         case "set-model":
@@ -680,6 +721,30 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"RerankingTokenizerPath definido para: {value}");
             return 0;
 
+        case "set-max-file-size":
+            if (value is null || !long.TryParse(value, out var maxFileSizeBytes) || maxFileSizeBytes < 0)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-max-file-size <bytes> (0 = sem limite)");
+                return 1;
+            }
+            options.MaxFileSizeBytes = maxFileSizeBytes;
+            configService.Save(options);
+            Console.WriteLine($"MaxFileSizeBytes definido para: {maxFileSizeBytes}");
+            return 0;
+
+        case "set-excluded-folders":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-excluded-folders <pasta1;pasta2;...> (vazio = nenhuma)");
+                return 1;
+            }
+            options.ExcludedFolders = value
+                .Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .ToList();
+            configService.Save(options);
+            Console.WriteLine($"ExcludedFolders definido para: {string.Join(';', options.ExcludedFolders)}");
+            return 0;
+
         default:
             Console.Error.WriteLine($"Subcomando de config desconhecido: {sub}");
             return 1;
@@ -752,6 +817,9 @@ static int PrintUsage()
           questresume config set-reranking-enabled <true|false>
           questresume config set-reranking-model <caminho_para_modelo.onnx>
           questresume config set-reranking-tokenizer <caminho_para_vocab.txt>
+          questresume config set-max-file-size <bytes> (0 = sem limite)
+          questresume config set-excluded-folders <pasta1;pasta2;...> (vazio = nenhuma)
+          questresume audit [N]
         """);
     return 0;
 }

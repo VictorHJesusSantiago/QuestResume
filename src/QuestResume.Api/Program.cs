@@ -142,7 +142,8 @@ app.MapPost("/api/index", async (
         var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
 
         logger.LogInformation("Iniciando indexação de '{Folder}' em '{IndexPath}'", folder, options.IndexPath);
-        var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap, cancellationToken: cancellationToken);
+        var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap,
+            cancellationToken: cancellationToken, maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders);
         logger.LogInformation(
             "Indexação concluída: {FilesProcessed} arquivo(s), {ChunksIndexed} trecho(s), {Errors} erro(s)",
             stats.FilesProcessed, stats.ChunksIndexed, stats.Errors.Count);
