@@ -11,6 +11,16 @@ namespace QuestResume.Core.Extraction.Extractors;
 /// </summary>
 public sealed class EmailExtractor : IFileExtractor
 {
+    /// <summary>
+    /// Attachment extensions whose content is appended as text alongside the email body.
+    /// Binary attachments (images, PDFs, etc.) are still listed by name but not inlined.
+    /// </summary>
+    private static readonly HashSet<string> TextLikeAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".csv", ".md", ".json", ".xml", ".html", ".htm", ".log", ".ini",
+        ".yaml", ".yml", ".cs", ".py", ".js", ".ts", ".java", ".sql", ".bib", ".tex"
+    };
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".eml", ".msg" };
 
     public Task<ExtractedDocument> ExtractAsync(string path, CancellationToken cancellationToken = default)
@@ -48,6 +58,22 @@ public sealed class EmailExtractor : IFileExtractor
             ? message.TextBody
             : HtmlExtractor.ExtractVisibleText(message.HtmlBody ?? string.Empty));
 
+        foreach (var attachment in message.Attachments.OfType<MimePart>())
+        {
+            var fileName = attachment.FileName ?? "anexo";
+            builder.AppendLine();
+            builder.AppendLine($"--- Anexo: {fileName} ---");
+
+            if (attachment.Content is not null && TextLikeAttachmentExtensions.Contains(Path.GetExtension(fileName)))
+            {
+                using var contentStream = new MemoryStream();
+                attachment.Content.DecodeTo(contentStream);
+                contentStream.Position = 0;
+                using var reader = new StreamReader(contentStream);
+                builder.AppendLine(reader.ReadToEnd());
+            }
+        }
+
         return builder.ToString();
     }
 
@@ -64,6 +90,18 @@ public sealed class EmailExtractor : IFileExtractor
         builder.AppendLine(!string.IsNullOrWhiteSpace(message.BodyText)
             ? message.BodyText
             : HtmlExtractor.ExtractVisibleText(message.BodyHtml ?? string.Empty));
+
+        foreach (var attachment in message.Attachments.OfType<Storage.Attachment>())
+        {
+            var fileName = attachment.FileName ?? "anexo";
+            builder.AppendLine();
+            builder.AppendLine($"--- Anexo: {fileName} ---");
+
+            if (TextLikeAttachmentExtensions.Contains(Path.GetExtension(fileName)))
+            {
+                builder.AppendLine(Encoding.UTF8.GetString(attachment.Data));
+            }
+        }
 
         return builder.ToString();
     }

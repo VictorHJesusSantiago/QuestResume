@@ -96,7 +96,9 @@ public sealed class DocumentIndexer
                     try
                     {
                         var document = await _registry.ExtractAsync(filePath, cancellationToken).ConfigureAwait(false);
-                        var chunks = TextChunker.Chunk(document, chunkSize, overlap);
+                        var chunks = TextChunker.CodeExtensions.Contains(extension)
+                            ? TextChunker.ChunkCode(document, chunkSize, overlap)
+                            : TextChunker.Chunk(document, chunkSize, overlap);
 
                         foreach (var chunk in chunks)
                         {

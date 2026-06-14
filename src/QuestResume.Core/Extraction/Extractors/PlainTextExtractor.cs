@@ -10,7 +10,11 @@ public sealed class PlainTextExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[]
     {
-        ".txt", ".csv", ".css", ".js", ".json", ".xml", ".bib", ".tex", ".ics", ".vcf"
+        ".txt", ".csv", ".css", ".js", ".json", ".xml", ".bib", ".tex", ".ics", ".vcf",
+        // Source code / config formats: read as plain text and chunked function/class-aware
+        // by TextChunker.ChunkCode (see TextChunker.CodeExtensions).
+        ".cs", ".py", ".java", ".ts", ".tsx", ".jsx", ".go", ".rb", ".php", ".c", ".cpp",
+        ".h", ".hpp", ".rs", ".kt", ".swift", ".sh", ".ps1", ".sql", ".yaml", ".yml", ".md"
     };
 
     public async Task<ExtractedDocument> ExtractAsync(string path, CancellationToken cancellationToken = default)

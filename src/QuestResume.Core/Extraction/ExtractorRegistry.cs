@@ -32,10 +32,16 @@ public sealed class ExtractorRegistry
     /// With <paramref name="options"/> <c>null</c> (or OCR disabled), the result is identical
     /// to the original Group 1-only set.
     /// </summary>
-    public static IEnumerable<IFileExtractor> DefaultExtractors(AppOptions? options = null)
+    /// <param name="includeArchives">
+    /// When <c>true</c> (the default), includes <see cref="ZipArchiveExtractor"/>. Pass
+    /// <c>false</c> when building the registry used *inside* <see cref="ZipArchiveExtractor"/>
+    /// itself, to avoid unbounded recursion on nested archives.
+    /// </param>
+    public static IEnumerable<IFileExtractor> DefaultExtractors(AppOptions? options = null, bool includeArchives = true)
     {
         yield return new PlainTextExtractor();
         yield return new IpynbExtractor();
+        yield return new SubtitleExtractor();
 
         if (options?.OcrEnabled == true)
         {
@@ -57,6 +63,11 @@ public sealed class ExtractorRegistry
         if (options?.SttEnabled == true)
         {
             yield return new AudioTranscriptionExtractor(options.WhisperModelPath);
+        }
+
+        if (includeArchives)
+        {
+            yield return new ZipArchiveExtractor(options);
         }
     }
 

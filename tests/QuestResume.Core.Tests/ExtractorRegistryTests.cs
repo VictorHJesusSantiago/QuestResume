@@ -18,6 +18,11 @@ public class ExtractorRegistryTests
     [InlineData(".ipynb")]
     [InlineData(".eml")]
     [InlineData(".msg")]
+    [InlineData(".zip")]
+    [InlineData(".srt")]
+    [InlineData(".vtt")]
+    [InlineData(".cs")]
+    [InlineData(".py")]
     public void IsSupported_ReturnsTrueForGroup1Extensions(string extension)
     {
         var registry = new ExtractorRegistry();

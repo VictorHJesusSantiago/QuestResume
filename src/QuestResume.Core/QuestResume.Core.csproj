@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.22.0" />
+    <PackageReference Include="MetadataExtractor" Version="2.8.1" />
     <PackageReference Include="MimeKit" Version="4.17.0" />
     <PackageReference Include="MsgReader" Version="6.0.12" />
     <PackageReference Include="PDFtoImage" Version="5.2.1" />
