@@ -23,7 +23,8 @@ public class AuditLogTests
             {
                 TimestampUtc = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
                 Question = "Segunda pergunta?",
-                Sources = new List<string> { "b.txt" }
+                Sources = new List<string> { "b.txt" },
+                ElapsedMs = 123.45
             });
 
             var entries = AuditLog.Load(indexPath);
@@ -32,6 +33,8 @@ public class AuditLogTests
             Assert.Equal("Segunda pergunta?", entries[0].Question);
             Assert.Equal("Primeira pergunta?", entries[1].Question);
             Assert.Equal(new[] { "b.txt" }, entries[0].Sources);
+            Assert.Equal(123.45, entries[0].ElapsedMs);
+            Assert.Equal(0, entries[1].ElapsedMs);
         }
         finally
         {

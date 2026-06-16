@@ -138,6 +138,37 @@ public class DocumentIndexerTests
     }
 
     [Fact]
+    public async Task IndexFolderAsync_RedactsPiiWhenEnabled()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"pii-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"pii-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(folder, "contato.txt"), "Contato: joao@exemplo.com, CPF 123.456.789-09.");
+
+            var indexer = new DocumentIndexer();
+            await indexer.IndexFolderAsync(folder, indexPath, piiRedactionEnabled: true);
+
+            var search = new SearchService(indexPath);
+            var results = search.Search("contato", 10);
+
+            var chunk = Assert.Single(results);
+            Assert.Contains("[EMAIL]", chunk.ChunkText);
+            Assert.Contains("[CPF]", chunk.ChunkText);
+            Assert.DoesNotContain("joao@exemplo.com", chunk.ChunkText);
+            Assert.DoesNotContain("123.456.789-09", chunk.ChunkText);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task IndexFolderAsync_SkipsFilesUnderExcludedFolders()
     {
         var folder = Path.Combine(Path.GetTempPath(), $"excluded-docs-{Guid.NewGuid()}");
