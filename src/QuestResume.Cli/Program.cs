@@ -30,6 +30,7 @@ try
         "tag" => RunTag(rest),
         "report" or "errors" => RunReport(rest),
         "audit" => RunAudit(rest),
+        "stats" => RunStats(rest),
         "config" => RunConfig(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
@@ -74,7 +75,8 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
         var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
         var progress = new Progress<string>(Console.WriteLine);
         var stats = await indexer.IndexFolderAsync(folder, indexPath, options.ChunkSize, options.ChunkOverlap, progress,
-            maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders);
+            maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders,
+            piiRedactionEnabled: options.PiiRedactionEnabled);
 
         Console.WriteLine();
         Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
@@ -427,6 +429,28 @@ int RunReport(string[] cmdArgs)
     return 0;
 }
 
+int RunStats(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var stats = DashboardStats.Compute(options.IndexPath, options);
+
+    Console.WriteLine($"Documentos indexados: {stats.DocumentCount}");
+    Console.WriteLine($"Trechos indexados:    {stats.ChunkCount}");
+    Console.WriteLine($"Tags distintas:       {stats.TagCount}");
+    Console.WriteLine($"Erros na última indexação:      {stats.ErrorCount}");
+    Console.WriteLine($"Duplicatas na última indexação: {stats.DuplicateCount}");
+    Console.WriteLine($"Perguntas registradas (audit):  {stats.QuestionCount}");
+    Console.WriteLine($"Última indexação: {(stats.LastIndexedUtc is { } d ? d.ToString("u") : "nunca")}");
+    Console.WriteLine($"Tamanho do índice em disco: {stats.IndexSizeBytes / 1024.0 / 1024.0:F2} MB");
+    Console.WriteLine();
+    Console.WriteLine("Saúde do sistema:");
+    Console.WriteLine($"  Memória do processo: {stats.ProcessMemoryMb:F2} MB");
+    Console.WriteLine($"  Tempo médio de resposta: {(stats.AverageResponseTimeMs is { } ms ? $"{ms:F0} ms" : "sem dados")}");
+    Console.WriteLine($"  Modelo configurado: {(stats.ModelConfigured ? "sim" : "não")}");
+
+    return 0;
+}
+
 int RunAudit(string[] cmdArgs)
 {
     var options = configService.Load();
@@ -473,7 +497,7 @@ int RunConfig(string[] cmdArgs)
                                  "set-embeddings-enabled|set-embedding-model|set-embedding-tokenizer|" +
                                  "set-hybrid-weight|set-stt-enabled|set-whisper-model|" +
                                  "set-reranking-enabled|set-reranking-model|set-reranking-tokenizer|" +
-                                 "set-max-file-size|set-excluded-folders> [valor]");
+                                 "set-max-file-size|set-excluded-folders|set-pii-redaction|set-gpu-layers> [valor]");
         return 1;
     }
 
@@ -509,6 +533,8 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"RerankingTokenizerPath: {options.RerankingTokenizerPath}");
             Console.WriteLine($"MaxFileSizeBytes:       {options.MaxFileSizeBytes}");
             Console.WriteLine($"ExcludedFolders:        {string.Join(';', options.ExcludedFolders)}");
+            Console.WriteLine($"PiiRedactionEnabled:    {options.PiiRedactionEnabled}");
+            Console.WriteLine($"GpuLayerCount:          {options.GpuLayerCount}");
             return 0;
 
         case "set-model":
@@ -745,6 +771,28 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"ExcludedFolders definido para: {string.Join(';', options.ExcludedFolders)}");
             return 0;
 
+        case "set-pii-redaction":
+            if (value is null || !bool.TryParse(value, out var piiRedactionEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-pii-redaction <true|false>");
+                return 1;
+            }
+            options.PiiRedactionEnabled = piiRedactionEnabled;
+            configService.Save(options);
+            Console.WriteLine($"PiiRedactionEnabled definido para: {piiRedactionEnabled}");
+            return 0;
+
+        case "set-gpu-layers":
+            if (value is null || !int.TryParse(value, out var gpuLayerCount) || gpuLayerCount < 0)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-gpu-layers <número> (0 = somente CPU)");
+                return 1;
+            }
+            options.GpuLayerCount = gpuLayerCount;
+            configService.Save(options);
+            Console.WriteLine($"GpuLayerCount definido para: {gpuLayerCount}");
+            return 0;
+
         default:
             Console.Error.WriteLine($"Subcomando de config desconhecido: {sub}");
             return 1;
@@ -819,7 +867,10 @@ static int PrintUsage()
           questresume config set-reranking-tokenizer <caminho_para_vocab.txt>
           questresume config set-max-file-size <bytes> (0 = sem limite)
           questresume config set-excluded-folders <pasta1;pasta2;...> (vazio = nenhuma)
+          questresume config set-pii-redaction <true|false>
+          questresume config set-gpu-layers <número> (0 = somente CPU)
           questresume audit [N]
+          questresume stats
         """);
     return 0;
 }

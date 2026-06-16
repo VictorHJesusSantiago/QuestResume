@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using QuestResume.Core.Configuration;
 using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
@@ -47,6 +48,44 @@ public sealed class RagEngineProvider : IDisposable
         try
         {
             return await engine.AskAsync(question, topK, history, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Streaming counterpart to <see cref="AskAsync"/>. Holds <see cref="_askSemaphore"/> for
+    /// the lifetime of the returned token stream (released once it's fully enumerated, or if
+    /// the caller disconnects) so a concurrent <c>/api/ask</c>/<c>/api/ask/stream</c> request
+    /// can't run inference on the shared model at the same time.
+    /// </summary>
+    public async Task<StreamingAskResult> AskStreamAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var result = await engine.AskStreamAsync(question, topK, history, cancellationToken).ConfigureAwait(false);
+            return new StreamingAskResult { Sources = result.Sources, Tokens = ReleaseAfter(result.Tokens, cancellationToken) };
+        }
+        catch
+        {
+            _askSemaphore.Release();
+            throw;
+        }
+    }
+
+    private async IAsyncEnumerable<string> ReleaseAfter(IAsyncEnumerable<string> tokens, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var token in tokens.WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                yield return token;
+            }
         }
         finally
         {

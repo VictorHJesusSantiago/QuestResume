@@ -6,7 +6,8 @@
         xmlns:local="clr-namespace:QuestResume.Desktop"
         xmlns:converters="clr-namespace:QuestResume.Desktop.Converters"
         mc:Ignorable="d"
-        Title="QuestResume" Height="650" Width="900">
+        Title="QuestResume" Height="650" Width="900"
+        AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Window.Resources>
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
     </Window.Resources>
@@ -27,10 +28,12 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBox Grid.Column="0" Padding="5" VerticalContentAlignment="Center" Margin="0,0,5,0"
                              Text="{Binding QuestionText, UpdateSourceTrigger=PropertyChanged}"/>
-                    <Button Grid.Column="1" Content="Perguntar" Command="{Binding AskCommand}" Padding="10,4"/>
+                    <Button Grid.Column="1" Content="Perguntar" Command="{Binding AskCommand}" Padding="10,4" Margin="0,0,5,0"/>
+                    <Button Grid.Column="2" Content="Exportar conversa" Command="{Binding ExportChatCommand}" Padding="10,4"/>
                 </Grid>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">

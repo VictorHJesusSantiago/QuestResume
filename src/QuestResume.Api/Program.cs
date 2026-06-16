@@ -1,3 +1,4 @@
+using System.Text.Json;
 using QuestResume.Api.Services;
 using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
@@ -143,7 +144,8 @@ app.MapPost("/api/index", async (
 
         logger.LogInformation("Iniciando indexação de '{Folder}' em '{IndexPath}'", folder, options.IndexPath);
         var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap,
-            cancellationToken: cancellationToken, maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders);
+            cancellationToken: cancellationToken, maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders,
+            piiRedactionEnabled: options.PiiRedactionEnabled);
         logger.LogInformation(
             "Indexação concluída: {FilesProcessed} arquivo(s), {ChunksIndexed} trecho(s), {Errors} erro(s)",
             stats.FilesProcessed, stats.ChunksIndexed, stats.Errors.Count);
@@ -212,6 +214,66 @@ app.MapPost("/api/ask", async (
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+});
+
+app.MapPost("/api/ask/stream", async (
+    HttpContext context,
+    AskRequest request,
+    ConfigService configService,
+    RagEngineProvider engineProvider,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Question))
+    {
+        return Results.BadRequest(new { error = "Informe a pergunta (question)." });
+    }
+
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+
+    if (!search.IndexExists())
+    {
+        return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
+    }
+
+    StreamingAskResult streamingResult;
+    try
+    {
+        streamingResult = await engineProvider.AskStreamAsync(options, request.Question, request.TopK ?? options.TopK, request.History, cancellationToken);
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    context.Response.ContentType = "text/event-stream";
+    context.Response.Headers.CacheControl = "no-cache";
+
+    await WriteSseEventAsync(context.Response, "sources", streamingResult.Sources, cancellationToken);
+
+    try
+    {
+        await foreach (var token in streamingResult.Tokens.WithCancellation(cancellationToken))
+        {
+            await WriteSseEventAsync(context.Response, "token", token, cancellationToken);
+        }
+
+        await WriteSseEventAsync(context.Response, "done", true, cancellationToken);
+    }
+    catch (OperationCanceledException)
+    {
+        // Cliente desconectou no meio do streaming — nada mais a escrever.
+    }
+    catch (Exception ex) when (ex is ModelNotConfiguredException or OllamaNotAvailableException)
+    {
+        await WriteSseEventAsync(context.Response, "error", ex.Message, cancellationToken);
+    }
+
+    return Results.Empty;
 });
 
 app.MapPost("/api/compare", async (
@@ -292,6 +354,39 @@ app.MapGet("/api/index-report", (ConfigService configService) =>
     return Results.Ok(IndexReport.Load(options.IndexPath));
 });
 
+app.MapGet("/api/stats", (ConfigService configService) =>
+{
+    var options = configService.Load();
+    return Results.Ok(DashboardStats.Compute(options.IndexPath, options));
+});
+
+app.MapGet("/api/documents/preview", (string path, ConfigService configService) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    }
+
+    var options = configService.Load();
+    var search = new SearchService(options.IndexPath);
+    var chunks = search.GetChunksByPath(path);
+
+    if (chunks.Count == 0)
+    {
+        return Results.NotFound(new { error = $"Documento não encontrado no índice: {path}" });
+    }
+
+    const int maxChars = 20000;
+    var text = string.Join("\n\n", chunks.Select(c => c.ChunkText));
+    var truncated = text.Length > maxChars;
+    if (truncated)
+    {
+        text = text[..maxChars];
+    }
+
+    return Results.Ok(new { fileName = chunks[0].FileName, text, truncated });
+});
+
 app.MapGet("/api/tags", (ConfigService configService) =>
 {
     var options = configService.Load();
@@ -314,6 +409,13 @@ app.MapPut("/api/documents/tags", (SetTagsRequest request, ConfigService configS
 });
 
 app.Run();
+
+static async Task WriteSseEventAsync(HttpResponse response, string eventName, object data, CancellationToken cancellationToken)
+{
+    var json = JsonSerializer.Serialize(data);
+    await response.WriteAsync($"event: {eventName}\ndata: {json}\n\n", cancellationToken);
+    await response.Body.FlushAsync(cancellationToken);
+}
 
 static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFactory, string baseUrl)
 {

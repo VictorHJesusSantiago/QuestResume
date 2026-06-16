@@ -16,6 +16,22 @@
     --ok: #4ade80;
     --error: #f87171;
   }
+  :root[data-theme="light"] {
+    --bg: #f1f5f9;
+    --panel: #ffffff;
+    --panel-light: #e2e8f0;
+    --text: #0f172a;
+    --muted: #64748b;
+    --accent: #0284c7;
+    --accent-dark: #0369a1;
+    --ok: #16a34a;
+    --error: #dc2626;
+  }
+  :root[data-theme="light"] input[type="text"],
+  :root[data-theme="light"] input[type="number"],
+  :root[data-theme="light"] select {
+    background: #ffffff;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -198,6 +214,93 @@
     font-size: 0.85rem;
   }
   .report-list li { margin-bottom: 0.3rem; }
+  .stats-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .stat-card {
+    flex: 1;
+    min-width: 140px;
+    background: #0b1220;
+    border: 1px solid var(--panel-light);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+  }
+  :root[data-theme="light"] .stat-card { background: #f8fafc; }
+  .stat-card .value { font-size: 1.6rem; font-weight: 600; }
+  .stat-card .label { font-size: 0.8rem; color: var(--muted); }
+  .chart-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .chart-bar-label {
+    width: 110px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .chart-bar-track {
+    flex: 1;
+    background: var(--panel-light);
+    border-radius: 4px;
+    height: 1rem;
+    overflow: hidden;
+  }
+  .chart-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+  }
+  .chart-bar-count {
+    width: 32px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .theme-toggle {
+    background: transparent;
+    border: 1px solid var(--panel-light);
+    color: var(--text);
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 1.5rem;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--panel-light);
+    border-radius: 8px;
+    padding: 1.25rem;
+    max-width: 700px;
+    max-height: 80vh;
+    width: 100%;
+    overflow-y: auto;
+  }
+  .modal-box h3 { margin: 0 0 0.75rem 0; }
+  .modal-box pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: inherit;
+    font-size: 0.9rem;
+    margin: 0;
+  }
+  .modal-box .close-row { text-align: right; margin-top: 0.75rem; }
 </style>
 </head>
 <body>
@@ -206,13 +309,17 @@
     <h1>QuestResume</h1>
     <p>Busca e perguntas offline sobre seus documentos locais</p>
   </div>
-  <div id="statusBadge" class="status-line">Carregando status...</div>
+  <div style="display: flex; align-items: center; gap: 0.75rem;">
+    <div id="statusBadge" class="status-line">Carregando status...</div>
+    <button id="themeToggle" class="theme-toggle" title="Alternar tema claro/escuro">Tema</button>
+  </div>
 </header>
 
 <nav>
   <button data-tab="chat" class="active">Perguntar</button>
   <button data-tab="search">Buscar</button>
   <button data-tab="documents">Documentos</button>
+  <button data-tab="dashboard">Painel</button>
   <button data-tab="config">Configurações</button>
 </nav>
 
@@ -224,6 +331,7 @@
       <div class="ask-row">
         <input type="text" id="questionInput" placeholder="Digite sua pergunta..." />
         <button class="primary" id="askButton">Perguntar</button>
+        <button id="exportChatButton" title="Exportar conversa para Markdown">Exportar conversa</button>
       </div>
       <div id="askStatus" class="status-line"></div>
     </div>
@@ -265,6 +373,16 @@
     <div class="panel">
       <h2>Relatório da última indexação</h2>
       <div id="indexReport"></div>
+    </div>
+  </section>
+
+  <section id="tab-dashboard">
+    <div class="panel">
+      <h2>Painel</h2>
+      <button class="primary" id="refreshStatsButton">Atualizar</button>
+      <div id="statsGrid" class="stats-grid" style="margin-top: 1rem;"></div>
+      <h3 style="margin-top: 1.5rem;">Documentos por tipo</h3>
+      <div id="extensionChart" style="margin-top: 0.5rem;"></div>
     </div>
   </section>
 
@@ -392,11 +510,35 @@
           <input type="number" id="contextSizeInput" min="512" max="32768" step="256" />
         </div>
       </div>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="piiRedactionEnabledInput" style="width: auto; margin-right: 0.4rem;" />
+          Redigir dados pessoais (CPF, CNPJ, e-mail, telefone, cartão) antes de indexar
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="gpuLayerCountInput">Camadas do modelo na GPU (0 = somente CPU)</label>
+          <input type="number" id="gpuLayerCountInput" min="0" step="1" />
+        </div>
+      </div>
+
       <button class="primary" id="saveConfigButton">Salvar configurações</button>
       <div id="configStatus" class="status-line"></div>
     </div>
   </section>
 </main>
+
+<div id="previewModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3 id="previewTitle"></h3>
+    <pre id="previewText"></pre>
+    <div class="close-row">
+      <button class="primary" id="closePreviewButton">Fechar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -407,7 +549,25 @@ document.querySelectorAll('nav button').forEach(btn => {
     document.querySelectorAll('main section').forEach(s => s.classList.remove('active'));
     btn.classList.add('active');
     $(`tab-${btn.dataset.tab}`).classList.add('active');
+    if (btn.dataset.tab === 'dashboard') loadStats();
   });
+});
+
+// Dark mode is the default (matches the original color scheme); the toggle switches to a
+// light theme via the [data-theme="light"] CSS overrides, persisted in localStorage.
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme === 'light') {
+  document.documentElement.setAttribute('data-theme', 'light');
+}
+$('themeToggle').addEventListener('click', () => {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  if (isLight) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'dark');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+    localStorage.setItem('theme', 'light');
+  }
 });
 
 async function loadStatus() {
@@ -455,6 +615,8 @@ async function loadConfig() {
   $('rerankingTokenizerPathInput').value = config.rerankingTokenizerPath || '';
   $('sttEnabledInput').checked = !!config.sttEnabled;
   $('whisperModelPathInput').value = config.whisperModelPath || '';
+  $('piiRedactionEnabledInput').checked = !!config.piiRedactionEnabled;
+  $('gpuLayerCountInput').value = config.gpuLayerCount ?? 0;
 }
 
 $('saveConfigButton').addEventListener('click', async () => {
@@ -483,7 +645,9 @@ $('saveConfigButton').addEventListener('click', async () => {
       rerankingModelPath: $('rerankingModelPathInput').value,
       rerankingTokenizerPath: $('rerankingTokenizerPathInput').value,
       sttEnabled: $('sttEnabledInput').checked,
-      whisperModelPath: $('whisperModelPathInput').value
+      whisperModelPath: $('whisperModelPathInput').value,
+      piiRedactionEnabled: $('piiRedactionEnabledInput').checked,
+      gpuLayerCount: parseInt($('gpuLayerCountInput').value, 10) || 0
     };
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -547,37 +711,98 @@ function appendHighlighted(container, highlight) {
   }
 }
 
+function appendSources(container, sources) {
+  if (!sources || !sources.length) return;
+
+  const sourcesDiv = document.createElement('div');
+  sourcesDiv.className = 'sources';
+  sourcesDiv.append('Fontes: ');
+
+  const seen = new Map();
+  for (const s of sources) {
+    if (!seen.has(s.sourcePath)) seen.set(s.sourcePath, s.fileName);
+  }
+
+  let first = true;
+  for (const [path, fileName] of seen) {
+    if (!first) sourcesDiv.append(', ');
+    first = false;
+
+    const link = document.createElement('a');
+    link.href = 'file:///' + path.replace(/\\/g, '/');
+    link.textContent = fileName;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    sourcesDiv.appendChild(link);
+  }
+
+  container.appendChild(sourcesDiv);
+}
+
 function addChatMessage(role, text, sources) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   div.textContent = text;
-  if (sources && sources.length) {
-    const sourcesDiv = document.createElement('div');
-    sourcesDiv.className = 'sources';
-    sourcesDiv.append('Fontes: ');
-
-    const seen = new Map();
-    for (const s of sources) {
-      if (!seen.has(s.sourcePath)) seen.set(s.sourcePath, s.fileName);
-    }
-
-    let first = true;
-    for (const [path, fileName] of seen) {
-      if (!first) sourcesDiv.append(', ');
-      first = false;
-
-      const link = document.createElement('a');
-      link.href = 'file:///' + path.replace(/\\/g, '/');
-      link.textContent = fileName;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      sourcesDiv.appendChild(link);
-    }
-
-    div.appendChild(sourcesDiv);
-  }
+  appendSources(div, sources);
   $('chatLog').appendChild(div);
   $('chatLog').scrollTop = $('chatLog').scrollHeight;
+  return div;
+}
+
+// Sends `question` to /api/ask/stream and renders the answer incrementally as it's
+// generated (SSE frames: `event: sources|token|done|error` followed by `data: <json>\n\n`),
+// for a ChatGPT-style streaming response. Returns the final assembled answer text.
+async function streamAsk(question) {
+  const res = await fetch('/api/ask/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, history: chatHistory.slice(-MAX_HISTORY_TURNS) })
+  });
+
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Falha ao responder.');
+  }
+
+  const answerDiv = addChatMessage('answer', '');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answer = '';
+  let sources = [];
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIndex;
+    while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+
+      const lines = frame.split('\n');
+      const eventLine = lines.find(l => l.startsWith('event: '));
+      const dataLine = lines.find(l => l.startsWith('data: '));
+      if (!eventLine || !dataLine) continue;
+
+      const eventName = eventLine.slice('event: '.length);
+      const data = JSON.parse(dataLine.slice('data: '.length));
+
+      if (eventName === 'sources') {
+        sources = data;
+      } else if (eventName === 'token') {
+        answer += data;
+        answerDiv.textContent = answer;
+        $('chatLog').scrollTop = $('chatLog').scrollHeight;
+      } else if (eventName === 'error') {
+        throw new Error(data);
+      }
+    }
+  }
+
+  appendSources(answerDiv, sources);
+  return answer;
 }
 
 // Last few question/answer pairs, sent with each /api/ask request so the model has
@@ -595,15 +820,8 @@ $('askButton').addEventListener('click', async () => {
   $('askStatus').textContent = 'Pensando... (pode demorar na primeira pergunta, enquanto o modelo carrega)';
   $('askStatus').className = 'status-line';
   try {
-    const res = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, history: chatHistory.slice(-MAX_HISTORY_TURNS) })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Falha ao responder.');
-    addChatMessage('answer', data.answer, data.sources);
-    chatHistory.push({ question, answer: data.answer });
+    const answer = await streamAsk(question);
+    chatHistory.push({ question, answer });
     $('askStatus').textContent = '';
   } catch (err) {
     addChatMessage('answer', `Erro: ${err.message}`);
@@ -615,6 +833,23 @@ $('askButton').addEventListener('click', async () => {
 
 $('questionInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('askButton').click();
+});
+
+$('exportChatButton').addEventListener('click', () => {
+  if (chatHistory.length === 0) return;
+
+  const lines = ['# Conversa - QuestResume', ''];
+  for (const turn of chatHistory) {
+    lines.push(`## Pergunta`, '', turn.question, '', `## Resposta`, '', turn.answer, '');
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `conversa-questresume-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
 });
 
 $('searchButton').addEventListener('click', async () => {
@@ -742,12 +977,16 @@ async function loadDocuments() {
         tagsRow.append(tagsInput, saveTagsButton, tagsStatus);
         info.append(tagsRow);
 
+        const previewButton = document.createElement('button');
+        previewButton.textContent = 'Visualizar';
+        previewButton.addEventListener('click', () => previewDocument(doc.sourcePath));
+
         const removeButton = document.createElement('button');
         removeButton.className = 'danger';
         removeButton.textContent = 'Remover';
         removeButton.addEventListener('click', () => removeDocument(doc.sourcePath));
 
-        item.append(info, removeButton);
+        item.append(info, previewButton, removeButton);
         listEl.appendChild(item);
       }
     }
@@ -850,6 +1089,109 @@ async function loadIndexReport() {
     reportEl.appendChild(error);
   }
 }
+
+async function loadStats() {
+  const gridEl = $('statsGrid');
+  gridEl.replaceChildren();
+  gridEl.append('Carregando...');
+
+  try {
+    const res = await fetch('/api/stats');
+    const stats = await res.json();
+    gridEl.replaceChildren();
+
+    const cards = [
+      ['Documentos indexados', stats.documentCount],
+      ['Trechos indexados', stats.chunkCount],
+      ['Tags distintas', stats.tagCount],
+      ['Perguntas registradas', stats.questionCount],
+      ['Erros (última indexação)', stats.errorCount],
+      ['Duplicatas (última indexação)', stats.duplicateCount],
+      ['Tamanho do índice', `${(stats.indexSizeBytes / 1024 / 1024).toFixed(2)} MB`],
+      ['Última indexação', stats.lastIndexedUtc ? new Date(stats.lastIndexedUtc).toLocaleString() : 'nunca'],
+      ['Memória do processo', `${stats.processMemoryMb.toFixed(2)} MB`],
+      ['Tempo médio de resposta', stats.averageResponseTimeMs != null ? `${Math.round(stats.averageResponseTimeMs)} ms` : 'sem dados'],
+      ['Modelo configurado', stats.modelConfigured ? 'sim' : 'não']
+    ];
+
+    for (const [label, value] of cards) {
+      const card = document.createElement('div');
+      card.className = 'stat-card';
+      const valueEl = document.createElement('div');
+      valueEl.className = 'value';
+      valueEl.textContent = value;
+      const labelEl = document.createElement('div');
+      labelEl.className = 'label';
+      labelEl.textContent = label;
+      card.append(valueEl, labelEl);
+      gridEl.appendChild(card);
+    }
+
+    renderExtensionChart(stats.documentsByExtension || {});
+  } catch (err) {
+    gridEl.replaceChildren();
+    const error = document.createElement('p');
+    error.className = 'status-error';
+    error.textContent = `Erro ao carregar painel: ${err.message}`;
+    gridEl.appendChild(error);
+  }
+}
+
+// Renders `documentsByExtension` (e.g. { pdf: 12, docx: 3 }) as simple CSS horizontal bars,
+// scaled relative to the most common extension.
+function renderExtensionChart(documentsByExtension) {
+  const chartEl = $('extensionChart');
+  chartEl.replaceChildren();
+
+  const entries = Object.entries(documentsByExtension);
+  if (entries.length === 0) {
+    chartEl.append('Nenhum documento indexado ainda.');
+    return;
+  }
+
+  const maxCount = Math.max(...entries.map(([, count]) => count));
+
+  for (const [extension, count] of entries) {
+    const row = document.createElement('div');
+    row.className = 'chart-bar-row';
+
+    const label = document.createElement('div');
+    label.className = 'chart-bar-label';
+    label.textContent = extension;
+
+    const track = document.createElement('div');
+    track.className = 'chart-bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'chart-bar-fill';
+    fill.style.width = `${(count / maxCount) * 100}%`;
+    track.appendChild(fill);
+
+    const countEl = document.createElement('div');
+    countEl.className = 'chart-bar-count';
+    countEl.textContent = count;
+
+    row.append(label, track, countEl);
+    chartEl.appendChild(row);
+  }
+}
+
+async function previewDocument(path) {
+  try {
+    const res = await fetch(`/api/documents/preview?path=${encodeURIComponent(path)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao carregar pré-visualização.');
+    $('previewTitle').textContent = data.fileName;
+    $('previewText').textContent = data.text + (data.truncated ? '\n\n[...conteúdo truncado...]' : '');
+    $('previewModal').classList.add('active');
+  } catch (err) {
+    alert(`Erro ao visualizar documento: ${err.message}`);
+  }
+}
+
+$('closePreviewButton').addEventListener('click', () => $('previewModal').classList.remove('active'));
+$('previewModal').addEventListener('click', (e) => {
+  if (e.target === $('previewModal')) $('previewModal').classList.remove('active');
+});
 
 async function removeDocument(path) {
   try {
