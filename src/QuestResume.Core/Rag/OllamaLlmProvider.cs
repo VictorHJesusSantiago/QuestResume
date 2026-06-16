@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace QuestResume.Core.Rag;
@@ -55,6 +57,60 @@ public sealed class OllamaLlmProvider : ILlmProvider
             .ConfigureAwait(false);
 
         return result?.Response?.Trim() ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Streams the completion via Ollama's <c>"stream": true</c> mode, which returns one JSON
+    /// object per line (NDJSON) — each with a <c>response</c> fragment, until a final object
+    /// with <c>"done": true</c>.
+    /// </summary>
+    public async IAsyncEnumerable<string> CompleteStreamAsync(string prompt, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var request = new OllamaGenerateRequest(_model, prompt, true);
+
+        HttpResponseMessage response;
+        try
+        {
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/generate")
+            {
+                Content = JsonContent.Create(request)
+            };
+            response = await _httpClient
+                .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new OllamaNotAvailableException(_baseUrl, ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new OllamaNotAvailableException(_baseUrl);
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var chunk = JsonSerializer.Deserialize<OllamaGenerateResponse>(line);
+            if (!string.IsNullOrEmpty(chunk?.Response))
+            {
+                yield return chunk.Response;
+            }
+
+            if (chunk?.Done == true)
+            {
+                break;
+            }
+        }
     }
 
     public void Dispose()

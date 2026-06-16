@@ -94,6 +94,20 @@ public sealed class AppOptions
     public List<string> ExcludedFolders { get; set; } = new();
 
     /// <summary>
+    /// Quando habilitado, mascara dados pessoais comuns (CPF, CNPJ, e-mail, telefone, cartão de
+    /// crédito) no texto indexado, antes de salvá-lo no índice de busca e gerar embeddings.
+    /// </summary>
+    public bool PiiRedactionEnabled { get; set; } = false;
+
+    // --- GPU ---
+
+    /// <summary>
+    /// Número de camadas do modelo (.gguf) a serem descarregadas para a GPU via LLamaSharp;
+    /// 0 = executar inteiramente na CPU (padrão).
+    /// </summary>
+    public int GpuLayerCount { get; set; } = 0;
+
+    /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
     /// menor que <see cref="ChunkSize"/>), evitando que uma configuração inválida só seja
     /// detectada arquivo a arquivo durante <c>DocumentIndexer.IndexFolderAsync</c>.
@@ -136,6 +150,11 @@ public sealed class AppOptions
         if (MaxFileSizeBytes < 0)
         {
             throw new AppOptionsValidationException("MaxFileSizeBytes não pode ser negativo.");
+        }
+
+        if (GpuLayerCount < 0)
+        {
+            throw new AppOptionsValidationException("GpuLayerCount não pode ser negativo.");
         }
     }
 }

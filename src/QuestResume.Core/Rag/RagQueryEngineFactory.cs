@@ -25,7 +25,8 @@ public sealed record RagEngineKey(
     double HybridBm25Weight,
     bool RerankingEnabled,
     string RerankingModelPath,
-    string RerankingTokenizerPath)
+    string RerankingTokenizerPath,
+    int GpuLayerCount)
 {
     public static RagEngineKey From(AppOptions options, int? topK = null) => new(
         options.ModelPath,
@@ -41,7 +42,8 @@ public sealed record RagEngineKey(
         options.HybridBm25Weight,
         options.RerankingEnabled,
         options.RerankingModelPath,
-        options.RerankingTokenizerPath);
+        options.RerankingTokenizerPath,
+        options.GpuLayerCount);
 }
 
 /// <summary>
@@ -86,6 +88,7 @@ public static class RagQueryEngineFactory
             embeddingService: embeddingService,
             hybridBm25Weight: options.HybridBm25Weight,
             crossEncoderService: crossEncoderService,
-            indexPath: options.IndexPath);
+            indexPath: options.IndexPath,
+            gpuLayerCount: options.GpuLayerCount);
     }
 }

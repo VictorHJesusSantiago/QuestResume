@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Indexing;
@@ -25,6 +26,7 @@ public sealed class RagQueryEngine : IDisposable
     private readonly EmbeddingService? _embeddingService;
     private readonly CrossEncoderService? _crossEncoderService;
     private readonly string? _indexPath;
+    private readonly int _gpuLayerCount;
 
     /// <summary>
     /// Caches answers for repeated questions (same question + topK, no conversation history),
@@ -57,7 +59,8 @@ public sealed class RagQueryEngine : IDisposable
         EmbeddingService? embeddingService = null,
         double hybridBm25Weight = 0.5,
         CrossEncoderService? crossEncoderService = null,
-        string? indexPath = null)
+        string? indexPath = null,
+        int gpuLayerCount = 0)
     {
         _searchService = new HybridSearchService(searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService);
         _modelPath = modelPath;
@@ -71,6 +74,7 @@ public sealed class RagQueryEngine : IDisposable
         _embeddingService = embeddingService;
         _crossEncoderService = crossEncoderService;
         _indexPath = indexPath;
+        _gpuLayerCount = gpuLayerCount;
     }
 
     /// <summary>
@@ -105,12 +109,16 @@ public sealed class RagQueryEngine : IDisposable
             return cached;
         }
 
+        var stopwatch = Stopwatch.StartNew();
+
         var sources = await _searchService.SearchAsync(question, topK ?? _defaultTopK, cancellationToken).ConfigureAwait(false);
 
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
 
         var prompt = BuildPrompt(question, sources, history);
         var answer = await llm.CompleteAsync(prompt, cancellationToken).ConfigureAwait(false);
+
+        stopwatch.Stop();
 
         var result = new AskResult { Answer = answer, Sources = sources };
 
@@ -125,11 +133,92 @@ public sealed class RagQueryEngine : IDisposable
             {
                 TimestampUtc = DateTime.UtcNow,
                 Question = question,
-                Sources = sources.Select(s => s.FileName).Distinct().ToList()
+                Sources = sources.Select(s => s.FileName).Distinct().ToList(),
+                ElapsedMs = stopwatch.Elapsed.TotalMilliseconds
             });
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Same retrieval/prompt-building as <see cref="AskAsync"/>, but returns the LLM's answer as
+    /// a token stream for ChatGPT-style incremental rendering. Sources are available
+    /// immediately (retrieval happens before this method returns); the answer text is cached
+    /// and audit-logged once the returned <see cref="StreamingAskResult.Tokens"/> stream is
+    /// fully enumerated.
+    /// </summary>
+    public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default)
+    {
+        var useCache = history is null || history.Count == 0;
+        var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK) : null;
+
+        if (cacheKey is not null && _answerCache.TryGetValue(cacheKey, out var cached))
+        {
+            return new StreamingAskResult { Sources = cached.Sources, Tokens = SingleTokenStream(cached.Answer) };
+        }
+
+        var sources = await _searchService.SearchAsync(question, topK ?? _defaultTopK, cancellationToken).ConfigureAwait(false);
+
+        var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
+
+        var prompt = BuildPrompt(question, sources, history);
+
+        return new StreamingAskResult
+        {
+            Sources = sources,
+            Tokens = StreamAndRecordAsync(llm, prompt, question, sources, cacheKey, cancellationToken)
+        };
+    }
+
+    private static async IAsyncEnumerable<string> SingleTokenStream(string text)
+    {
+        await Task.Yield();
+        yield return text;
+    }
+
+    /// <summary>
+    /// Streams tokens from <paramref name="llm"/> and, once exhausted, caches (if
+    /// <paramref name="cacheKey"/> is set) and audit-logs the assembled answer — mirroring the
+    /// post-processing <see cref="AskAsync"/> does after a non-streaming completion.
+    /// </summary>
+    private async IAsyncEnumerable<string> StreamAndRecordAsync(
+        ILlmProvider llm,
+        string prompt,
+        string question,
+        IReadOnlyList<SearchResultItem> sources,
+        string? cacheKey,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var builder = new StringBuilder();
+
+        await foreach (var token in llm.CompleteStreamAsync(prompt, cancellationToken).ConfigureAwait(false))
+        {
+            builder.Append(token);
+            yield return token;
+        }
+
+        stopwatch.Stop();
+
+        var answer = builder.ToString().Trim();
+        var result = new AskResult { Answer = answer, Sources = sources };
+
+        if (cacheKey is not null)
+        {
+            _answerCache[cacheKey] = result;
+        }
+
+        if (_indexPath is not null)
+        {
+            AuditLog.Append(_indexPath, new AuditLogEntry
+            {
+                TimestampUtc = DateTime.UtcNow,
+                Question = question,
+                Sources = sources.Select(s => s.FileName).Distinct().ToList(),
+                ElapsedMs = stopwatch.Elapsed.TotalMilliseconds
+            });
+        }
     }
 
     private static string BuildCacheKey(string question, int topK) =>
@@ -196,7 +285,7 @@ public sealed class RagQueryEngine : IDisposable
     private ILlmProvider CreateProvider() => _llmProviderKind switch
     {
         LlmProviderKind.Ollama => new OllamaLlmProvider(_ollamaBaseUrl, _ollamaModel, _httpClient),
-        _ => new LlamaSharpLlmProvider(_modelPath, _contextSize)
+        _ => new LlamaSharpLlmProvider(_modelPath, _contextSize, _gpuLayerCount)
     };
 
     /// <summary>

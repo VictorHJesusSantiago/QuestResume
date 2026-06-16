@@ -42,7 +42,8 @@ public sealed class DocumentIndexer
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default,
         long maxFileSizeBytes = 0,
-        IReadOnlyList<string>? excludedFolders = null)
+        IReadOnlyList<string>? excludedFolders = null,
+        bool piiRedactionEnabled = false)
     {
         if (!IODirectory.Exists(folderPath))
         {
@@ -88,9 +89,17 @@ public sealed class DocumentIndexer
                 // run, so byte-identical duplicates are detected and indexed only once.
                 var seenHashes = new Dictionary<string, string>();
 
-                foreach (var filePath in IODirectory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+                // Materialized upfront (instead of streamed via EnumerateFiles) so the total
+                // file count is known, letting progress messages show "[i/total]" — a coarse
+                // but real progress indicator for the CLI/Desktop status line.
+                var allFiles = IODirectory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories).ToList();
+                var fileIndex = 0;
+
+                foreach (var filePath in allFiles)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    fileIndex++;
+                    var prefix = $"[{fileIndex}/{allFiles.Count}]";
 
                     if (excludedFolders is not null && IsUnderExcludedFolder(filePath, excludedFolders))
                     {
@@ -111,7 +120,7 @@ public sealed class DocumentIndexer
                     {
                         stats.FilesSkipped++;
                         stats.SkippedFiles.Add(filePath);
-                        progress?.Report($"Arquivo excede o tamanho máximo configurado, ignorado: {filePath}");
+                        progress?.Report($"{prefix} Arquivo excede o tamanho máximo configurado, ignorado: {filePath}");
                         continue;
                     }
 
@@ -121,7 +130,7 @@ public sealed class DocumentIndexer
                         if (seenHashes.TryGetValue(hash, out var originalPath))
                         {
                             stats.Duplicates.Add(new DuplicateFile { Path = filePath, DuplicateOfPath = originalPath });
-                            progress?.Report($"Duplicado (idêntico a {Path.GetFileName(originalPath)}): {filePath}");
+                            progress?.Report($"{prefix} Duplicado (idêntico a {Path.GetFileName(originalPath)}): {filePath}");
                             continue;
                         }
 
@@ -134,14 +143,15 @@ public sealed class DocumentIndexer
 
                         foreach (var chunk in chunks)
                         {
-                            writer.AddDocument(ToLuceneDocument(chunk));
+                            var content = piiRedactionEnabled ? PiiRedactor.Redact(chunk.Text) : chunk.Text;
+                            writer.AddDocument(ToLuceneDocument(chunk, content));
 
                             if (embeddingsAvailable)
                             {
                                 try
                                 {
-                                    var embedding = await _embeddingService!.EmbedAsync(chunk.Text, cancellationToken).ConfigureAwait(false);
-                                    _vectorStore!.Add(chunk.SourcePath, chunk.FileName, chunk.ChunkIndex, chunk.Text, embedding);
+                                    var embedding = await _embeddingService!.EmbedAsync(content, cancellationToken).ConfigureAwait(false);
+                                    _vectorStore!.Add(chunk.SourcePath, chunk.FileName, chunk.ChunkIndex, content, embedding);
                                 }
                                 catch (EmbeddingsNotConfiguredException ex)
                                 {
@@ -153,12 +163,12 @@ public sealed class DocumentIndexer
 
                         stats.FilesProcessed++;
                         stats.ChunksIndexed += chunks.Count;
-                        progress?.Report($"Indexado: {document.FileName} ({chunks.Count} trecho(s))");
+                        progress?.Report($"{prefix} Indexado: {document.FileName} ({chunks.Count} trecho(s))");
                     }
                     catch (Exception ex)
                     {
                         stats.Errors.Add($"{filePath}: {ex.Message}");
-                        progress?.Report($"Erro ao processar {filePath}: {ex.Message}");
+                        progress?.Report($"{prefix} Erro ao processar {filePath}: {ex.Message}");
                     }
                 }
 
@@ -263,13 +273,13 @@ public sealed class DocumentIndexer
         }
     }
 
-    private static Document ToLuceneDocument(TextChunk chunk) => new()
+    private static Document ToLuceneDocument(TextChunk chunk, string content) => new()
     {
         new StringField("path", chunk.SourcePath, Field.Store.YES),
         new StringField("fileName", chunk.FileName, Field.Store.YES),
         new StringField("extension", Path.GetExtension(chunk.FileName).ToLowerInvariant(), Field.Store.YES),
         new StoredField("chunkIndex", chunk.ChunkIndex.ToString()),
-        new TextField("content", chunk.Text, Field.Store.YES),
+        new TextField("content", content, Field.Store.YES),
         new StringField("modifiedUtc", chunk.ModifiedUtc.Ticks.ToString(), Field.Store.YES)
     };
 }

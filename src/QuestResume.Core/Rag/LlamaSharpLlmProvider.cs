@@ -12,13 +12,16 @@ public sealed class LlamaSharpLlmProvider : ILlmProvider
     /// Loads the model at <paramref name="modelPath"/>. Throws
     /// <see cref="ModelNotConfiguredException"/> if the path is empty or the file doesn't exist.
     /// </summary>
-    public LlamaSharpLlmProvider(string modelPath, int contextSize = 4096)
+    public LlamaSharpLlmProvider(string modelPath, int contextSize = 4096, int gpuLayerCount = 0)
     {
-        _llm = LocalLlmService.Load(modelPath, contextSize);
+        _llm = LocalLlmService.Load(modelPath, contextSize, gpuLayerCount);
     }
 
     public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default) =>
         _llm.AskAsync(prompt, cancellationToken);
+
+    public IAsyncEnumerable<string> CompleteStreamAsync(string prompt, CancellationToken cancellationToken = default) =>
+        _llm.AskStreamAsync(prompt, cancellationToken);
 
     public void Dispose() => _llm.Dispose();
 }
