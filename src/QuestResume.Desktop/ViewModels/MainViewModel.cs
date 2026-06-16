@@ -84,6 +84,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private string rerankingTokenizerPath = string.Empty;
 
     [ObservableProperty]
+    private bool piiRedactionEnabled;
+
+    [ObservableProperty]
+    private int gpuLayerCount;
+
+    [ObservableProperty]
     private string questionText = string.Empty;
 
     [ObservableProperty]
@@ -127,6 +133,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         rerankingEnabled = _options.RerankingEnabled;
         rerankingModelPath = _options.RerankingModelPath;
         rerankingTokenizerPath = _options.RerankingTokenizerPath;
+        piiRedactionEnabled = _options.PiiRedactionEnabled;
+        gpuLayerCount = _options.GpuLayerCount;
 
         RefreshStatus();
         LoadDocuments();
@@ -311,7 +319,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
                 var progress = new Progress<string>(message => StatusMessage = message);
                 var stats = await indexer.IndexFolderAsync(DocumentsFolder, IndexPath, _options.ChunkSize, _options.ChunkOverlap, progress,
-                    maxFileSizeBytes: _options.MaxFileSizeBytes, excludedFolders: _options.ExcludedFolders);
+                    maxFileSizeBytes: _options.MaxFileSizeBytes, excludedFolders: _options.ExcludedFolders,
+                    piiRedactionEnabled: _options.PiiRedactionEnabled);
 
                 StatusMessage = $"Concluído: {stats.FilesProcessed} arquivos processados, " +
                                 $"{stats.FilesSkipped} ignorados, {stats.ChunksIndexed} trechos indexados." +
@@ -513,6 +522,56 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// document. <see cref="ProcessStartInfo.UseShellExecute"/> delegates to the OS's file
     /// association instead of trying to execute the file directly.
     /// </summary>
+    /// <summary>
+    /// Exports the current chat history (<see cref="Messages"/>) as a Markdown file chosen via
+    /// a save dialog, so the user can keep a record of a Q&amp;A session outside the app.
+    /// </summary>
+    [RelayCommand]
+    private void ExportChat()
+    {
+        if (Messages.Count == 0)
+        {
+            StatusMessage = "Não há conversa para exportar.";
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Markdown (*.md)|*.md",
+            FileName = $"conversa-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.md"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var lines = new List<string> { "# Conversa - QuestResume", string.Empty };
+        foreach (var entry in Messages)
+        {
+            lines.Add($"## {entry.Role}");
+            lines.Add(string.Empty);
+            lines.Add(entry.Text);
+            lines.Add(string.Empty);
+
+            if (entry.Sources is { Count: > 0 } sources)
+            {
+                lines.Add("Fontes: " + string.Join(", ", sources.Select(s => s.FileName).Distinct()));
+                lines.Add(string.Empty);
+            }
+        }
+
+        try
+        {
+            File.WriteAllLines(dialog.FileName, lines);
+            StatusMessage = $"Conversa exportada para: {dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Erro ao exportar conversa: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private void OpenSource(string path)
     {
@@ -567,6 +626,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _options.RerankingEnabled = RerankingEnabled;
         _options.RerankingModelPath = RerankingModelPath;
         _options.RerankingTokenizerPath = RerankingTokenizerPath;
+        _options.PiiRedactionEnabled = PiiRedactionEnabled;
+        _options.GpuLayerCount = GpuLayerCount;
         _configService.Save(_options);
     }
 
