@@ -44,7 +44,7 @@ public sealed class RagEngineProvider : IDisposable
     {
         var engine = GetEngine(options);
 
-        await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await engine.AskAsync(question, topK, history, cancellationToken).ConfigureAwait(false);
@@ -65,7 +65,7 @@ public sealed class RagEngineProvider : IDisposable
     {
         var engine = GetEngine(options);
 
-        await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var result = await engine.AskStreamAsync(question, topK, history, cancellationToken).ConfigureAwait(false);
@@ -97,7 +97,7 @@ public sealed class RagEngineProvider : IDisposable
     {
         var engine = GetEngine(options);
 
-        await _askSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await engine.CompareAsync(pathA, pathB, question, cancellationToken).ConfigureAwait(false);
@@ -105,6 +105,21 @@ public sealed class RagEngineProvider : IDisposable
         finally
         {
             _askSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Acquires <see cref="_askSemaphore"/> with a 30-second timeout so queued requests
+    /// are not held indefinitely when the LLM is generating a long response. Returns 503 to
+    /// the caller (via the thrown exception) rather than silently blocking forever.
+    /// </summary>
+    private async Task AcquireSemaphoreAsync(CancellationToken cancellationToken)
+    {
+        var acquired = await _askSemaphore.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+        if (!acquired)
+        {
+            throw new InvalidOperationException(
+                "O servidor está processando outra inferência. Aguarde 30 segundos e tente novamente.");
         }
     }
 
