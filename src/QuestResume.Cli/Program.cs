@@ -4,6 +4,7 @@ using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
+using QuestResume.Core.Services;
 
 var configService = new ConfigService();
 
@@ -432,7 +433,7 @@ int RunReport(string[] cmdArgs)
 int RunStats(string[] cmdArgs)
 {
     var options = configService.Load();
-    var stats = DashboardStats.Compute(options.IndexPath, options);
+    var stats = DashboardService.Compute(options.IndexPath, options);
 
     Console.WriteLine($"Documentos indexados: {stats.DocumentCount}");
     Console.WriteLine($"Trechos indexados:    {stats.ChunkCount}");
