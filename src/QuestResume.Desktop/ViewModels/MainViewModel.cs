@@ -12,6 +12,7 @@ using QuestResume.Core.Extraction;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
+using QuestResume.Core.Services;
 
 namespace QuestResume.Desktop.ViewModels;
 
@@ -19,6 +20,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _configService;
     private readonly AppOptions _options;
+
+    // Shared DirectoryReader kept open across all SearchService calls in this process.
+    // Refreshed via OpenIfChanged on each acquisition — eliminates repeated FSDirectory
+    // open/close cycles that degrade after each index operation.
+    private readonly LuceneIndexManager _indexManager = new();
 
     private RagQueryEngine? _engine;
     private RagEngineKey? _engineKey;
@@ -354,7 +360,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IndexErrors.Clear();
         IndexDuplicates.Clear();
 
-        var search = new SearchService(IndexPath);
+        var search = new SearchService(IndexPath, _indexManager);
         foreach (var file in search.GetIndexedFiles())
         {
             IndexedDocuments.Add(new IndexedDocumentViewModel
@@ -387,7 +393,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var search = new SearchService(IndexPath);
+            var search = new SearchService(IndexPath, _indexManager);
             var removed = search.RemoveDocument(sourcePath);
 
             if (removed == 0)
@@ -421,7 +427,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var search = new SearchService(IndexPath);
+            var search = new SearchService(IndexPath, _indexManager);
             var tags = document.TagsInput.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
             search.SetTags(document.SourcePath, tags);
             document.TagsInput = string.Join(", ", search.GetTags(document.SourcePath));
@@ -473,7 +479,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             SaveCurrentOptions();
 
-            var search = new SearchService(IndexPath);
+            var search = new SearchService(IndexPath, _indexManager);
             if (!search.IndexExists())
             {
                 Messages.Add(new ChatEntry { Role = "Erro", Text = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
@@ -633,7 +639,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void RefreshStatus()
     {
-        var search = new SearchService(IndexPath);
+        var search = new SearchService(IndexPath, _indexManager);
         var indexExists = search.IndexExists();
         var modelConfigured = !string.IsNullOrWhiteSpace(ModelPath) && File.Exists(ModelPath);
         var modelText = modelConfigured ? "modelo de IA pronto" : "modelo de IA não configurado";
@@ -646,5 +652,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _engine?.Dispose();
+        _indexManager.Dispose();
     }
 }

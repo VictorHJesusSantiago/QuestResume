@@ -1,5 +1,6 @@
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Models;
+using QuestResume.Core.Services;
 
 namespace QuestResume.Core.Tests;
 
@@ -23,7 +24,7 @@ public class DashboardStatsTests
 
             AuditLog.Append(indexPath, new AuditLogEntry { TimestampUtc = DateTime.UtcNow, Question = "Pergunta de teste?", ElapsedMs = 200 });
 
-            var stats = DashboardStats.Compute(indexPath);
+            var stats = DashboardService.Compute(indexPath);
 
             Assert.Equal(2, stats.DocumentCount);
             Assert.Equal(2, stats.ChunkCount);
@@ -47,7 +48,7 @@ public class DashboardStatsTests
     {
         var indexPath = Path.Combine(Path.GetTempPath(), $"stats-missing-{Guid.NewGuid()}");
 
-        var stats = DashboardStats.Compute(indexPath);
+        var stats = DashboardService.Compute(indexPath);
 
         Assert.Equal(0, stats.DocumentCount);
         Assert.Equal(0, stats.ChunkCount);
