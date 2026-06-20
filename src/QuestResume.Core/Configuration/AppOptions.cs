@@ -107,6 +107,41 @@ public sealed class AppOptions
     /// </summary>
     public int GpuLayerCount { get; set; } = 0;
 
+    // --- Resiliência ---
+
+    /// <summary>
+    /// Tempo máximo (em segundos) aguardado para o LLM gerar uma resposta; 0 = sem limite.
+    /// Evita que uma inferência travada bloqueie todos os pedidos subsequentes indefinidamente.
+    /// </summary>
+    public int LlmTimeoutSeconds { get; set; } = 120;
+
+    // --- Performance de embeddings ---
+
+    /// <summary>
+    /// Número máximo de embeddings mantidos no cache in-memory do <see cref="QuestResume.Core.Embeddings.VectorStore"/>;
+    /// 0 = sem limite (carrega tudo). Quando a coleção excede este valor o cache é desativado
+    /// e cada busca relê o SQLite, evitando OOM em coleções muito grandes.
+    /// </summary>
+    public int MaxVectorCacheSize { get; set; } = 0;
+
+    // --- Auditoria ---
+
+    /// <summary>
+    /// Número máximo de linhas mantidas em <c>audit.jsonl</c>; 0 = ilimitado.
+    /// Quando o arquivo ultrapassa esse limite após um <c>Append</c>, as entradas mais antigas
+    /// são descartadas para evitar crescimento ilimitado em deployments de longa duração.
+    /// </summary>
+    public int MaxAuditLogLines { get; set; } = 0;
+
+    // --- Segurança de configuração ---
+
+    /// <summary>
+    /// Quando não vazia, restringe os valores aceitos para <see cref="DocumentsFolder"/> via
+    /// PUT /api/config. O novo valor deve começar com um dos prefixos da lista; proteção contra
+    /// exfiltração via mudança maliciosa de pasta em deployments de servidor.
+    /// </summary>
+    public List<string> AllowedDocumentRoots { get; set; } = new();
+
     /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
     /// menor que <see cref="ChunkSize"/>), evitando que uma configuração inválida só seja
@@ -141,7 +176,7 @@ public sealed class AppOptions
             throw new AppOptionsValidationException("HybridBm25Weight deve estar entre 0 e 1.");
         }
 
-        if (!Enum.TryParse<Rag.LlmProviderKind>(LlmProvider, ignoreCase: true, out _))
+        if (!Enum.TryParse<LlmProviderKind>(LlmProvider, ignoreCase: true, out _))
         {
             throw new AppOptionsValidationException(
                 $"LlmProvider '{LlmProvider}' é inválido. Valores aceitos: LlamaSharp, Ollama.");
@@ -155,6 +190,21 @@ public sealed class AppOptions
         if (GpuLayerCount < 0)
         {
             throw new AppOptionsValidationException("GpuLayerCount não pode ser negativo.");
+        }
+
+        if (LlmTimeoutSeconds < 0)
+        {
+            throw new AppOptionsValidationException("LlmTimeoutSeconds não pode ser negativo.");
+        }
+
+        if (MaxVectorCacheSize < 0)
+        {
+            throw new AppOptionsValidationException("MaxVectorCacheSize não pode ser negativo.");
+        }
+
+        if (MaxAuditLogLines < 0)
+        {
+            throw new AppOptionsValidationException("MaxAuditLogLines não pode ser negativo.");
         }
     }
 }

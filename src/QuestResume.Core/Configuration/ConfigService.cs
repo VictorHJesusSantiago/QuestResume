@@ -11,6 +11,11 @@ public sealed class ConfigService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    // Cache: avoid re-reading the JSON file on every request when the file hasn't changed.
+    private AppOptions? _cached;
+    private DateTime _cachedStamp = DateTime.MinValue;
+    private readonly object _cacheLock = new();
+
     public string ConfigPath { get; }
 
     public ConfigService(string? configPath = null)
@@ -38,10 +43,31 @@ public sealed class ConfigService
     /// </summary>
     public AppOptions Load()
     {
-        if (!File.Exists(ConfigPath))
+        var stamp = File.Exists(ConfigPath)
+            ? File.GetLastWriteTimeUtc(ConfigPath)
+            : DateTime.MinValue;
+
+        lock (_cacheLock)
         {
-            return new AppOptions { IndexPath = GetDefaultIndexPath() };
+            if (_cached is not null && stamp == _cachedStamp)
+                return _cached;
         }
+
+        var options = LoadFromDisk();
+
+        lock (_cacheLock)
+        {
+            _cached = options;
+            _cachedStamp = stamp;
+        }
+
+        return options;
+    }
+
+    private AppOptions LoadFromDisk()
+    {
+        if (!File.Exists(ConfigPath))
+            return new AppOptions { IndexPath = GetDefaultIndexPath() };
 
         AppOptions? options;
         try
@@ -55,14 +81,10 @@ public sealed class ConfigService
         }
 
         if (options is null)
-        {
             return new AppOptions { IndexPath = GetDefaultIndexPath() };
-        }
 
         if (string.IsNullOrWhiteSpace(options.IndexPath))
-        {
             options.IndexPath = GetDefaultIndexPath();
-        }
 
         return options;
     }
@@ -87,5 +109,8 @@ public sealed class ConfigService
         var tempPath = ConfigPath + ".tmp";
         File.WriteAllText(tempPath, json);
         File.Move(tempPath, ConfigPath, overwrite: true);
+
+        // Invalidate cache so the next Load() re-reads the file we just wrote.
+        lock (_cacheLock) { _cached = null; }
     }
 }
