@@ -20,10 +20,10 @@ public sealed class DocumentIndexer
     public const LuceneVersion MatchVersion = LuceneVersion.LUCENE_48;
 
     private readonly ExtractorRegistry _registry;
-    private readonly EmbeddingService? _embeddingService;
-    private readonly VectorStore? _vectorStore;
+    private readonly IEmbeddingService? _embeddingService;
+    private readonly IVectorStore? _vectorStore;
 
-    public DocumentIndexer(ExtractorRegistry? registry = null, EmbeddingService? embeddingService = null, VectorStore? vectorStore = null)
+    public DocumentIndexer(ExtractorRegistry? registry = null, IEmbeddingService? embeddingService = null, IVectorStore? vectorStore = null)
     {
         _registry = registry ?? new ExtractorRegistry();
         _embeddingService = embeddingService;
@@ -53,6 +53,15 @@ public sealed class DocumentIndexer
         IODirectory.CreateDirectory(indexPath);
 
         var stats = new IndexStats();
+
+        // If a previous SwapIndexDirectory was interrupted mid-delete (crash, power loss),
+        // a _swap_pending.marker file is left behind. The index may be in a partial state,
+        // but since we're about to rebuild it entirely we just remove the marker and continue.
+        var swapMarkerPath = Path.Combine(indexPath, "_swap_pending.marker");
+        if (File.Exists(swapMarkerPath))
+        {
+            File.Delete(swapMarkerPath);
+        }
 
         // Built in a temporary sibling directory and only swapped into place once the new
         // Lucene index has been fully committed. With the previous OpenMode.CREATE-on-indexPath
@@ -237,14 +246,23 @@ public sealed class DocumentIndexer
         return Convert.ToHexString(hash);
     }
 
+    private const string SwapMarkerFileName = "_swap_pending.marker";
+
     /// <summary>
     /// Replaces the Lucene index files in <paramref name="indexPath"/> with the freshly built
-    /// ones from <paramref name="tempIndexDir"/>, leaving <see cref="VectorStore.DatabaseFileName"/>
-    /// untouched (it's managed separately by <see cref="VectorStore"/> and may have an open
-    /// connection/lock on it).
+    /// ones from <paramref name="tempIndexDir"/>, leaving <see cref="VectorStore.DatabaseFileName"/>,
+    /// <see cref="TagStore.FileName"/>, and <see cref="AuditLog.FileName"/> untouched.
+    ///
+    /// Writes a <c>_swap_pending.marker</c> file before deleting anything and removes it after
+    /// the move completes. If the process is killed between those two points, the next call to
+    /// <see cref="IndexFolderAsync"/> detects the marker and removes it, then proceeds with a
+    /// clean rebuild — safe because a full re-index is about to overwrite the index anyway.
     /// </summary>
     private static void SwapIndexDirectory(string indexPath, string tempIndexDir)
     {
+        var markerPath = Path.Combine(indexPath, SwapMarkerFileName);
+        File.WriteAllText(markerPath, string.Empty);
+
         foreach (var file in IODirectory.GetFiles(indexPath))
         {
             var fileName = Path.GetFileName(file);
@@ -263,6 +281,19 @@ public sealed class DocumentIndexer
                 continue;
             }
 
+            // Audit log records question history across re-indexes; deleting it on every
+            // re-index silently loses that history (audit item A3).
+            if (fileName == AuditLog.FileName)
+            {
+                continue;
+            }
+
+            // The marker itself must not be deleted mid-swap.
+            if (fileName == SwapMarkerFileName)
+            {
+                continue;
+            }
+
             File.Delete(file);
         }
 
@@ -271,6 +302,8 @@ public sealed class DocumentIndexer
             var destination = Path.Combine(indexPath, Path.GetFileName(file));
             File.Move(file, destination, overwrite: true);
         }
+
+        File.Delete(markerPath);
     }
 
     private static Document ToLuceneDocument(TextChunk chunk, string content) => new()

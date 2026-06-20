@@ -31,8 +31,14 @@ public sealed record SearchFilters(string? Extension = null, string? FolderPath 
 /// <summary>
 /// Runs BM25 full-text queries against the Lucene.NET index produced by
 /// <see cref="DocumentIndexer"/>.
+///
+/// Accepts an optional <see cref="LuceneIndexManager"/> (inject via DI in the API). When
+/// provided, the underlying <see cref="DirectoryReader"/> is shared across requests and
+/// refreshed via <c>OpenIfChanged</c> instead of being opened and closed per call — removes
+/// O(requests × endpoints) file-descriptor pressure and recovers the Lucene segment cache.
+/// When not provided (Desktop/CLI) the existing per-call open/close behaviour is preserved.
 /// </summary>
-public sealed class SearchService
+public sealed class SearchService : ISearchService
 {
     /// <summary>
     /// When a tag filter is applied, fetch this many times <c>topK</c> BM25 candidates before
@@ -41,33 +47,120 @@ public sealed class SearchService
     private const int TagFilterCandidateMultiplier = 5;
 
     private readonly string _indexPath;
+    private readonly LuceneIndexManager? _indexManager;
 
-    public SearchService(string indexPath)
+    public SearchService(string indexPath, LuceneIndexManager? indexManager = null)
     {
         _indexPath = indexPath;
+        _indexManager = indexManager;
     }
+
+    // -------------------------------------------------------------------------
+    // Reader acquisition helpers
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns a reader handle: either a borrowed shared reader (from the manager, must NOT
+    /// be disposed) or a freshly opened owned reader (must be disposed after use).
+    /// </summary>
+    private ReaderHandle OpenReader()
+    {
+        if (_indexManager is not null)
+        {
+            var shared = _indexManager.AcquireReader(_indexPath);
+            return shared is not null ? ReaderHandle.Borrowed(shared) : default;
+        }
+
+        if (!IODirectory.Exists(_indexPath)) return default;
+
+        FSDirectory? dir = null;
+        try
+        {
+            dir = FSDirectory.Open(_indexPath);
+            if (!DirectoryReader.IndexExists(dir))
+            {
+                dir.Dispose();
+                return default;
+            }
+
+            return ReaderHandle.Owned(dir, DirectoryReader.Open(dir));
+        }
+        catch
+        {
+            dir?.Dispose();
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Lightweight disposable wrapper that tracks whether this service owns the reader
+    /// (must dispose) or merely borrowed it from <see cref="LuceneIndexManager"/> (must not).
+    /// </summary>
+    private readonly struct ReaderHandle : IDisposable
+    {
+        public readonly DirectoryReader? Reader;
+        private readonly FSDirectory? _ownedDir;
+        private readonly DirectoryReader? _ownedReader;
+
+        private ReaderHandle(DirectoryReader reader, FSDirectory? ownedDir, DirectoryReader? ownedReader)
+        {
+            Reader = reader;
+            _ownedDir = ownedDir;
+            _ownedReader = ownedReader;
+        }
+
+        public static ReaderHandle Borrowed(DirectoryReader reader) =>
+            new(reader, null, null);
+
+        public static ReaderHandle Owned(FSDirectory dir, DirectoryReader reader) =>
+            new(reader, dir, reader);
+
+        public void Dispose()
+        {
+            _ownedReader?.Dispose();
+            _ownedDir?.Dispose();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TagStore access — uses manager cache when available
+    // -------------------------------------------------------------------------
+
+    private TagStore LoadTagStore()
+    {
+        if (_indexManager is not null)
+            return _indexManager.GetTagStore(_indexPath);
+
+        return TagStore.Load(_indexPath);
+    }
+
+    private void SaveTagStoreAndInvalidate(TagStore store)
+    {
+        store.Save(_indexPath);
+        _indexManager?.InvalidateTagStore();
+    }
+
+    // -------------------------------------------------------------------------
+    // Public API
+    // -------------------------------------------------------------------------
 
     public bool IndexExists()
     {
-        if (!IODirectory.Exists(_indexPath))
-        {
-            return false;
-        }
+        if (_indexManager is not null)
+            return _indexManager.IndexExists(_indexPath);
 
+        if (!IODirectory.Exists(_indexPath)) return false;
         using var directory = FSDirectory.Open(_indexPath);
         return DirectoryReader.IndexExists(directory);
     }
 
     public int GetDocumentCount()
     {
-        if (!IndexExists())
-        {
-            return 0;
-        }
+        if (!IndexExists()) return 0;
 
-        using var directory = FSDirectory.Open(_indexPath);
-        using var reader = DirectoryReader.Open(directory);
-        return reader.NumDocs;
+        using var handle = OpenReader();
+        if (handle.Reader is null) return 0;
+        return handle.Reader.NumDocs;
     }
 
     /// <summary>
@@ -77,17 +170,14 @@ public sealed class SearchService
     /// </summary>
     public IReadOnlyList<SearchResultItem> GetChunksByPath(string path)
     {
-        if (!IndexExists())
-        {
-            return Array.Empty<SearchResultItem>();
-        }
+        if (!IndexExists()) return Array.Empty<SearchResultItem>();
 
-        using var directory = FSDirectory.Open(_indexPath);
-        using var reader = DirectoryReader.Open(directory);
-        var searcher = new IndexSearcher(reader);
+        using var handle = OpenReader();
+        if (handle.Reader is null) return Array.Empty<SearchResultItem>();
 
+        var searcher = new IndexSearcher(handle.Reader);
         var query = new TermQuery(new Term("path", path));
-        var hits = searcher.Search(query, Math.Max(reader.MaxDoc, 1));
+        var hits = searcher.Search(query, Math.Max(handle.Reader.MaxDoc, 1));
 
         var results = new List<SearchResultItem>(hits.ScoreDocs.Length);
         foreach (var scoreDoc in hits.ScoreDocs)
@@ -107,33 +197,28 @@ public sealed class SearchService
     }
 
     /// <summary>
-    /// Lists every source file currently present in the index, with how many chunks each one
-    /// contributed. Used by the "Documentos" UI to show what's indexed and let the user remove
-    /// individual files.
+    /// Lists source files currently present in the index with chunk counts and tags.
     /// </summary>
-    public IReadOnlyList<IndexedFileInfo> GetIndexedFiles()
+    /// <param name="skip">Number of files to skip (for pagination). 0 = start from the beginning.</param>
+    /// <param name="take">Maximum files to return. 0 = return all.</param>
+    public IReadOnlyList<IndexedFileInfo> GetIndexedFiles(int skip = 0, int take = 0)
     {
-        if (!IndexExists())
-        {
-            return Array.Empty<IndexedFileInfo>();
-        }
+        if (!IndexExists()) return Array.Empty<IndexedFileInfo>();
 
-        using var directory = FSDirectory.Open(_indexPath);
-        using var reader = DirectoryReader.Open(directory);
-        var searcher = new IndexSearcher(reader);
+        using var handle = OpenReader();
+        if (handle.Reader is null) return Array.Empty<IndexedFileInfo>();
 
-        var hits = searcher.Search(new MatchAllDocsQuery(), Math.Max(reader.MaxDoc, 1));
-        var tagStore = TagStore.Load(_indexPath);
+        var searcher = new IndexSearcher(handle.Reader);
+        // Cap to MaxDoc so MatchAllDocsQuery doesn't silently truncate on very large indexes.
+        var hits = searcher.Search(new MatchAllDocsQuery(), Math.Max(handle.Reader.MaxDoc, 1));
+        var tagStore = LoadTagStore();
 
         var files = new Dictionary<string, IndexedFileInfo>();
         foreach (var scoreDoc in hits.ScoreDocs)
         {
             var doc = searcher.Doc(scoreDoc.Doc);
             var path = doc.Get("path") ?? string.Empty;
-            if (string.IsNullOrEmpty(path))
-            {
-                continue;
-            }
+            if (string.IsNullOrEmpty(path)) continue;
 
             if (!files.TryGetValue(path, out var info))
             {
@@ -149,22 +234,25 @@ public sealed class SearchService
             info.ChunkCount++;
         }
 
-        return files.Values.OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase).ToList();
+        var ordered = files.Values.OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase);
+        IEnumerable<IndexedFileInfo> paged = skip > 0 ? ordered.Skip(skip) : ordered;
+        if (take > 0) paged = paged.Take(take);
+        return paged.ToList();
     }
 
     /// <summary>Returns the tags currently assigned to <paramref name="sourcePath"/>.</summary>
-    public IReadOnlyList<string> GetTags(string sourcePath) => TagStore.Load(_indexPath).GetTags(sourcePath);
+    public IReadOnlyList<string> GetTags(string sourcePath) => LoadTagStore().GetTags(sourcePath);
 
     /// <summary>Replaces the tags assigned to <paramref name="sourcePath"/>.</summary>
     public void SetTags(string sourcePath, IEnumerable<string> tags)
     {
-        var store = TagStore.Load(_indexPath);
+        var store = LoadTagStore();
         store.SetTags(sourcePath, tags);
-        store.Save(_indexPath);
+        SaveTagStoreAndInvalidate(store);
     }
 
     /// <summary>Returns every distinct tag assigned to any document, for building filter UIs.</summary>
-    public IReadOnlyList<string> GetAllTags() => TagStore.Load(_indexPath).GetAllTags();
+    public IReadOnlyList<string> GetAllTags() => LoadTagStore().GetAllTags();
 
     /// <summary>
     /// Removes every indexed chunk for <paramref name="sourcePath"/> in place (without
@@ -173,17 +261,12 @@ public sealed class SearchService
     /// </summary>
     public int RemoveDocument(string sourcePath)
     {
-        if (!IndexExists())
-        {
-            return 0;
-        }
+        if (!IndexExists()) return 0;
 
         var chunkCount = GetChunksByPath(sourcePath).Count;
-        if (chunkCount == 0)
-        {
-            return 0;
-        }
+        if (chunkCount == 0) return 0;
 
+        // Open an owned writer (always needs its own FSDirectory with write lock).
         using var directory = FSDirectory.Open(_indexPath);
         using var analyzer = new StandardAnalyzer(DocumentIndexer.MatchVersion);
         var config = new IndexWriterConfig(DocumentIndexer.MatchVersion, analyzer)
@@ -195,6 +278,9 @@ public sealed class SearchService
         writer.DeleteDocuments(new Term("path", sourcePath));
         writer.Commit();
 
+        // The shared reader in LuceneIndexManager will pick up the deletion via
+        // DirectoryReader.OpenIfChanged on the next AcquireReader call.
+
         return chunkCount;
     }
 
@@ -205,11 +291,11 @@ public sealed class SearchService
             return Array.Empty<SearchResultItem>();
         }
 
-        using var directory = FSDirectory.Open(_indexPath);
-        using var reader = DirectoryReader.Open(directory);
-        using var analyzer = new StandardAnalyzer(DocumentIndexer.MatchVersion);
+        using var handle = OpenReader();
+        if (handle.Reader is null) return Array.Empty<SearchResultItem>();
 
-        var searcher = new IndexSearcher(reader);
+        using var analyzer = new StandardAnalyzer(DocumentIndexer.MatchVersion);
+        var searcher = new IndexSearcher(handle.Reader);
         var parser = new QueryParser(DocumentIndexer.MatchVersion, "content", analyzer)
         {
             DefaultOperator = Operator.OR
@@ -218,15 +304,14 @@ public sealed class SearchService
         var contentQuery = parser.Parse(QueryParserBase.Escape(queryText));
         var query = ApplyFilters(contentQuery, filters);
 
-        // Tags aren't stored in the Lucene index, so a tag filter is applied as a post-filter
-        // below. Fetch extra candidates up front so filtering down to topK doesn't starve
-        // results.
         var hasTagFilter = !string.IsNullOrWhiteSpace(filters?.Tag);
-        var fetchCount = hasTagFilter ? Math.Min(topK * TagFilterCandidateMultiplier, Math.Max(reader.MaxDoc, 1)) : topK;
+        var fetchCount = hasTagFilter
+            ? Math.Min(topK * TagFilterCandidateMultiplier, Math.Max(handle.Reader.MaxDoc, 1))
+            : topK;
 
         var hits = searcher.Search(query, fetchCount);
 
-        var highlighter = new Highlighter(new SimpleHTMLFormatter("", ""), new QueryScorer(contentQuery))
+        var highlighter = new Highlighter(new SimpleHTMLFormatter("", ""), new QueryScorer(contentQuery))
         {
             TextFragmenter = new SimpleFragmenter(150)
         };
@@ -262,7 +347,7 @@ public sealed class SearchService
 
         if (hasTagFilter)
         {
-            var tagStore = TagStore.Load(_indexPath);
+            var tagStore = LoadTagStore();
             return results
                 .Where(r => tagStore.GetTags(r.SourcePath).Contains(filters!.Tag!, StringComparer.OrdinalIgnoreCase))
                 .Take(topK)

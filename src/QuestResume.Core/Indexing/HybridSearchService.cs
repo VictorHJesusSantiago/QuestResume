@@ -19,18 +19,18 @@ public sealed class HybridSearchService
     /// </summary>
     private const int RerankCandidateMultiplier = 4;
 
-    private readonly SearchService _searchService;
-    private readonly VectorStore? _vectorStore;
-    private readonly EmbeddingService? _embeddingService;
+    private readonly ISearchService _searchService;
+    private readonly IVectorStore? _vectorStore;
+    private readonly IEmbeddingService? _embeddingService;
     private readonly double _bm25Weight;
-    private readonly CrossEncoderService? _crossEncoder;
+    private readonly ICrossEncoderService? _crossEncoder;
 
     public HybridSearchService(
-        SearchService searchService,
-        VectorStore? vectorStore = null,
-        EmbeddingService? embeddingService = null,
+        ISearchService searchService,
+        IVectorStore? vectorStore = null,
+        IEmbeddingService? embeddingService = null,
         double bm25Weight = 0.5,
-        CrossEncoderService? crossEncoder = null)
+        ICrossEncoderService? crossEncoder = null)
     {
         _searchService = searchService;
         _vectorStore = vectorStore;
