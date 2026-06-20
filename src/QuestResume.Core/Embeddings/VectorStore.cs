@@ -10,7 +10,7 @@ namespace QuestResume.Core.Embeddings;
 /// sqlite-vec, so this is a simple, dependency-free vector store suited to the scale of a
 /// single user's document collection (thousands of chunks).
 /// </summary>
-public sealed class VectorStore : IDisposable
+public sealed class VectorStore : IVectorStore
 {
     /// <summary>File name of the SQLite database, relative to the index folder.</summary>
     public const string DatabaseFileName = "vectors.db";
@@ -23,11 +23,18 @@ public sealed class VectorStore : IDisposable
     /// </summary>
     private readonly object _lock = new();
     private readonly SqliteConnection _connection;
+    private readonly int _maxCacheSize;
     private List<(SearchResultItem Item, float[] Embedding)>? _cache;
     private SqliteTransaction? _activeTransaction;
 
-    public VectorStore(string indexPath)
+    /// <param name="maxCacheSize">
+    /// Maximum number of embeddings kept in the in-memory cache. 0 = no limit (load all).
+    /// When the stored count exceeds this value the cache is skipped and every
+    /// <see cref="Search"/> call re-reads from SQLite — prevents OOM for very large collections.
+    /// </param>
+    public VectorStore(string indexPath, int maxCacheSize = 0)
     {
+        _maxCacheSize = maxCacheSize;
         IODirectory.CreateDirectory(indexPath);
         var dbPath = Path.Combine(indexPath, DatabaseFileName);
 
@@ -52,7 +59,8 @@ public sealed class VectorStore : IDisposable
                 chunkIndex INTEGER NOT NULL,
                 text TEXT NOT NULL,
                 embedding BLOB NOT NULL
-            )
+            );
+            CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
             """;
         command.ExecuteNonQuery();
     }
@@ -210,7 +218,14 @@ public sealed class VectorStore : IDisposable
             entries.Add((item, FromBytes((byte[])reader["embedding"])));
         }
 
-        _cache = entries;
+        // Only cache when within the configured size limit. When the collection exceeds
+        // MaxCacheSize the cache is intentionally left null so every search re-reads from
+        // SQLite instead of exhausting available memory with gigabytes of float arrays.
+        if (_maxCacheSize == 0 || entries.Count <= _maxCacheSize)
+        {
+            _cache = entries;
+        }
+
         return entries;
     }
 

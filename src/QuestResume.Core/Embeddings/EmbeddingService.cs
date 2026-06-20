@@ -10,7 +10,7 @@ namespace QuestResume.Core.Embeddings;
 /// <see cref="BertTokenizer"/>. Used to populate and query the <see cref="VectorStore"/> for
 /// hybrid (BM25 + vector) search.
 /// </summary>
-public sealed class EmbeddingService : IDisposable
+public sealed class EmbeddingService : IEmbeddingService
 {
     /// <summary>
     /// Max input sequence length accepted by typical BERT-family encoders
@@ -73,11 +73,17 @@ public sealed class EmbeddingService : IDisposable
             inputs.Add(NamedOnnxValue.CreateFromTensor("token_type_ids", new DenseTensor<long>(tokenTypeIds, dimensions, false)));
         }
 
-        using var results = _session.Run(inputs);
-        var output = results.FirstOrDefault(r => r.Name == "last_hidden_state") ?? results.First();
-        var hiddenStates = output.AsTensor<float>();
-
-        return Task.FromResult(MeanPoolAndNormalize(hiddenStates, attentionMask));
+        // ONNX Runtime InferenceSession.Run is CPU-bound and blocks the calling thread for
+        // the duration of the inference pass. Task.Run offloads it to the thread pool so the
+        // ASP.NET request thread is free to handle other requests while inference runs.
+        var session = _session!;
+        var mask = attentionMask;
+        return Task.Run(() =>
+        {
+            using var results = session.Run(inputs);
+            var output = results.FirstOrDefault(r => r.Name == "last_hidden_state") ?? results.First();
+            return MeanPoolAndNormalize(output.AsTensor<float>(), mask);
+        }, cancellationToken);
     }
 
     private static float[] MeanPoolAndNormalize(Tensor<float> hiddenStates, long[] attentionMask)

@@ -10,7 +10,7 @@ namespace QuestResume.Core.Embeddings;
 /// <see cref="BertTokenizer"/>. Used by <see cref="QuestResume.Core.Indexing.HybridSearchService"/>
 /// to re-rank the top candidates returned by BM25/vector search.
 /// </summary>
-public sealed class CrossEncoderService : IDisposable
+public sealed class CrossEncoderService : ICrossEncoderService
 {
     /// <summary>
     /// Max combined (query + passage + special tokens) input sequence length, mirroring
