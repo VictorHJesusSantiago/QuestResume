@@ -1,14 +1,2 @@
-namespace QuestResume.Core.Rag;
-
-/// <summary>
-/// Selects which <see cref="ILlmProvider"/> implementation <see cref="RagQueryEngine"/> uses
-/// to generate answers.
-/// </summary>
-public enum LlmProviderKind
-{
-    /// <summary>Modelo .gguf embutido, executado em CPU via LLamaSharp/llama.cpp.</summary>
-    LlamaSharp,
-
-    /// <summary>Servidor Ollama local (ex.: http://localhost:11434).</summary>
-    Ollama
-}
+// LlmProviderKind was moved to QuestResume.Core.Configuration.LlmProviderKind.
+// This file is intentionally empty; the type is no longer declared here.

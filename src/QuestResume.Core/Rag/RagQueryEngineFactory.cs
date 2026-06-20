@@ -26,7 +26,10 @@ public sealed record RagEngineKey(
     bool RerankingEnabled,
     string RerankingModelPath,
     string RerankingTokenizerPath,
-    int GpuLayerCount)
+    int GpuLayerCount,
+    int LlmTimeoutSeconds,
+    int MaxVectorCacheSize,
+    int MaxAuditLogLines)
 {
     public static RagEngineKey From(AppOptions options, int? topK = null) => new(
         options.ModelPath,
@@ -43,7 +46,10 @@ public sealed record RagEngineKey(
         options.RerankingEnabled,
         options.RerankingModelPath,
         options.RerankingTokenizerPath,
-        options.GpuLayerCount);
+        options.GpuLayerCount,
+        options.LlmTimeoutSeconds,
+        options.MaxVectorCacheSize,
+        options.MaxAuditLogLines);
 }
 
 /// <summary>
@@ -56,20 +62,20 @@ public static class RagQueryEngineFactory
 {
     public static RagQueryEngine Create(AppOptions options, int? topK = null, HttpClient? httpClient = null)
     {
-        var search = new SearchService(options.IndexPath);
+        ISearchService search = new SearchService(options.IndexPath);
         var providerKind = Enum.TryParse<LlmProviderKind>(options.LlmProvider, ignoreCase: true, out var kind)
             ? kind
             : LlmProviderKind.LlamaSharp;
 
-        VectorStore? vectorStore = null;
-        EmbeddingService? embeddingService = null;
+        IVectorStore? vectorStore = null;
+        IEmbeddingService? embeddingService = null;
         if (options.EmbeddingsEnabled)
         {
-            vectorStore = new VectorStore(options.IndexPath);
+            vectorStore = new VectorStore(options.IndexPath, options.MaxVectorCacheSize);
             embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
         }
 
-        CrossEncoderService? crossEncoderService = null;
+        ICrossEncoderService? crossEncoderService = null;
         if (options.RerankingEnabled)
         {
             crossEncoderService = new CrossEncoderService(options.RerankingModelPath, options.RerankingTokenizerPath);
@@ -89,6 +95,8 @@ public static class RagQueryEngineFactory
             hybridBm25Weight: options.HybridBm25Weight,
             crossEncoderService: crossEncoderService,
             indexPath: options.IndexPath,
-            gpuLayerCount: options.GpuLayerCount);
+            gpuLayerCount: options.GpuLayerCount,
+            llmTimeoutSeconds: options.LlmTimeoutSeconds,
+            maxAuditLogLines: options.MaxAuditLogLines);
     }
 }
