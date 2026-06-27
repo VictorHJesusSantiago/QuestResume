@@ -119,11 +119,14 @@ if (!string.IsNullOrWhiteSpace(apiKey))
 app.UseDefaultFiles();
 // Content-Security-Policy prevents inline script injection from indexed document content
 // displayed in the preview panel from executing in the browser.
+// All scripts and styles are now in external files (app.js / styles.css); 'unsafe-inline'
+// is no longer needed and has been removed. The chart bar widths are set via element.style
+// in app.js (a trusted file, not user-supplied content), which is permitted by script-src 'self'.
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.Append(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;")
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;")
 });
 
 app.MapGet("/api/status", async (ConfigService configService, LuceneIndexManager indexManager, IHttpClientFactory httpClientFactory, ILogger<Program> logger) =>
@@ -446,11 +449,11 @@ app.MapPost("/api/compare", async (
     }
 }).RequireRateLimiting("inference");
 
-app.MapGet("/api/documents", (ConfigService configService, LuceneIndexManager indexManager) =>
+app.MapGet("/api/documents", (ConfigService configService, LuceneIndexManager indexManager, int skip = 0, int take = 0) =>
 {
     var options = configService.Load();
     var search = new SearchService(options.IndexPath, indexManager);
-    return Results.Ok(search.GetIndexedFiles());
+    return Results.Ok(search.GetIndexedFiles(skip, take));
 });
 
 app.MapDelete("/api/documents", (string path, ConfigService configService, RagEngineProvider engineProvider, LuceneIndexManager indexManager, ILogger<Program> logger) =>
@@ -487,11 +490,11 @@ app.MapGet("/api/index-report", (ConfigService configService, ILogger<Program> l
     return Results.Ok(IndexReport.Load(options.IndexPath));
 });
 
-app.MapGet("/api/stats", (ConfigService configService, ILogger<Program> logger) =>
+app.MapGet("/api/stats", (ConfigService configService, LuceneIndexManager indexManager, ILogger<Program> logger) =>
 {
     var options = configService.Load();
     logger.LogDebug("GET /api/stats — indexPath={IndexPath}", options.IndexPath);
-    return Results.Ok(DashboardService.Compute(options.IndexPath, options));
+    return Results.Ok(DashboardService.Compute(options.IndexPath, options, indexManager));
 });
 
 app.MapGet("/api/documents/preview", (string path, ConfigService configService, LuceneIndexManager indexManager) =>

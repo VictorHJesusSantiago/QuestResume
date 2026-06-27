@@ -11,9 +11,9 @@ namespace QuestResume.Core.Services;
 /// </summary>
 public static class DashboardService
 {
-    public static DashboardStats Compute(string indexPath, AppOptions? options = null)
+    public static DashboardStats Compute(string indexPath, AppOptions? options = null, LuceneIndexManager? indexManager = null)
     {
-        var search = new SearchService(indexPath);
+        var search = new SearchService(indexPath, indexManager);
         var indexedFiles = search.GetIndexedFiles();
         var report = IndexReport.Load(indexPath);
         var audit = AuditLog.Load(indexPath);

@@ -1,6 +1,7 @@
 using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Indexing;
+using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Rag;
 
@@ -81,6 +82,11 @@ public static class RagQueryEngineFactory
             crossEncoderService = new CrossEncoderService(options.RerankingModelPath, options.RerankingTokenizerPath);
         }
 
+        // AuditLogRepository is injected (not newed inside the engine) so tests can substitute
+        // IAuditLogRepository without touching the filesystem, and so the interface is actually
+        // used as a dependency rather than existing only as dead abstraction.
+        IAuditLogRepository auditLog = new AuditLogRepository(options.IndexPath);
+
         return new RagQueryEngine(
             search,
             options.ModelPath,
@@ -94,7 +100,7 @@ public static class RagQueryEngineFactory
             embeddingService: embeddingService,
             hybridBm25Weight: options.HybridBm25Weight,
             crossEncoderService: crossEncoderService,
-            indexPath: options.IndexPath,
+            auditLog: auditLog,
             gpuLayerCount: options.GpuLayerCount,
             llmTimeoutSeconds: options.LlmTimeoutSeconds,
             maxAuditLogLines: options.MaxAuditLogLines);

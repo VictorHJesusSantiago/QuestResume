@@ -5,6 +5,7 @@ using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Models;
+using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Rag;
 
@@ -26,7 +27,7 @@ public sealed class RagQueryEngine : IDisposable
     private readonly IVectorStore? _vectorStore;
     private readonly IEmbeddingService? _embeddingService;
     private readonly ICrossEncoderService? _crossEncoderService;
-    private readonly string? _indexPath;
+    private readonly IAuditLogRepository? _auditLog;
     private readonly int _gpuLayerCount;
     private readonly int _llmTimeoutSeconds;
     private readonly int _maxAuditLogLines;
@@ -62,7 +63,7 @@ public sealed class RagQueryEngine : IDisposable
         IEmbeddingService? embeddingService = null,
         double hybridBm25Weight = 0.5,
         ICrossEncoderService? crossEncoderService = null,
-        string? indexPath = null,
+        IAuditLogRepository? auditLog = null,
         int gpuLayerCount = 0,
         int llmTimeoutSeconds = 120,
         int maxAuditLogLines = 0)
@@ -78,7 +79,7 @@ public sealed class RagQueryEngine : IDisposable
         _vectorStore = vectorStore;
         _embeddingService = embeddingService;
         _crossEncoderService = crossEncoderService;
-        _indexPath = indexPath;
+        _auditLog = auditLog;
         _gpuLayerCount = gpuLayerCount;
         _llmTimeoutSeconds = llmTimeoutSeconds;
         _maxAuditLogLines = maxAuditLogLines;
@@ -134,16 +135,16 @@ public sealed class RagQueryEngine : IDisposable
             _answerCache[cacheKey] = result;
         }
 
-        if (_indexPath is not null)
+        if (_auditLog is not null)
         {
-            AuditLog.Append(_indexPath, new AuditLogEntry
+            _auditLog.Append(new AuditLogEntry
             {
                 TimestampUtc = DateTime.UtcNow,
                 Question = question,
                 Sources = sources.Select(s => s.FileName).Distinct().ToList(),
                 ElapsedMs = stopwatch.Elapsed.TotalMilliseconds
             });
-            AuditLog.Rotate(_indexPath, _maxAuditLogLines);
+            _auditLog.Rotate(_maxAuditLogLines);
         }
 
         return result;
@@ -226,16 +227,16 @@ public sealed class RagQueryEngine : IDisposable
             _answerCache[cacheKey] = result;
         }
 
-        if (_indexPath is not null)
+        if (_auditLog is not null)
         {
-            AuditLog.Append(_indexPath, new AuditLogEntry
+            _auditLog.Append(new AuditLogEntry
             {
                 TimestampUtc = DateTime.UtcNow,
                 Question = question,
                 Sources = sources.Select(s => s.FileName).Distinct().ToList(),
                 ElapsedMs = stopwatch.Elapsed.TotalMilliseconds
             });
-            AuditLog.Rotate(_indexPath, _maxAuditLogLines);
+            _auditLog.Rotate(_maxAuditLogLines);
         }
     }
 
