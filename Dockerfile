@@ -1,6 +1,6 @@
 # Builds and runs QuestResume.Api. Build from the repository root:
 #   docker build -t questresume-api .
-#   docker run -p 8080:8080 -v questresume-data:/root/.local/share/QuestResume questresume-api
+#   docker run -p 8080:8080 -v questresume-data:/home/appuser/.local/share/QuestResume questresume-api
 #
 # OCR (Tesseract) and STT (Whisper.net) native dependencies aren't preinstalled in this image;
 # those features stay gracefully disabled until the relevant config paths are set up inside the
@@ -20,6 +20,13 @@ RUN dotnet publish src/QuestResume.Api/QuestResume.Api.csproj -c Release --no-re
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app .
+
+# Run as a non-root user. The data directory is created here so the volume mount lands with
+# the correct ownership when the container starts.
+RUN adduser --disabled-password --gecos "" --uid 1000 appuser \
+    && mkdir -p /home/appuser/.local/share/QuestResume \
+    && chown -R appuser /home/appuser
+USER appuser
 
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
