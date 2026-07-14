@@ -302,4 +302,90 @@ input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
 #searchResults, #documentsList { margin-top: 1rem; }
 #statsGrid { margin-top: 1rem; }
 #extensionChart { margin-top: 0.5rem; }
+
+/* Tradução (chat) */
+.translate-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; align-items: center; }
+.translation-result { margin-top: 0.25rem; font-size: 0.9rem; color: var(--text-muted, #999); white-space: pre-wrap; }
+
+/* Estudo — flashcards e quiz */
+#flashcardsList, #quizList { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.flashcard {
+  background: var(--panel);
+  border: 1px solid var(--panel-light);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+.flashcard-question { font-weight: 600; }
+.flashcard-answer { margin-top: 0.5rem; }
+.flashcard-answer.hidden { display: none; }
+.quiz-question {
+  background: var(--panel);
+  border: 1px solid var(--panel-light);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.quiz-question-text { font-weight: 600; margin-bottom: 0.25rem; }
+.quiz-option { text-align: left; }
+.quiz-option.correct { background: #1f7a3d; color: #fff; }
+.quiz-option.incorrect { background: #a33; color: #fff; }
+.quiz-feedback { font-weight: 600; margin-top: 0.25rem; }
 .chart-section-title { margin-top: 1.5rem; }
+
+/* Gráficos (canvas) */
+.chart-canvas { max-width: 100%; }
+.chart-donut-wrapper { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
+.chart-legend { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.85rem; }
+.chart-legend-item { display: flex; align-items: center; gap: 0.5rem; }
+.chart-legend-swatch { width: 0.75rem; height: 0.75rem; border-radius: 3px; flex-shrink: 0; }
+
+/* Dicas / atalhos */
+.hint-line { font-size: 0.8rem; color: var(--muted); margin: 0.25rem 0 0.75rem 0; }
+kbd {
+  background: var(--panel-light);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+}
+
+/* Upload / drag-and-drop */
+.drop-zone {
+  border: 2px dashed var(--panel-light);
+  border-radius: 8px;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+.drop-zone:hover, .drop-zone:focus, .drop-zone.drag-over {
+  border-color: var(--accent);
+  color: var(--text);
+}
+#uploadedFilesList { margin-bottom: 0.75rem; }
+
+/* Atalhos configuráveis */
+.shortcuts-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--panel-light);
+  padding-bottom: 0.5rem;
+}
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-row .shortcut-label { flex: 1; font-size: 0.9rem; }
+.shortcut-row .shortcut-key {
+  min-width: 120px;
+  text-align: center;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  background: var(--panel-light);
+  font-size: 0.85rem;
+}
