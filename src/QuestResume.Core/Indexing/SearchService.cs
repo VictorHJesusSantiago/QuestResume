@@ -48,11 +48,65 @@ public sealed class SearchService : ISearchService
 
     private readonly string _indexPath;
     private readonly LuceneIndexManager? _indexManager;
+    private readonly string? _masterPassword;
+    private readonly byte[]? _encryptionSalt;
+    private readonly QuestResume.Core.Embeddings.IVectorStore? _vectorStore;
+    private readonly QuestResume.Core.Embeddings.IClipEmbeddingService? _clipService;
 
     public SearchService(string indexPath, LuceneIndexManager? indexManager = null)
+        : this(indexPath, indexManager, masterPassword: null, masterKeyVerifier: null)
+    {
+    }
+
+    /// <summary>
+    /// Overload usado quando busca por similaridade de imagem (CLIP) está disponível. Sem
+    /// <paramref name="vectorStore"/>/<paramref name="clipService"/>, <see cref="SearchByImageAsync"/>
+    /// lança <see cref="QuestResume.Core.Embeddings.ClipNotConfiguredException"/>.
+    /// </summary>
+    public SearchService(
+        string indexPath,
+        LuceneIndexManager? indexManager,
+        QuestResume.Core.Embeddings.IVectorStore? vectorStore,
+        QuestResume.Core.Embeddings.IClipEmbeddingService? clipService)
+        : this(indexPath, indexManager, masterPassword: null, masterKeyVerifier: null)
+    {
+        _vectorStore = vectorStore;
+        _clipService = clipService;
+    }
+
+    /// <summary>
+    /// Overload used when the index at <paramref name="indexPath"/> is protected by a master
+    /// password (<c>AppOptions.EncryptionEnabled</c>). ON OPEN: if an <c>index.enc</c> file
+    /// exists and plain Lucene segment files aren't already present, it is decrypted in-place
+    /// into <paramref name="indexPath"/> before any read below. Call <see cref="SealAsync"/>
+    /// explicitly once done searching to re-encrypt and remove the plaintext again.
+    /// </summary>
+    public SearchService(string indexPath, LuceneIndexManager? indexManager, string? masterPassword, string? masterKeyVerifier)
     {
         _indexPath = indexPath;
         _indexManager = indexManager;
+        _masterPassword = masterPassword;
+
+        if (!string.IsNullOrEmpty(masterPassword) && !string.IsNullOrEmpty(masterKeyVerifier))
+        {
+            _encryptionSalt = QuestResume.Core.Security.MasterKeyManager.ExtractSalt(masterKeyVerifier);
+            LuceneIndexEncryptionService.OpenIntoWorkingFolder(indexPath, indexPath, masterPassword, _encryptionSalt);
+        }
+    }
+
+    /// <summary>
+    /// Explicit close/seal point for callers that constructed this <see cref="SearchService"/>
+    /// with a master password: re-encrypts <see cref="_indexPath"/> back into <c>index.enc</c>
+    /// and deletes the plaintext Lucene files. No-op if encryption wasn't configured.
+    /// </summary>
+    public Task SealAsync()
+    {
+        if (_encryptionSalt is not null && !string.IsNullOrEmpty(_masterPassword))
+        {
+            return LuceneIndexEncryptionService.SealAsync(_indexPath, _indexPath, _masterPassword, _encryptionSalt);
+        }
+
+        return Task.CompletedTask;
     }
 
     // -------------------------------------------------------------------------
@@ -212,6 +266,7 @@ public sealed class SearchService : ISearchService
         // Cap to MaxDoc so MatchAllDocsQuery doesn't silently truncate on very large indexes.
         var hits = searcher.Search(new MatchAllDocsQuery(), Math.Max(handle.Reader.MaxDoc, 1));
         var tagStore = LoadTagStore();
+        var summaryStore = new Persistence.SummaryStoreRepository(_indexPath).Load();
 
         var files = new Dictionary<string, IndexedFileInfo>();
         foreach (var scoreDoc in hits.ScoreDocs)
@@ -226,7 +281,8 @@ public sealed class SearchService : ISearchService
                 {
                     SourcePath = path,
                     FileName = doc.Get("fileName") ?? string.Empty,
-                    Tags = tagStore.GetTags(path).ToList()
+                    Tags = tagStore.GetTags(path).ToList(),
+                    Summary = summaryStore.GetSummary(path)
                 };
                 files[path] = info;
             }
@@ -355,6 +411,33 @@ public sealed class SearchService : ISearchService
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Busca imagens indexadas visualmente similares a <paramref name="imagePath"/>, gerando um
+    /// embedding CLIP da imagem de consulta e comparando por similaridade de cosseno contra os
+    /// embeddings armazenados em <c>image_embeddings</c> (ver <see cref="DocumentIndexer"/>/
+    /// <see cref="QuestResume.Core.Embeddings.VectorStore"/>).
+    /// </summary>
+    /// <exception cref="QuestResume.Core.Embeddings.ClipNotConfiguredException">
+    /// Quando nenhum modelo CLIP ONNX válido foi configurado (<see cref="Configuration.AppOptions.ClipModelPath"/>).
+    /// Comportamento esperado sem um modelo real fornecido pelo usuário.
+    /// </exception>
+    public async Task<IReadOnlyList<ImageSearchResultItem>> SearchByImageAsync(string imagePath, int topK = 5, CancellationToken cancellationToken = default)
+    {
+        if (_clipService is null)
+        {
+            throw new QuestResume.Core.Embeddings.ClipNotConfiguredException(string.Empty);
+        }
+
+        var queryEmbedding = await _clipService.EmbedImageAsync(imagePath, cancellationToken).ConfigureAwait(false);
+
+        if (_vectorStore is null)
+        {
+            return Array.Empty<ImageSearchResultItem>();
+        }
+
+        return _vectorStore.SearchImages(queryEmbedding, topK);
     }
 
     private static Query ApplyFilters(Query contentQuery, SearchFilters? filters)
