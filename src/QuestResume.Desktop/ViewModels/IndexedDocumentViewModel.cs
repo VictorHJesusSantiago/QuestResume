@@ -17,4 +17,7 @@ public sealed partial class IndexedDocumentViewModel : ObservableObject
 
     [ObservableProperty]
     private string tagsInput = string.Empty;
+
+    /// <summary>Resumo automático gerado na indexação (ver <see cref="QuestResume.Core.Rag.SummarizationService"/>), vazio se ainda não gerado.</summary>
+    public string Summary { get; init; } = string.Empty;
 }
