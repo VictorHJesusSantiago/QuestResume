@@ -11,8 +11,9 @@ namespace QuestResume.Core.Extraction;
 public sealed class ExtractorRegistry
 {
     private readonly Dictionary<string, IFileExtractor> _extractorsByExtension;
+    private readonly List<LoadedPluginInfo> _loadedPlugins = new();
 
-    public ExtractorRegistry(IEnumerable<IFileExtractor>? extractors = null)
+    public ExtractorRegistry(IEnumerable<IFileExtractor>? extractors = null, bool loadPlugins = false, Action<string>? pluginLog = null)
     {
         extractors ??= DefaultExtractors();
 
@@ -24,7 +25,38 @@ public sealed class ExtractorRegistry
                 _extractorsByExtension[extension] = extractor;
             }
         }
+
+        if (loadPlugins)
+        {
+            RegisterPlugins(PluginLoader.LoadPlugins(log: pluginLog), pluginLog);
+        }
     }
+
+    /// <summary>
+    /// Registra extratores adicionais fornecidos por plugins de terceiros (normalmente obtidos
+    /// via <see cref="PluginLoader.LoadPlugins"/>), sobrescrevendo extratores nativos que
+    /// declarem as mesmas extensões e adicionando o resultado a <see cref="LoadedPlugins"/>.
+    /// </summary>
+    public void RegisterPlugins(IEnumerable<IFileExtractor> pluginExtractors, Action<string>? log = null)
+    {
+        foreach (var extractor in pluginExtractors)
+        {
+            foreach (var extension in extractor.SupportedExtensions)
+            {
+                _extractorsByExtension[extension] = extractor;
+            }
+
+            _loadedPlugins.Add(new LoadedPluginInfo
+            {
+                AssemblyFileName = extractor.GetType().Assembly.GetName().Name ?? extractor.GetType().Assembly.FullName ?? "desconhecido",
+                ExtractorTypeName = extractor.GetType().FullName ?? extractor.GetType().Name,
+                SupportedExtensions = extractor.SupportedExtensions
+            });
+        }
+    }
+
+    /// <summary>Plugins de terceiros carregados com sucesso neste registro (vazio se nenhum foi carregado).</summary>
+    public IReadOnlyList<LoadedPluginInfo> LoadedPlugins => _loadedPlugins;
 
     /// <summary>
     /// Default set of extractors covering Group 1 (direct text extraction) formats, plus the
@@ -56,9 +88,13 @@ public sealed class ExtractorRegistry
         yield return new OpenXmlExtractor();
         yield return new HtmlExtractor();
         yield return new OdtExtractor();
+        yield return new OdsExtractor();
+        yield return new IWorkExtractor();
         yield return new RtfExtractor();
         yield return new EpubExtractor();
         yield return new EmailExtractor();
+        yield return new VideoMetadataExtractor();
+        yield return new ExecutableMetadataExtractor();
 
         if (options?.SttEnabled == true)
         {
