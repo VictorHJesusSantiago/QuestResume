@@ -35,6 +35,10 @@ public static class DashboardService
             DocumentsByExtension = indexedFiles
                 .GroupBy(GetExtensionLabel)
                 .OrderByDescending(g => g.Count())
+                .ToDictionary(g => g.Key, g => g.Count()),
+            QuestionsByDay = audit
+                .GroupBy(a => a.TimestampUtc.ToString("yyyy-MM-dd"))
+                .OrderBy(g => g.Key)
                 .ToDictionary(g => g.Key, g => g.Count())
         };
     }
