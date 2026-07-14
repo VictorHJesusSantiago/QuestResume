@@ -38,6 +38,13 @@ public sealed class AppOptions
     /// <summary>Nome do modelo Ollama a usar (ex.: "llama3.2").</summary>
     public string OllamaModel { get; set; } = "llama3.2";
 
+    /// <summary>
+    /// Quando habilitado e tanto o LLamaSharp quanto o Ollama estiverem configurados, as
+    /// perguntas são roteadas para o Ollama primeiro, com fallback automático para o LLamaSharp
+    /// local caso o Ollama falhe (indisponível, timeout etc.). Ver <see cref="QuestResume.Core.Rag.RoutingLlmProvider"/>.
+    /// </summary>
+    public bool LlmFallbackEnabled { get; set; } = false;
+
     // --- OCR (Grupo 3) ---
 
     /// <summary>Habilita OCR (Tesseract) para imagens e páginas de PDF sem texto extraível.</summary>
@@ -126,6 +133,28 @@ public sealed class AppOptions
 
     // --- Auditoria ---
 
+    // --- Indexação paralela / incremental / auto-reindexação ---
+
+    /// <summary>
+    /// Número máximo de arquivos processados em paralelo durante a indexação; mínimo 1.
+    /// Padrão: <see cref="Environment.ProcessorCount"/>.
+    /// </summary>
+    public int IndexingParallelism { get; set; } = Math.Max(1, Environment.ProcessorCount);
+
+    /// <summary>
+    /// Quando habilitado, arquivos cujo hash SHA-256 e data de modificação não mudaram desde a
+    /// última indexação são reaproveitados a partir do manifesto (<c>index-manifest.json</c>) em
+    /// vez de serem extraídos e fragmentados novamente.
+    /// </summary>
+    public bool IncrementalIndexingEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Quando habilitado, um <see cref="QuestResume.Core.Indexing.AutoReindexWatcher"/> monitora
+    /// <see cref="DocumentsFolder"/> via <see cref="System.IO.FileSystemWatcher"/> e dispara uma
+    /// nova indexação automaticamente após alterações (com debounce).
+    /// </summary>
+    public bool AutoReindexEnabled { get; set; } = false;
+
     /// <summary>
     /// Número máximo de linhas mantidas em <c>audit.jsonl</c>; 0 = ilimitado.
     /// Quando o arquivo ultrapassa esse limite após um <c>Append</c>, as entradas mais antigas
@@ -141,6 +170,73 @@ public sealed class AppOptions
     /// exfiltração via mudança maliciosa de pasta em deployments de servidor.
     /// </summary>
     public List<string> AllowedDocumentRoots { get; set; } = new();
+
+    // --- Processamento em lote ---
+
+    /// <summary>
+    /// Número máximo de perguntas aceitas em uma única chamada a <c>POST /api/ask/batch</c>
+    /// (ou ao comando <c>ask-batch</c> da CLI). Protege o servidor contra lotes excessivamente
+    /// grandes que bloqueariam o modelo local (as perguntas são processadas sequencialmente,
+    /// respeitando o semáforo de concorrência já existente).
+    /// </summary>
+    public int MaxBatchQuestions { get; set; } = 20;
+
+    // --- Criptografia em repouso ---
+
+    /// <summary>
+    /// Quando habilitado, o conteúdo de <c>vectors.db</c> (texto e embeddings) é criptografado
+    /// com AES antes de ser gravado, e o índice Lucene em <see cref="IndexPath"/> é mantido
+    /// criptografado em disco (arquivo <c>.enc</c>), sendo decifrado para uma pasta temporária
+    /// somente durante o uso. A senha mestre nunca é persistida — apenas o verificador PBKDF2
+    /// abaixo. Veja <see cref="QuestResume.Core.Security.MasterKeyManager"/>.
+    /// </summary>
+    public bool EncryptionEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Verificador PBKDF2 (sal + hash, nunca a senha em si) usado para validar a senha mestre
+    /// informada em tempo de execução quando <see cref="EncryptionEnabled"/> é true.
+    /// </summary>
+    public string MasterKeyVerifier { get; set; } = string.Empty;
+
+    // --- Busca por similaridade de imagem (CLIP) ---
+
+    /// <summary>
+    /// Caminho do modelo CLIP no formato ONNX usado para gerar embeddings visuais de imagens
+    /// indexadas e da imagem de consulta em <see cref="QuestResume.Core.Indexing.SearchService.SearchByImageAsync"/>.
+    /// Quando vazio ou o arquivo não existe, <see cref="QuestResume.Core.Embeddings.ClipEmbeddingService"/>
+    /// lança <see cref="QuestResume.Core.Embeddings.ClipNotConfiguredException"/>.
+    /// </summary>
+    public string ClipModelPath { get; set; } = string.Empty;
+
+    // --- Resumo automático na indexação ---
+
+    /// <summary>
+    /// Quando habilitado (e um LLM estiver configurado), gera um resumo curto (2-4 frases) de
+    /// cada documento novo/alterado ao final da indexação, via
+    /// <see cref="QuestResume.Core.Rag.SummarizationService"/>. Falhas de LLM durante a
+    /// sumarização não interrompem a indexação principal.
+    /// </summary>
+    public bool AutoSummarizationEnabled { get; set; } = false;
+
+    // --- Agente com ferramentas (opt-in) ---
+
+    /// <summary>
+    /// Quando habilitado, o <see cref="QuestResume.Core.Rag.Agent.AgentOrchestrator"/> pode
+    /// escolher usar ferramentas (calculadora, busca web) para responder perguntas. ATENÇÃO:
+    /// habilitar a ferramenta de busca web (<see cref="WebSearchEndpointUrl"/>) permite chamadas
+    /// de rede externas, fora do funcionamento offline-first padrão do QuestResume. Desabilitado
+    /// por padrão.
+    /// </summary>
+    public bool AgentToolsEnabled { get; set; } = false;
+
+    /// <summary>
+    /// URL do serviço HTTP de busca web usado por <see cref="QuestResume.Core.Rag.Agent.WebSearchTool"/>
+    /// quando <see cref="AgentToolsEnabled"/> está ativo. Deve apontar para um serviço de busca
+    /// escolhido pelo usuário (ex.: um SearXNG self-hosted com <c>?format=json</c>) que aceite
+    /// <c>?q=&lt;consulta&gt;</c> e devolva JSON <c>{"results":[{"title":..,"url":..,"snippet":..}]}</c>.
+    /// Vazio desabilita a ferramenta mesmo com <see cref="AgentToolsEnabled"/> = true.
+    /// </summary>
+    public string? WebSearchEndpointUrl { get; set; }
 
     /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
@@ -206,5 +302,49 @@ public sealed class AppOptions
         {
             throw new AppOptionsValidationException("MaxAuditLogLines não pode ser negativo.");
         }
+
+        if (IndexingParallelism < 1)
+        {
+            throw new AppOptionsValidationException("IndexingParallelism deve ser maior ou igual a 1.");
+        }
+
+        if (MaxBatchQuestions < 1)
+        {
+            throw new AppOptionsValidationException("MaxBatchQuestions deve ser maior ou igual a 1.");
+        }
+    }
+
+    /// <summary>
+    /// Valida a quantidade de perguntas de uma requisição em lote (<c>POST /api/ask/batch</c> ou
+    /// comando <c>ask-batch</c> da CLI) contra <see cref="MaxBatchQuestions"/>. Extraído do
+    /// endpoint para ser testável isoladamente no Core.
+    /// </summary>
+    /// <exception cref="AppOptionsValidationException">
+    /// Quando <paramref name="questionCount"/> é zero ou excede <see cref="MaxBatchQuestions"/>.
+    /// </exception>
+    public void ValidateBatchQuestionCount(int questionCount)
+    {
+        if (questionCount <= 0)
+        {
+            throw new AppOptionsValidationException("Informe ao menos uma pergunta (questions).");
+        }
+
+        if (questionCount > MaxBatchQuestions)
+        {
+            throw new AppOptionsValidationException(
+                $"O lote contém {questionCount} pergunta(s), acima do limite configurado (MaxBatchQuestions = {MaxBatchQuestions}).");
+        }
+    }
+
+    /// <summary>
+    /// Cria uma cópia rasa independente desta instância (via round-trip JSON), usada para
+    /// derivar opções por-requisição (ex.: <see cref="IndexPath"/> isolado por usuário em
+    /// <see cref="QuestResume.Core.Auth.UserIndexPathResolver"/>) sem alterar a configuração
+    /// global compartilhada.
+    /// </summary>
+    public AppOptions Clone()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(this);
+        return System.Text.Json.JsonSerializer.Deserialize<AppOptions>(json)!;
     }
 }
