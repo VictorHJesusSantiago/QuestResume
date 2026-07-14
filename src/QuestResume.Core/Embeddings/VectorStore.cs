@@ -61,8 +61,68 @@ public sealed class VectorStore : IVectorStore
                 embedding BLOB NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
+
+            CREATE TABLE IF NOT EXISTS image_embeddings (
+                path TEXT PRIMARY KEY,
+                fileName TEXT NOT NULL,
+                embedding BLOB NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
+    }
+
+    public void AddImageEmbedding(string sourcePath, string fileName, float[] embedding)
+    {
+        lock (_lock)
+        {
+            using var command = _connection.CreateCommand();
+            command.Transaction = _activeTransaction;
+            command.CommandText = """
+                INSERT INTO image_embeddings (path, fileName, embedding)
+                VALUES ($path, $fileName, $embedding)
+                ON CONFLICT(path) DO UPDATE SET fileName = $fileName, embedding = $embedding
+                """;
+            command.Parameters.AddWithValue("$path", sourcePath);
+            command.Parameters.AddWithValue("$fileName", fileName);
+            command.Parameters.AddWithValue("$embedding", ToBytes(embedding));
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public void RemoveImageEmbedding(string sourcePath)
+    {
+        lock (_lock)
+        {
+            using var command = _connection.CreateCommand();
+            command.Transaction = _activeTransaction;
+            command.CommandText = "DELETE FROM image_embeddings WHERE path = $path";
+            command.Parameters.AddWithValue("$path", sourcePath);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<ImageSearchResultItem> SearchImages(float[] queryEmbedding, int topK)
+    {
+        lock (_lock)
+        {
+            var results = new List<ImageSearchResultItem>();
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = "SELECT path, fileName, embedding FROM image_embeddings";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var embedding = FromBytes((byte[])reader["embedding"]);
+                results.Add(new ImageSearchResultItem
+                {
+                    SourcePath = reader.GetString(0),
+                    FileName = reader.GetString(1),
+                    Score = CosineSimilarity(queryEmbedding, embedding)
+                });
+            }
+
+            return results.OrderByDescending(r => r.Score).Take(topK).ToList();
+        }
     }
 
     /// <summary>Removes every stored embedding, so re-indexing starts from a clean slate.</summary>
@@ -184,6 +244,14 @@ public sealed class VectorStore : IVectorStore
                 .OrderByDescending(item => item.Score)
                 .Take(topK)
                 .ToList();
+        }
+    }
+
+    public IReadOnlyList<(SearchResultItem Item, float[] Embedding)> GetAllEntries()
+    {
+        lock (_lock)
+        {
+            return LoadCache();
         }
     }
 

@@ -32,4 +32,25 @@ public interface IVectorStore : IDisposable
     /// Dispose the returned handle to commit.
     /// </summary>
     IDisposable BeginBatch();
+
+    /// <summary>
+    /// Returns every stored chunk with its raw embedding, bypassing similarity scoring. Used by
+    /// <see cref="EncryptedVectorStore"/> to decrypt entries before ranking locally, since the
+    /// underlying store only ever sees ciphertext and cannot score it meaningfully.
+    /// </summary>
+    IReadOnlyList<(SearchResultItem Item, float[] Embedding)> GetAllEntries();
+
+    // --- Embeddings visuais (CLIP) — tabela separada de "chunks" de texto ---
+
+    /// <summary>Insere/atualiza o embedding visual (CLIP) de uma imagem indexada.</summary>
+    void AddImageEmbedding(string sourcePath, string fileName, float[] embedding);
+
+    /// <summary>Remove o embedding visual armazenado para <paramref name="sourcePath"/>, se houver.</summary>
+    void RemoveImageEmbedding(string sourcePath);
+
+    /// <summary>
+    /// Retorna os <paramref name="topK"/> arquivos de imagem mais similares (cosseno) a
+    /// <paramref name="queryEmbedding"/>.
+    /// </summary>
+    IReadOnlyList<ImageSearchResultItem> SearchImages(float[] queryEmbedding, int topK);
 }
