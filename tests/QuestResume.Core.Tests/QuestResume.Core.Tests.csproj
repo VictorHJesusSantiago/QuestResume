@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\QuestResume.Core\QuestResume.Core.csproj" />
+    <!-- Referenced only so the built SamplePlugin DLL is available on disk for
+         PluginLoaderTests to copy into a fake plugins folder and load dynamically. -->
+    <ProjectReference Include="..\..\examples\QuestResume.SamplePlugin\QuestResume.SamplePlugin.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Copies QuestResume.Core.dll next to the plugin DLL so it can be built standalone; the
+         plugin host (CLI/API/Desktop) already has its own copy loaded, so this reference is
+         only needed at compile time and for local testing. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\QuestResume.Core\QuestResume.Core.csproj" />
+  </ItemGroup>
+
+</Project>
