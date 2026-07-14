@@ -5,6 +5,54 @@ namespace QuestResume.Core.Tests;
 public class VectorStoreTests
 {
     [Fact]
+    public void SearchImages_RanksByCosineSimilarity()
+    {
+        var indexPath = Path.Combine(Path.GetTempPath(), $"vectorstore-img-{Guid.NewGuid()}");
+
+        try
+        {
+            using var store = new VectorStore(indexPath);
+
+            store.AddImageEmbedding("a.png", "a.png", new float[] { 1f, 0f, 0f, 0f });
+            store.AddImageEmbedding("b.png", "b.png", new float[] { 0f, 1f, 0f, 0f });
+
+            var results = store.SearchImages(new float[] { 1f, 0f, 0f, 0f }, topK: 2);
+
+            Assert.Equal(2, results.Count);
+            Assert.Equal("a.png", results[0].FileName);
+            Assert.True(results[0].Score > results[1].Score);
+        }
+        finally
+        {
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RemoveImageEmbedding_RemovesOnlyMatchingEntry()
+    {
+        var indexPath = Path.Combine(Path.GetTempPath(), $"vectorstore-img-{Guid.NewGuid()}");
+
+        try
+        {
+            using var store = new VectorStore(indexPath);
+            store.AddImageEmbedding("a.png", "a.png", new float[] { 1f, 0f });
+            store.AddImageEmbedding("b.png", "b.png", new float[] { 0f, 1f });
+
+            store.RemoveImageEmbedding("a.png");
+
+            var results = store.SearchImages(new float[] { 1f, 0f }, topK: 10);
+            Assert.Single(results);
+            Assert.Equal("b.png", results[0].FileName);
+        }
+        finally
+        {
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+
+    [Fact]
     public void Search_RanksResultsByCosineSimilarity()
     {
         var indexPath = Path.Combine(Path.GetTempPath(), $"vectorstore-{Guid.NewGuid()}");

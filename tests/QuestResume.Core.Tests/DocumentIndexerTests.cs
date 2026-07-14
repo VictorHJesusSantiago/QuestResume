@@ -198,4 +198,113 @@ public class DocumentIndexerTests
             Directory.Delete(indexPath, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task IndexFolderAsync_ProcessesManyFilesInParallel()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"parallel-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"parallel-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            const int fileCount = 25;
+            for (var i = 0; i < fileCount; i++)
+            {
+                await File.WriteAllTextAsync(Path.Combine(folder, $"doc{i}.txt"), $"Conteúdo exclusivo número {i}.");
+            }
+
+            var indexer = new DocumentIndexer();
+            var stats = await indexer.IndexFolderAsync(folder, indexPath, parallelism: 8);
+
+            Assert.Equal(fileCount, stats.FilesProcessed);
+            Assert.Empty(stats.Errors);
+
+            var search = new SearchService(indexPath);
+            Assert.Equal(fileCount, search.GetIndexedFiles().Count);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IndexFolderAsync_Incremental_SkipsUnchangedFile()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"incremental-unchanged-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"incremental-unchanged-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            var filePath = Path.Combine(folder, "estavel.txt");
+            await File.WriteAllTextAsync(filePath, "Conteúdo que não vai mudar entre indexações.");
+
+            var indexer = new DocumentIndexer();
+            var firstRun = await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+            Assert.Equal(1, firstRun.FilesProcessed);
+
+            var secondRun = await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            // The file is still counted as "processed" (it's still present in the index), but
+            // its manifest entry's chunks should have been reused rather than re-extracted —
+            // verified indirectly by checking the content is still fully searchable afterwards.
+            Assert.Equal(1, secondRun.FilesProcessed);
+            Assert.Equal(firstRun.ChunksIndexed, secondRun.ChunksIndexed);
+
+            var search = new SearchService(indexPath);
+            var results = search.Search("conteúdo", 10);
+            Assert.Single(results);
+
+            var manifestPath = Path.Combine(indexPath, "index-manifest.json");
+            Assert.True(File.Exists(manifestPath));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IndexFolderAsync_Incremental_ReprocessesModifiedFile()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"incremental-modified-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"incremental-modified-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            var filePath = Path.Combine(folder, "muda.txt");
+            await File.WriteAllTextAsync(filePath, "Texto original antes da alteração.");
+
+            var indexer = new DocumentIndexer();
+            await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            // Ensure a different LastWriteTimeUtc even on fast filesystems/CI, and change the
+            // content so the change is observable via search.
+            await Task.Delay(50);
+            await File.WriteAllTextAsync(filePath, "Texto totalmente novo após a alteração, palavra-chave: atualizado.");
+            File.SetLastWriteTimeUtc(filePath, DateTime.UtcNow);
+
+            await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            var search = new SearchService(indexPath);
+            var results = search.Search("atualizado", 10);
+            Assert.Single(results);
+
+            var oldResults = search.Search("original", 10);
+            Assert.Empty(oldResults);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
 }
