@@ -5,6 +5,7 @@ using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Indexing;
 using QuestResume.Core.Models;
+using QuestResume.Core.Notifications;
 using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Rag;
@@ -31,6 +32,7 @@ public sealed class RagQueryEngine : IDisposable
     private readonly int _gpuLayerCount;
     private readonly int _llmTimeoutSeconds;
     private readonly int _maxAuditLogLines;
+    private readonly WebhookNotifier? _webhookNotifier;
 
     /// <summary>
     /// Caches answers for repeated questions (same question + topK, no conversation history),
@@ -50,6 +52,13 @@ public sealed class RagQueryEngine : IDisposable
 
     private ILlmProvider? _llm;
 
+    /// <summary>
+    /// Quando informado (via <see cref="RagQueryEngineFactory"/>, ex.: <see cref="RoutingLlmProvider"/>
+    /// quando <see cref="Configuration.AppOptions.LlmFallbackEnabled"/> está ativo), este provedor
+    /// é usado no lugar de construir um a partir de <see cref="_llmProviderKind"/>.
+    /// </summary>
+    private readonly ILlmProvider? _llmProviderOverride;
+
     public RagQueryEngine(
         ISearchService searchService,
         string modelPath,
@@ -66,8 +75,12 @@ public sealed class RagQueryEngine : IDisposable
         IAuditLogRepository? auditLog = null,
         int gpuLayerCount = 0,
         int llmTimeoutSeconds = 120,
-        int maxAuditLogLines = 0)
+        int maxAuditLogLines = 0,
+        ILlmProvider? llmProviderOverride = null,
+        WebhookNotifier? webhookNotifier = null)
     {
+        _webhookNotifier = webhookNotifier;
+        _llmProviderOverride = llmProviderOverride;
         _searchService = new HybridSearchService(searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService);
         _modelPath = modelPath;
         _contextSize = contextSize;
@@ -128,7 +141,9 @@ public sealed class RagQueryEngine : IDisposable
 
         stopwatch.Stop();
 
-        var result = new AskResult { Answer = answer, Sources = sources };
+        var relatedQuestions = await TryGenerateRelatedQuestionsAsync(llm, question, answer, cancellationToken).ConfigureAwait(false);
+
+        var result = new AskResult { Answer = answer, Sources = sources, RelatedQuestions = relatedQuestions };
 
         if (cacheKey is not null)
         {
@@ -147,7 +162,55 @@ public sealed class RagQueryEngine : IDisposable
             _auditLog.Rotate(_maxAuditLogLines);
         }
 
+        _webhookNotifier?.Notify("question.asked", new
+        {
+            question,
+            answerLength = answer.Length,
+            sources = sources.Select(s => s.FileName).Distinct().ToList(),
+            elapsedMs = stopwatch.Elapsed.TotalMilliseconds
+        });
+
         return result;
+    }
+
+    /// <summary>
+    /// Pede ao LLM 3 perguntas relacionadas curtas à pergunta/resposta recém-geradas, em formato
+    /// de lista simples (uma por linha), com parse defensivo linha a linha. Best-effort: qualquer
+    /// falha (LLM indisponível, timeout, resposta malformada) é engolida e resulta em lista vazia
+    /// — nunca deve comprometer a resposta principal já obtida.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> TryGenerateRelatedQuestionsAsync(
+        ILlmProvider llm, string question, string answer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var prompt =
+                "Com base na pergunta e resposta abaixo, sugira exatamente 3 perguntas relacionadas " +
+                "curtas que o usuário poderia querer fazer em seguida. Responda apenas com uma lista, " +
+                "uma pergunta por linha, sem numeração, sem markdown e sem texto adicional.\n\n" +
+                $"Pergunta: {question}\n" +
+                $"Resposta: {answer}\n\n" +
+                "Perguntas relacionadas:";
+
+            using var cts = _llmTimeoutSeconds > 0
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+            if (cts is not null) cts.CancelAfter(TimeSpan.FromSeconds(_llmTimeoutSeconds));
+
+            var response = await llm.CompleteAsync(prompt, cts?.Token ?? cancellationToken).ConfigureAwait(false);
+
+            return response
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(line => line.TrimStart('-', '*', '•', ' ').Trim())
+                .Select(line => System.Text.RegularExpressions.Regex.Replace(line, @"^\d+[\.\)]\s*", ""))
+                .Where(line => line.Length > 0)
+                .Take(3)
+                .ToList();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
     }
 
     /// <summary>
@@ -238,6 +301,14 @@ public sealed class RagQueryEngine : IDisposable
             });
             _auditLog.Rotate(_maxAuditLogLines);
         }
+
+        _webhookNotifier?.Notify("question.asked", new
+        {
+            question,
+            answerLength = answer.Length,
+            sources = sources.Select(s => s.FileName).Distinct().ToList(),
+            elapsedMs = stopwatch.Elapsed.TotalMilliseconds
+        });
     }
 
     private static string BuildCacheKey(string question, int topK) =>
@@ -301,11 +372,31 @@ public sealed class RagQueryEngine : IDisposable
         }
     }
 
-    private ILlmProvider CreateProvider() => _llmProviderKind switch
+    private ILlmProvider CreateProvider()
     {
-        LlmProviderKind.Ollama => new OllamaLlmProvider(_ollamaBaseUrl, _ollamaModel, _httpClient),
-        _ => new LlamaSharpLlmProvider(_modelPath, _contextSize, _gpuLayerCount)
-    };
+        if (_llmProviderOverride is not null)
+        {
+            return _llmProviderOverride;
+        }
+
+        return _llmProviderKind switch
+        {
+            LlmProviderKind.Ollama => new OllamaLlmProvider(_ollamaBaseUrl, _ollamaModel, _httpClient),
+            _ => new LlamaSharpLlmProvider(_modelPath, _contextSize, _gpuLayerCount)
+        };
+    }
+
+    /// <summary>
+    /// Exposto para os serviços auxiliares (<see cref="StructuredExtractionService"/>,
+    /// <see cref="FlashcardService"/>, <see cref="TranslationService"/>) que precisam do mesmo
+    /// serviço de busca e provedor de LLM já configurados neste engine, sem duplicar a lógica de
+    /// construção de <see cref="RagQueryEngineFactory"/>.
+    /// </summary>
+    public HybridSearchService SearchService => _searchService;
+
+    /// <summary>Obtém (inicializando se necessário) o provedor de LLM deste engine.</summary>
+    public Task<ILlmProvider> GetLlmProviderAsync(CancellationToken cancellationToken = default) =>
+        GetOrCreateLlmAsync(cancellationToken);
 
 
     public void Dispose()

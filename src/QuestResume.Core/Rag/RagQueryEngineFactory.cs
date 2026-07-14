@@ -1,6 +1,7 @@
 using QuestResume.Core.Configuration;
 using QuestResume.Core.Embeddings;
 using QuestResume.Core.Indexing;
+using QuestResume.Core.Notifications;
 using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Rag;
@@ -30,7 +31,8 @@ public sealed record RagEngineKey(
     int GpuLayerCount,
     int LlmTimeoutSeconds,
     int MaxVectorCacheSize,
-    int MaxAuditLogLines)
+    int MaxAuditLogLines,
+    bool LlmFallbackEnabled)
 {
     public static RagEngineKey From(AppOptions options, int? topK = null) => new(
         options.ModelPath,
@@ -50,7 +52,8 @@ public sealed record RagEngineKey(
         options.GpuLayerCount,
         options.LlmTimeoutSeconds,
         options.MaxVectorCacheSize,
-        options.MaxAuditLogLines);
+        options.MaxAuditLogLines,
+        options.LlmFallbackEnabled);
 }
 
 /// <summary>
@@ -87,6 +90,24 @@ public static class RagQueryEngineFactory
         // used as a dependency rather than existing only as dead abstraction.
         IAuditLogRepository auditLog = new AuditLogRepository(options.IndexPath);
 
+        // WebhookNotifier is always constructed (cheap, no I/O until Notify() is called) so
+        // question.asked notifications work whenever the user has registered webhooks for it,
+        // without needing a separate config toggle.
+        var webhookNotifier = new WebhookNotifier(options.IndexPath, httpClient);
+
+        // When fallback routing is enabled and both LLamaSharp and Ollama are configured, wrap
+        // both in a RoutingLlmProvider (Ollama first, LLamaSharp local as fallback) instead of
+        // picking a single provider via LlmProviderKind.
+        ILlmProvider? llmProviderOverride = null;
+        if (options.LlmFallbackEnabled && IsLlamaSharpConfigured(options.ModelPath) && IsOllamaConfigured(options))
+        {
+            llmProviderOverride = new RoutingLlmProvider(new ILlmProvider[]
+            {
+                new OllamaLlmProvider(options.OllamaBaseUrl, options.OllamaModel, httpClient),
+                new LlamaSharpLlmProvider(options.ModelPath, options.ContextSize, options.GpuLayerCount)
+            });
+        }
+
         return new RagQueryEngine(
             search,
             options.ModelPath,
@@ -103,6 +124,14 @@ public static class RagQueryEngineFactory
             auditLog: auditLog,
             gpuLayerCount: options.GpuLayerCount,
             llmTimeoutSeconds: options.LlmTimeoutSeconds,
-            maxAuditLogLines: options.MaxAuditLogLines);
+            maxAuditLogLines: options.MaxAuditLogLines,
+            llmProviderOverride: llmProviderOverride,
+            webhookNotifier: webhookNotifier);
     }
+
+    private static bool IsLlamaSharpConfigured(string modelPath) =>
+        !string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath);
+
+    private static bool IsOllamaConfigured(AppOptions options) =>
+        !string.IsNullOrWhiteSpace(options.OllamaBaseUrl) && !string.IsNullOrWhiteSpace(options.OllamaModel);
 }
