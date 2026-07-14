@@ -5,6 +5,45 @@ using QuestResume.Core.Indexing;
 using QuestResume.Core.Models;
 using QuestResume.Core.Rag;
 using QuestResume.Core.Services;
+using Serilog;
+using Serilog.Events;
+
+// Basic diagnostic logger for the CLI: writes to the console only (kept separate from the
+// Console.WriteLine-based UX output above/below), used for error/diagnostic tracing around the
+// unhandled-exception flow and long-running commands (e.g. ask-batch). Level is controlled via:
+//   --log-level <Verbose|Debug|Information|Warning|Error|Fatal>   (checked first)
+//   QUESTRESUME_LOG_LEVEL environment variable                    (fallback)
+// Defaults to Warning so normal CLI usage stays quiet — Console.WriteLine remains the primary UX.
+var logLevelArgIndex = Array.IndexOf(args, "--log-level");
+var logLevelValue = (logLevelArgIndex >= 0 && logLevelArgIndex + 1 < args.Length)
+    ? args[logLevelArgIndex + 1]
+    : Environment.GetEnvironmentVariable("QUESTRESUME_LOG_LEVEL");
+
+var logLevel = Enum.TryParse<LogEventLevel>(logLevelValue, ignoreCase: true, out var parsedLevel)
+    ? parsedLevel
+    : LogEventLevel.Warning;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Is(logLevel)
+    .Enrich.WithMachineName()
+    .Enrich.WithProperty("Application", "QuestResume.Cli")
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
+
+// Strip --log-level <value> from args before command parsing so it doesn't get misread as a
+// positional argument by the individual command handlers below.
+if (logLevelArgIndex >= 0)
+{
+    var withoutLogLevel = new List<string>(args);
+    withoutLogLevel.RemoveRange(logLevelArgIndex, Math.Min(2, withoutLogLevel.Count - logLevelArgIndex));
+    args = withoutLogLevel.ToArray();
+}
+
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    Log.Fatal(e.ExceptionObject as Exception, "Exceção não tratada encerrou o processo da CLI");
+    Log.CloseAndFlush();
+};
 
 var configService = new ConfigService();
 
@@ -19,11 +58,12 @@ var rest = args.Skip(1).ToArray();
 
 try
 {
-    return command switch
+    var exitCode = command switch
     {
         "index" => await RunIndexAsync(rest),
         "search" => RunSearch(rest),
         "ask" => await RunAskAsync(rest),
+        "ask-batch" => await RunAskBatchAsync(rest),
         "chat" => await RunChatAsync(rest),
         "compare" => await RunCompareAsync(rest),
         "documents" => RunDocuments(rest),
@@ -33,13 +73,30 @@ try
         "audit" => RunAudit(rest),
         "stats" => RunStats(rest),
         "config" => RunConfig(rest),
+        "backup" => await RunBackupAsync(rest),
+        "restore" => await RunRestoreAsync(rest),
+        "extract-table" => await RunExtractTableAsync(rest),
+        "flashcards" => await RunFlashcardsAsync(rest),
+        "quiz" => await RunQuizAsync(rest),
+        "translate" => await RunTranslateAsync(rest),
+        "plugins" => RunPlugins(rest),
+        "user" => RunUser(rest),
+        "login" => RunLogin(rest),
+        "collection" => RunCollection(rest),
+        "search-image" => await RunSearchImageAsync(rest),
+        "webhook" => RunWebhook(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
     };
+
+    Log.CloseAndFlush();
+    return exitCode;
 }
 catch (Exception ex)
 {
+    Log.Error(ex, "Erro ao executar comando '{Command}'", command);
     Console.Error.WriteLine($"Erro: {ex.Message}");
+    Log.CloseAndFlush();
     return 1;
 }
 
@@ -56,11 +113,27 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
         return 1;
     }
 
-    var indexPath = GetFlagValue(cmdArgs, "--index-path") ?? options.IndexPath;
+    var indexPath = GetFlagValue(cmdArgs, "--index-path") ?? ResolveCollectionIndexPath(options, cmdArgs);
+
+    // When the index is encrypted at rest (AppOptions.EncryptionEnabled), the master password is
+    // required to decrypt index.enc before indexing and to re-encrypt afterwards — see
+    // QuestResume.Core.Indexing.LuceneIndexEncryptionService, wired end-to-end into
+    // DocumentIndexer.IndexFolderAsync's open/close lifecycle.
+    string? masterPassword = null;
+    if (options.EncryptionEnabled)
+    {
+        Console.Write("Senha mestre: ");
+        masterPassword = ReadMaskedLine();
+        if (string.IsNullOrEmpty(masterPassword) || !QuestResume.Core.Security.MasterKeyManager.VerifyPassword(masterPassword, options.MasterKeyVerifier))
+        {
+            Console.Error.WriteLine("Senha mestre incorreta.");
+            return 1;
+        }
+    }
 
     Console.WriteLine($"Indexando '{folder}' em '{indexPath}'...");
 
-    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options));
+    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options), loadPlugins: true, pluginLog: Console.WriteLine);
 
     EmbeddingService? embeddingService = null;
     VectorStore? vectorStore = null;
@@ -70,14 +143,37 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
         vectorStore = new VectorStore(indexPath);
     }
 
+    ILlmProvider? summarizationLlm = null;
+    RagQueryEngine? summarizationEngine = null;
+    if (options.AutoSummarizationEnabled)
+    {
+        // Resumo automático precisa de um LLM já configurado; reaproveita o mesmo provedor usado
+        // por ask/chat em vez de duplicar a lógica de criação (LlamaSharp vs Ollama vs fallback).
+        summarizationEngine = RagQueryEngineFactory.Create(options);
+        try
+        {
+            summarizationLlm = await summarizationEngine.GetLlmProviderAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Resumo automático desabilitado nesta execução: {ex.Message}");
+        }
+    }
+
     using (embeddingService)
     using (vectorStore)
+    using (summarizationEngine)
     {
         var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
         var progress = new Progress<string>(Console.WriteLine);
+        var webhookNotifier = new QuestResume.Core.Notifications.WebhookNotifier(indexPath, log: Console.Error.WriteLine);
         var stats = await indexer.IndexFolderAsync(folder, indexPath, options.ChunkSize, options.ChunkOverlap, progress,
             maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders,
-            piiRedactionEnabled: options.PiiRedactionEnabled);
+            piiRedactionEnabled: options.PiiRedactionEnabled, parallelism: options.IndexingParallelism,
+            incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
+            masterPassword: masterPassword, masterKeyVerifier: options.EncryptionEnabled ? options.MasterKeyVerifier : null,
+            autoSummarizationEnabled: options.AutoSummarizationEnabled, llmProvider: summarizationLlm,
+            webhookNotifier: webhookNotifier);
 
         Console.WriteLine();
         Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
@@ -113,31 +209,54 @@ int RunSearch(string[] cmdArgs)
     }
 
     var topK = GetIntFlagValue(cmdArgs, "--top-k") ?? options.TopK;
-    var search = new SearchService(options.IndexPath);
 
-    if (!search.IndexExists())
+    string? masterPassword = null;
+    if (options.EncryptionEnabled)
     {
-        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
-        return 1;
+        Console.Write("Senha mestre: ");
+        masterPassword = ReadMaskedLine();
+        if (string.IsNullOrEmpty(masterPassword) || !QuestResume.Core.Security.MasterKeyManager.VerifyPassword(masterPassword, options.MasterKeyVerifier))
+        {
+            Console.Error.WriteLine("Senha mestre incorreta.");
+            return 1;
+        }
     }
 
-    var filters = new SearchFilters(GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"), GetFlagValue(cmdArgs, "--tag"));
-    var results = search.Search(query, topK, filters);
-    if (results.Count == 0)
+    var searchIndexPath = ResolveCollectionIndexPath(options, cmdArgs);
+    var search = new SearchService(searchIndexPath, indexManager: null, masterPassword, options.EncryptionEnabled ? options.MasterKeyVerifier : null);
+
+    try
     {
-        Console.WriteLine("Nenhum resultado encontrado.");
+        if (!search.IndexExists())
+        {
+            Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+            return 1;
+        }
+
+        var filters = new SearchFilters(GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"), GetFlagValue(cmdArgs, "--tag"));
+        var results = search.Search(query, topK, filters);
+        if (results.Count == 0)
+        {
+            Console.WriteLine("Nenhum resultado encontrado.");
+            return 0;
+        }
+
+        foreach (var result in results)
+        {
+            Console.WriteLine($"[{result.Score:F2}] {result.FileName} (trecho {result.ChunkIndex})");
+            Console.WriteLine($"    {Snippet(result.ChunkText)}");
+            Console.WriteLine($"    {result.SourcePath}");
+            Console.WriteLine();
+        }
+
         return 0;
     }
-
-    foreach (var result in results)
+    finally
     {
-        Console.WriteLine($"[{result.Score:F2}] {result.FileName} (trecho {result.ChunkIndex})");
-        Console.WriteLine($"    {Snippet(result.ChunkText)}");
-        Console.WriteLine($"    {result.SourcePath}");
-        Console.WriteLine();
+        // ON CLOSE: re-seal the index back into index.enc so it isn't left decrypted on disk
+        // after the command exits.
+        search.SealAsync().GetAwaiter().GetResult();
     }
-
-    return 0;
 }
 
 async Task<int> RunAskAsync(string[] cmdArgs)
@@ -152,7 +271,9 @@ async Task<int> RunAskAsync(string[] cmdArgs)
     }
 
     var topK = GetIntFlagValue(cmdArgs, "--top-k") ?? options.TopK;
-    var search = new SearchService(options.IndexPath);
+    var askOptions = options.Clone();
+    askOptions.IndexPath = ResolveCollectionIndexPath(options, cmdArgs);
+    var search = new SearchService(askOptions.IndexPath);
 
     if (!search.IndexExists())
     {
@@ -160,7 +281,7 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         return 1;
     }
 
-    using var engine = RagQueryEngineFactory.Create(options, topK);
+    using var engine = RagQueryEngineFactory.Create(askOptions, topK);
 
     try
     {
@@ -176,6 +297,16 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         {
             Console.WriteLine($"  - {source.FileName} (trecho {source.ChunkIndex})");
         }
+
+        if (result.RelatedQuestions.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Perguntas relacionadas:");
+            foreach (var related in result.RelatedQuestions)
+            {
+                Console.WriteLine($"  - {related}");
+            }
+        }
     }
     catch (ModelNotConfiguredException ex)
     {
@@ -189,6 +320,108 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         return 1;
     }
 
+    return 0;
+}
+
+async Task<int> RunAskBatchAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var inputPath = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(inputPath))
+    {
+        Console.Error.WriteLine("Uso: questresume ask-batch <arquivo.txt> [--top-k N] [--output <arquivo.json>]");
+        return 1;
+    }
+
+    if (!File.Exists(inputPath))
+    {
+        Console.Error.WriteLine($"Arquivo não encontrado: {inputPath}");
+        return 1;
+    }
+
+    var questions = (await File.ReadAllLinesAsync(inputPath))
+        .Select(line => line.Trim())
+        .Where(line => line.Length > 0)
+        .ToList();
+
+    if (questions.Count == 0)
+    {
+        Console.Error.WriteLine($"Nenhuma pergunta encontrada em: {inputPath}");
+        return 1;
+    }
+
+    try
+    {
+        options.ValidateBatchQuestionCount(questions.Count);
+    }
+    catch (AppOptionsValidationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    var topK = GetIntFlagValue(cmdArgs, "--top-k") ?? options.TopK;
+    var output = GetFlagValue(cmdArgs, "--output");
+    var search = new SearchService(options.IndexPath);
+
+    if (!search.IndexExists())
+    {
+        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+        return 1;
+    }
+
+    Log.Information("Iniciando lote de {QuestionCount} pergunta(s) a partir de {InputPath}", questions.Count, inputPath);
+
+    using var engine = RagQueryEngineFactory.Create(options, topK);
+    var results = new List<object>();
+
+    Console.WriteLine($"Processando {questions.Count} pergunta(s) sequencialmente (isso pode demorar na primeira, enquanto o modelo carrega)...");
+
+    foreach (var question in questions)
+    {
+        try
+        {
+            var result = await engine.AskAsync(question, topK);
+            results.Add(new
+            {
+                question,
+                answer = result.Answer,
+                sources = result.Sources.Select(s => s.FileName).Distinct().ToList()
+            });
+
+            if (output is null)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Pergunta: {question}");
+                Console.WriteLine($"Resposta: {result.Answer}");
+                Console.WriteLine($"Fontes: {string.Join(", ", result.Sources.Select(s => s.FileName).Distinct())}");
+            }
+        }
+        catch (ModelNotConfiguredException ex)
+        {
+            Log.Error(ex, "Modelo não configurado ao processar pergunta em lote: {Question}", question);
+            Console.Error.WriteLine(ex.Message);
+            Console.Error.WriteLine("Configure o modelo com: questresume config set-model <caminho.gguf>");
+            return 1;
+        }
+        catch (OllamaNotAvailableException ex)
+        {
+            Log.Error(ex, "Ollama indisponível ao processar pergunta em lote: {Question}", question);
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    if (output is not null)
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(results, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(output, json);
+        Console.WriteLine($"Resultado salvo em: {output}");
+    }
+
+    Log.Information("Lote concluído: {QuestionCount} pergunta(s) processada(s)", questions.Count);
     return 0;
 }
 
@@ -304,7 +537,7 @@ async Task<int> RunCompareAsync(string[] cmdArgs)
 int RunDocuments(string[] cmdArgs)
 {
     var options = configService.Load();
-    var search = new SearchService(options.IndexPath);
+    var search = new SearchService(ResolveCollectionIndexPath(options, cmdArgs));
 
     if (!search.IndexExists())
     {
@@ -326,6 +559,10 @@ int RunDocuments(string[] cmdArgs)
         if (file.Tags.Count > 0)
         {
             Console.WriteLine($"    Tags: {string.Join(", ", file.Tags)}");
+        }
+        if (!string.IsNullOrWhiteSpace(file.Summary))
+        {
+            Console.WriteLine($"    Resumo: {file.Summary}");
         }
     }
 
@@ -392,6 +629,265 @@ int RunRemove(string[] cmdArgs)
     }
 
     Console.WriteLine($"Removido do índice: {path} ({removed} trecho(s))");
+    return 0;
+}
+
+async Task<int> RunBackupAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var destination = cmdArgs.FirstOrDefault(a => !a.StartsWith("--"));
+
+    if (string.IsNullOrWhiteSpace(destination))
+    {
+        Console.Error.WriteLine("Uso: questresume backup <destino.zip>");
+        return 1;
+    }
+
+    var searchForBackup = new SearchService(options.IndexPath);
+    if (!searchForBackup.IndexExists())
+    {
+        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+        return 1;
+    }
+
+    Console.WriteLine($"Fazendo backup de '{options.IndexPath}' em '{destination}'...");
+    var backupService = new QuestResume.Core.Persistence.IndexBackupService();
+    await backupService.CreateBackupAsync(options.IndexPath, destination);
+    Console.WriteLine("Backup concluído.");
+    return 0;
+}
+
+async Task<int> RunRestoreAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var source = cmdArgs.FirstOrDefault(a => !a.StartsWith("--"));
+
+    if (string.IsNullOrWhiteSpace(source))
+    {
+        Console.Error.WriteLine("Uso: questresume restore <origem.zip>");
+        return 1;
+    }
+
+    if (string.IsNullOrWhiteSpace(options.IndexPath))
+    {
+        Console.Error.WriteLine("IndexPath não configurado. Rode 'questresume config set-index <pasta>' primeiro.");
+        return 1;
+    }
+
+    Console.WriteLine($"Restaurando '{source}' em '{options.IndexPath}'...");
+    var backupService = new QuestResume.Core.Persistence.IndexBackupService();
+    await backupService.RestoreBackupAsync(source, options.IndexPath);
+    Console.WriteLine("Restauração concluída.");
+    return 0;
+}
+
+async Task<int> RunExtractTableAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var path = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        Console.Error.WriteLine("Uso: questresume extract-table <caminho> [\"<instrução>\"] [--format json|csv] [--output <arquivo>]");
+        return 1;
+    }
+
+    var instruction = positional.Length > 1 ? string.Join(' ', positional.Skip(1)) : null;
+    var format = (GetFlagValue(cmdArgs, "--format") ?? "json").ToLowerInvariant();
+    var output = GetFlagValue(cmdArgs, "--output");
+
+    using var engine = RagQueryEngineFactory.Create(options);
+
+    try
+    {
+        Console.WriteLine("Extraindo tabela (isso pode demorar na primeira chamada, enquanto o modelo carrega)...");
+        var llm = await engine.GetLlmProviderAsync();
+        var service = new StructuredExtractionService(engine.SearchService.GetChunksByPath, llm);
+        var result = await service.ExtractTableAsync(path, instruction);
+        var content = format == "csv" ? result.Csv : result.Json;
+
+        if (output is not null)
+        {
+            await File.WriteAllTextAsync(output, content);
+            Console.WriteLine($"Resultado salvo em: {output}");
+        }
+        else
+        {
+            Console.WriteLine(content);
+        }
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (LlmJsonParseException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    return 0;
+}
+
+async Task<int> RunFlashcardsAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var path = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        Console.Error.WriteLine("Uso: questresume flashcards <caminho> [N]");
+        return 1;
+    }
+
+    var count = positional.Length > 1 && int.TryParse(positional[1], out var n) ? n : 5;
+
+    using var engine = RagQueryEngineFactory.Create(options);
+
+    try
+    {
+        Console.WriteLine("Gerando flashcards (isso pode demorar na primeira chamada, enquanto o modelo carrega)...");
+        var llm = await engine.GetLlmProviderAsync();
+        var service = new FlashcardService(engine.SearchService.GetChunksByPath, llm);
+        var cards = await service.GenerateFlashcardsAsync(path, count);
+
+        for (var i = 0; i < cards.Count; i++)
+        {
+            Console.WriteLine($"[{i + 1}] Pergunta: {cards[i].Question}");
+            Console.WriteLine($"    Resposta: {cards[i].Answer}");
+            Console.WriteLine();
+        }
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (LlmJsonParseException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    return 0;
+}
+
+async Task<int> RunQuizAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var path = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        Console.Error.WriteLine("Uso: questresume quiz <caminho> [N]");
+        return 1;
+    }
+
+    var count = positional.Length > 1 && int.TryParse(positional[1], out var n) ? n : 5;
+
+    using var engine = RagQueryEngineFactory.Create(options);
+
+    try
+    {
+        Console.WriteLine("Gerando quiz (isso pode demorar na primeira chamada, enquanto o modelo carrega)...");
+        var llm = await engine.GetLlmProviderAsync();
+        var service = new FlashcardService(engine.SearchService.GetChunksByPath, llm);
+        var questions = await service.GenerateQuizAsync(path, count);
+
+        for (var i = 0; i < questions.Count; i++)
+        {
+            var q = questions[i];
+            Console.WriteLine($"[{i + 1}] {q.Question}");
+            for (var j = 0; j < q.Options.Count; j++)
+            {
+                var marker = j == q.CorrectOptionIndex ? "*" : " ";
+                Console.WriteLine($"    {marker} {(char)('A' + j)}) {q.Options[j]}");
+            }
+            Console.WriteLine();
+        }
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (LlmJsonParseException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    return 0;
+}
+
+async Task<int> RunTranslateAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+
+    if (positional.Length < 2)
+    {
+        Console.Error.WriteLine("Uso: questresume translate <caminho_ou_\"texto direto\"> <idioma>");
+        return 1;
+    }
+
+    var target = positional[^1];
+    var pathOrText = string.Join(' ', positional[..^1]);
+
+    using var engine = RagQueryEngineFactory.Create(options);
+
+    string textToTranslate;
+    if (File.Exists(pathOrText) && engine.SearchService.GetChunksByPath(pathOrText).Count > 0)
+    {
+        textToTranslate = string.Join("\n\n", engine.SearchService.GetChunksByPath(pathOrText).Select(c => c.ChunkText));
+    }
+    else
+    {
+        var indexedChunks = engine.SearchService.GetChunksByPath(pathOrText);
+        textToTranslate = indexedChunks.Count > 0
+            ? string.Join("\n\n", indexedChunks.Select(c => c.ChunkText))
+            : pathOrText;
+    }
+
+    try
+    {
+        Console.WriteLine("Traduzindo (isso pode demorar na primeira chamada, enquanto o modelo carrega)...");
+        var llm = await engine.GetLlmProviderAsync();
+        var service = new TranslationService(llm);
+        var translated = await service.TranslateAsync(textToTranslate, target);
+        Console.WriteLine();
+        Console.WriteLine(translated);
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
     return 0;
 }
 
@@ -498,7 +994,8 @@ int RunConfig(string[] cmdArgs)
                                  "set-embeddings-enabled|set-embedding-model|set-embedding-tokenizer|" +
                                  "set-hybrid-weight|set-stt-enabled|set-whisper-model|" +
                                  "set-reranking-enabled|set-reranking-model|set-reranking-tokenizer|" +
-                                 "set-max-file-size|set-excluded-folders|set-pii-redaction|set-gpu-layers> [valor]");
+                                 "set-max-file-size|set-excluded-folders|set-pii-redaction|set-gpu-layers|" +
+                                 "set-indexing-parallelism|set-incremental-indexing|set-auto-reindex> [valor]");
         return 1;
     }
 
@@ -536,6 +1033,12 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"ExcludedFolders:        {string.Join(';', options.ExcludedFolders)}");
             Console.WriteLine($"PiiRedactionEnabled:    {options.PiiRedactionEnabled}");
             Console.WriteLine($"GpuLayerCount:          {options.GpuLayerCount}");
+            Console.WriteLine($"IndexingParallelism:    {options.IndexingParallelism}");
+            Console.WriteLine($"IncrementalIndexingEnabled: {options.IncrementalIndexingEnabled}");
+            Console.WriteLine($"AutoReindexEnabled:     {options.AutoReindexEnabled}");
+            Console.WriteLine($"LlmFallbackEnabled:     {options.LlmFallbackEnabled}");
+            Console.WriteLine($"AgentToolsEnabled:      {options.AgentToolsEnabled}");
+            Console.WriteLine($"WebSearchEndpointUrl:   {options.WebSearchEndpointUrl}");
             return 0;
 
         case "set-model":
@@ -794,9 +1297,472 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"GpuLayerCount definido para: {gpuLayerCount}");
             return 0;
 
+        case "set-indexing-parallelism":
+            if (value is null || !int.TryParse(value, out var indexingParallelism) || indexingParallelism < 1)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-indexing-parallelism <número >= 1>");
+                return 1;
+            }
+            options.IndexingParallelism = indexingParallelism;
+            configService.Save(options);
+            Console.WriteLine($"IndexingParallelism definido para: {indexingParallelism}");
+            return 0;
+
+        case "set-incremental-indexing":
+            if (value is null || !bool.TryParse(value, out var incrementalEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-incremental-indexing <true|false>");
+                return 1;
+            }
+            options.IncrementalIndexingEnabled = incrementalEnabled;
+            configService.Save(options);
+            Console.WriteLine($"IncrementalIndexingEnabled definido para: {incrementalEnabled}");
+            return 0;
+
+        case "set-auto-reindex":
+            if (value is null || !bool.TryParse(value, out var autoReindexEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-auto-reindex <true|false>");
+                return 1;
+            }
+            options.AutoReindexEnabled = autoReindexEnabled;
+            configService.Save(options);
+            Console.WriteLine($"AutoReindexEnabled definido para: {autoReindexEnabled}");
+            return 0;
+
+        case "set-llm-fallback":
+            if (value is null || !bool.TryParse(value, out var llmFallbackEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-llm-fallback <true|false>");
+                return 1;
+            }
+            options.LlmFallbackEnabled = llmFallbackEnabled;
+            configService.Save(options);
+            Console.WriteLine($"LlmFallbackEnabled definido para: {llmFallbackEnabled}");
+            return 0;
+
+        case "set-clip-model":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-clip-model <caminho_para_modelo.onnx>");
+                return 1;
+            }
+            options.ClipModelPath = value;
+            configService.Save(options);
+            Console.WriteLine($"ClipModelPath definido para: {value}");
+            return 0;
+
+        case "set-auto-summarization":
+            if (value is null || !bool.TryParse(value, out var autoSummarizationEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-auto-summarization <true|false>");
+                return 1;
+            }
+            options.AutoSummarizationEnabled = autoSummarizationEnabled;
+            configService.Save(options);
+            Console.WriteLine($"AutoSummarizationEnabled definido para: {autoSummarizationEnabled}");
+            return 0;
+
+        case "set-encryption-enabled":
+            if (value is null || !bool.TryParse(value, out var encryptionEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-encryption-enabled <true|false>");
+                return 1;
+            }
+
+            if (encryptionEnabled)
+            {
+                Console.Write("Defina a senha mestre: ");
+                var password = ReadMaskedLine();
+                Console.Write("Confirme a senha mestre: ");
+                var confirm = ReadMaskedLine();
+                if (password != confirm || string.IsNullOrEmpty(password))
+                {
+                    Console.Error.WriteLine("Senhas não conferem ou estão vazias. Operação cancelada.");
+                    return 1;
+                }
+
+                options.EncryptionEnabled = true;
+                options.MasterKeyVerifier = QuestResume.Core.Security.MasterKeyManager.CreateVerifier(password);
+            }
+            else
+            {
+                options.EncryptionEnabled = false;
+                options.MasterKeyVerifier = string.Empty;
+            }
+
+            configService.Save(options);
+            Console.WriteLine($"EncryptionEnabled definido para: {encryptionEnabled}");
+            return 0;
+
+        case "set-agent-tools-enabled":
+            if (value is null || !bool.TryParse(value, out var agentToolsEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-agent-tools-enabled <true|false>");
+                return 1;
+            }
+
+            if (agentToolsEnabled)
+            {
+                Console.WriteLine("ATENÇÃO: habilitar ferramentas do agente permite que o LLM dispare chamadas de rede externas (busca web), fora do funcionamento offline-first padrão.");
+            }
+
+            options.AgentToolsEnabled = agentToolsEnabled;
+            configService.Save(options);
+            Console.WriteLine($"AgentToolsEnabled definido para: {agentToolsEnabled}");
+            return 0;
+
+        case "set-web-search-endpoint":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-web-search-endpoint <url>");
+                return 1;
+            }
+
+            options.WebSearchEndpointUrl = value;
+            configService.Save(options);
+            Console.WriteLine($"WebSearchEndpointUrl definido para: {value}");
+            return 0;
+
         default:
             Console.Error.WriteLine($"Subcomando de config desconhecido: {sub}");
             return 1;
+    }
+}
+
+int RunWebhook(string[] cmdArgs)
+{
+    var options = configService.Load();
+    if (string.IsNullOrWhiteSpace(options.IndexPath))
+    {
+        Console.Error.WriteLine("IndexPath não configurado. Rode 'questresume config set-index <pasta>' primeiro.");
+        return 1;
+    }
+
+    var store = new QuestResume.Core.Persistence.WebhookStore(options.IndexPath);
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant();
+    var subArgs = cmdArgs.Skip(1).ToArray();
+
+    switch (sub)
+    {
+        case "add":
+            if (subArgs.Length < 2)
+            {
+                Console.Error.WriteLine("Uso: questresume webhook add <url> <eventos separados por vírgula> [--secret <segredo>]");
+                return 1;
+            }
+
+            var url = subArgs[0];
+            var events = subArgs[1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            var secret = GetFlagValue(subArgs, "--secret");
+
+            store.Add(new QuestResume.Core.Models.WebhookConfig { Url = url, Events = events, Secret = secret });
+            Console.WriteLine($"Webhook cadastrado: {url} (eventos: {string.Join(", ", events)})");
+            return 0;
+
+        case "list":
+            var webhooks = store.Load();
+            if (webhooks.Count == 0)
+            {
+                Console.WriteLine("Nenhum webhook cadastrado.");
+                return 0;
+            }
+
+            foreach (var webhook in webhooks)
+            {
+                Console.WriteLine($"- {webhook.Url} [{string.Join(", ", webhook.Events)}]{(string.IsNullOrEmpty(webhook.Secret) ? "" : " (com segredo)")}");
+            }
+            return 0;
+
+        case "remove":
+            if (subArgs.Length < 1)
+            {
+                Console.Error.WriteLine("Uso: questresume webhook remove <url>");
+                return 1;
+            }
+
+            var removed = store.Remove(subArgs[0]);
+            Console.WriteLine(removed ? $"Webhook removido: {subArgs[0]}" : $"Webhook não encontrado: {subArgs[0]}");
+            return removed ? 0 : 1;
+
+        default:
+            Console.Error.WriteLine("Uso: questresume webhook <add|list|remove> ...");
+            return 1;
+    }
+}
+
+int RunPlugins(string[] cmdArgs)
+{
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant() ?? "list";
+    if (sub != "list")
+    {
+        Console.Error.WriteLine("Uso: questresume plugins list");
+        return 1;
+    }
+
+    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(), loadPlugins: true, pluginLog: Console.WriteLine);
+    if (registry.LoadedPlugins.Count == 0)
+    {
+        Console.WriteLine($"Nenhum plugin carregado. Coloque DLLs em: {QuestResume.Core.Extraction.PluginLoader.DefaultPluginsFolder}");
+        return 0;
+    }
+
+    Console.WriteLine($"Plugins carregados ({registry.LoadedPlugins.Count}):");
+    foreach (var plugin in registry.LoadedPlugins)
+    {
+        Console.WriteLine($"  - {plugin.ExtractorTypeName} ({plugin.AssemblyFileName}): {string.Join(", ", plugin.SupportedExtensions)}");
+    }
+
+    return 0;
+}
+
+int RunUser(string[] cmdArgs)
+{
+    var userStore = new QuestResume.Core.Auth.UserStore();
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant();
+    var subArgs = cmdArgs.Skip(1).ToArray();
+
+    switch (sub)
+    {
+        case "add":
+        {
+            if (subArgs.Length < 2)
+            {
+                Console.Error.WriteLine("Uso: questresume user add <username> <Admin|User>");
+                return 1;
+            }
+
+            var username = subArgs[0];
+            if (!Enum.TryParse<QuestResume.Core.Auth.UserRole>(subArgs[1], ignoreCase: true, out var role))
+            {
+                Console.Error.WriteLine("Papel inválido. Use 'Admin' ou 'User'.");
+                return 1;
+            }
+
+            Console.Write("Senha: ");
+            var password = ReadMaskedLine();
+            if (string.IsNullOrEmpty(password))
+            {
+                Console.Error.WriteLine("Senha vazia. Operação cancelada.");
+                return 1;
+            }
+
+            try
+            {
+                userStore.CreateUser(username, password, role);
+                Console.WriteLine($"Usuário '{username}' criado com papel '{role}'.");
+                return 0;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.Error.WriteLine($"Erro: {ex.Message}");
+                return 1;
+            }
+        }
+
+        case "list":
+            foreach (var u in userStore.ListUsers())
+            {
+                Console.WriteLine($"  - {u.Username} ({u.Role}) [{u.Id}]");
+            }
+            return 0;
+
+        case "remove":
+            if (subArgs.Length < 1)
+            {
+                Console.Error.WriteLine("Uso: questresume user remove <username>");
+                return 1;
+            }
+            var removed = userStore.DeleteUser(subArgs[0]);
+            Console.WriteLine(removed ? $"Usuário '{subArgs[0]}' removido." : $"Usuário '{subArgs[0]}' não encontrado.");
+            return removed ? 0 : 1;
+
+        default:
+            Console.Error.WriteLine("Uso: questresume user <add|list|remove> ...");
+            return 1;
+    }
+}
+
+int RunLogin(string[] cmdArgs)
+{
+    var username = cmdArgs.FirstOrDefault();
+    if (username is null)
+    {
+        Console.Error.WriteLine("Uso: questresume login <username>");
+        return 1;
+    }
+
+    Console.Write("Senha: ");
+    var password = ReadMaskedLine();
+
+    var userStore = new QuestResume.Core.Auth.UserStore();
+    var user = userStore.ValidateCredentials(username, password);
+    if (user is null)
+    {
+        Console.Error.WriteLine("Usuário ou senha inválidos.");
+        return 1;
+    }
+
+    Console.WriteLine($"Login bem-sucedido: {user.Username} ({user.Role}).");
+    Console.WriteLine("Nota: a CLI aplica isolamento de índice por usuário quando operando localmente " +
+                       "(subpasta <IndexPath>/<userId>/); ao falar com a API, use o token JWT emitido por " +
+                       "POST /api/auth/login em vez desta sessão local.");
+    return 0;
+}
+
+static string ReadMaskedLine()
+{
+    var sb = new System.Text.StringBuilder();
+    while (true)
+    {
+        var key = Console.ReadKey(intercept: true);
+        if (key.Key == ConsoleKey.Enter)
+        {
+            Console.WriteLine();
+            break;
+        }
+
+        if (key.Key == ConsoleKey.Backspace)
+        {
+            if (sb.Length > 0)
+            {
+                sb.Length--;
+                Console.Write("\b \b");
+            }
+            continue;
+        }
+
+        if (!char.IsControl(key.KeyChar))
+        {
+            sb.Append(key.KeyChar);
+            Console.Write('*');
+        }
+    }
+
+    return sb.ToString();
+}
+
+// Resolve o IndexPath efetivo a partir da flag opcional "--collection <nome>" (padrão "default"),
+// seguindo QuestResume.Core.Persistence.CollectionStore. Comandos que não recebem a flag continuam
+// operando sobre options.IndexPath normalmente (compatibilidade).
+static string ResolveCollectionIndexPath(AppOptions options, string[] cmdArgs)
+{
+    var collectionName = GetFlagValue(cmdArgs, "--collection");
+    if (string.IsNullOrWhiteSpace(collectionName) || collectionName.Equals("default", StringComparison.OrdinalIgnoreCase))
+    {
+        return options.IndexPath;
+    }
+
+    var store = new QuestResume.Core.Persistence.CollectionStore(options.IndexPath);
+    return store.ResolvePath(collectionName);
+}
+
+int RunCollection(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var store = new QuestResume.Core.Persistence.CollectionStore(options.IndexPath);
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant();
+    var subArgs = cmdArgs.Skip(1).ToArray();
+
+    switch (sub)
+    {
+        case "create":
+        {
+            var name = subArgs.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                Console.Error.WriteLine("Uso: questresume collection create <nome>");
+                return 1;
+            }
+
+            try
+            {
+                var created = store.Create(name);
+                Console.WriteLine($"Coleção '{created.Nome}' criada em: {created.Caminho}");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Erro: {ex.Message}");
+                return 1;
+            }
+        }
+
+        case "list":
+            foreach (var collection in store.List())
+            {
+                Console.WriteLine($"  - {collection.Nome} ({collection.Caminho}) — criada em {collection.DataCriacao:u}");
+            }
+            return 0;
+
+        case "delete":
+        {
+            var name = subArgs.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                Console.Error.WriteLine("Uso: questresume collection delete <nome>");
+                return 1;
+            }
+
+            try
+            {
+                var removed = store.Delete(name);
+                Console.WriteLine(removed ? $"Coleção '{name}' removida do catálogo." : $"Coleção '{name}' não encontrada.");
+                return removed ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Erro: {ex.Message}");
+                return 1;
+            }
+        }
+
+        default:
+            Console.Error.WriteLine("Uso: questresume collection <create|list|delete> [nome]");
+            return 1;
+    }
+}
+
+async Task<int> RunSearchImageAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var imagePath = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(imagePath))
+    {
+        Console.Error.WriteLine("Uso: questresume search-image <caminho-da-imagem> [--top-k N] [--collection <nome>]");
+        return 1;
+    }
+
+    var indexPath = ResolveCollectionIndexPath(options, cmdArgs);
+    var topK = GetIntFlagValue(cmdArgs, "--top-k") ?? options.TopK;
+
+    using var vectorStore = new VectorStore(indexPath);
+    using QuestResume.Core.Embeddings.IClipEmbeddingService clipService = new QuestResume.Core.Embeddings.ClipEmbeddingService(options.ClipModelPath);
+    var search = new SearchService(indexPath, indexManager: null, vectorStore, clipService);
+
+    try
+    {
+        var results = await search.SearchByImageAsync(imagePath, topK);
+        if (results.Count == 0)
+        {
+            Console.WriteLine("Nenhuma imagem similar encontrada.");
+            return 0;
+        }
+
+        foreach (var result in results)
+        {
+            Console.WriteLine($"[{result.Score:F2}] {result.FileName}");
+            Console.WriteLine($"    {result.SourcePath}");
+        }
+
+        return 0;
+    }
+    catch (QuestResume.Core.Embeddings.ClipNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
     }
 }
 
@@ -840,6 +1806,7 @@ static int PrintUsage()
           questresume index <pasta> [--index-path <pasta_indice>]
           questresume search "<termo>" [--top-k N] [--ext <extensão>] [--folder <pasta>] [--tag <tag>]
           questresume ask "<pergunta>" [--top-k N]
+          questresume ask-batch <arquivo.txt> [--top-k N] [--output <arquivo.json>]
           questresume chat [--top-k N]
           questresume compare <arquivoA> <arquivoB> ["<pergunta>"]
           questresume documents
@@ -870,8 +1837,27 @@ static int PrintUsage()
           questresume config set-excluded-folders <pasta1;pasta2;...> (vazio = nenhuma)
           questresume config set-pii-redaction <true|false>
           questresume config set-gpu-layers <número> (0 = somente CPU)
+          questresume config set-indexing-parallelism <número >= 1>
+          questresume config set-incremental-indexing <true|false>
+          questresume config set-auto-reindex <true|false>
+          questresume config set-llm-fallback <true|false>
+          questresume config set-encryption-enabled <true|false>
+          questresume plugins list
+          questresume user add <username> <Admin|User>
+          questresume user list
+          questresume user remove <username>
+          questresume login <username>
+          questresume backup <destino.zip>
+          questresume restore <origem.zip>
+          questresume extract-table <caminho> ["<instrução>"] [--format json|csv] [--output <arquivo>]
+          questresume flashcards <caminho> [N]
+          questresume quiz <caminho> [N]
+          questresume translate <caminho_ou_"texto direto"> <idioma>
           questresume audit [N]
           questresume stats
+
+        Diagnóstico: use --log-level <Verbose|Debug|Information|Warning|Error|Fatal> ou a variável
+        de ambiente QUESTRESUME_LOG_LEVEL para controlar o nível de log (padrão: Warning).
         """);
     return 0;
 }
