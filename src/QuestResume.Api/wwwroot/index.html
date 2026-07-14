@@ -10,119 +10,193 @@
 <header>
   <div>
     <h1>QuestResume</h1>
-    <p>Busca e perguntas offline sobre seus documentos locais</p>
+    <p data-i18n="header.subtitle">Busca e perguntas offline sobre seus documentos locais</p>
   </div>
   <div class="header-actions">
-    <div id="statusBadge" class="status-line">Carregando status...</div>
-    <button id="themeToggle" class="theme-toggle" title="Alternar tema claro/escuro">Tema</button>
+    <select id="collectionSelect" title="Coleção ativa"></select>
+    <button id="newCollectionButton" data-i18n="header.newCollection" title="Criar nova coleção">+ Coleção</button>
+    <select id="languageSelect" title="Idioma / Language">
+      <option value="pt-BR">Português</option>
+      <option value="en-US">English</option>
+    </select>
+    <div id="statusBadge" class="status-line" data-i18n="header.loadingStatus">Carregando status...</div>
+    <button id="themeToggle" class="theme-toggle" data-i18n="header.theme" title="Alternar tema claro/escuro">Tema</button>
   </div>
 </header>
 
 <nav>
-  <button data-tab="chat" class="active">Perguntar</button>
-  <button data-tab="search">Buscar</button>
-  <button data-tab="documents">Documentos</button>
-  <button data-tab="dashboard">Painel</button>
-  <button data-tab="config">Configurações</button>
+  <button data-tab="chat" class="active" data-i18n="nav.chat">Perguntar</button>
+  <button data-tab="search" data-i18n="nav.search">Buscar</button>
+  <button data-tab="documents" data-i18n="nav.documents">Documentos</button>
+  <button data-tab="study" data-i18n="nav.study">Estudo</button>
+  <button data-tab="dashboard" data-i18n="nav.dashboard">Painel</button>
+  <button data-tab="config" data-i18n="nav.config">Configurações</button>
 </nav>
 
 <main>
   <section id="tab-chat" class="active">
     <div class="panel">
-      <h2>Perguntas (RAG com IA local)</h2>
+      <h2 data-i18n="chat.title">Perguntas (RAG com IA local)</h2>
       <div id="chatLog" class="chat-log"></div>
       <div class="ask-row">
-        <input type="text" id="questionInput" placeholder="Digite sua pergunta..." />
-        <button class="primary" id="askButton">Perguntar</button>
-        <button id="exportChatButton" title="Exportar conversa para Markdown">Exportar conversa</button>
+        <input type="text" id="questionInput" data-i18n-placeholder="chat.inputPlaceholder" placeholder="Digite sua pergunta..." />
+        <button class="primary" id="askButton" data-i18n="chat.ask">Perguntar</button>
+        <button id="exportChatButton" data-i18n="chat.exportMarkdown" title="Exportar conversa para Markdown">Exportar conversa</button>
+        <button id="exportChatPdfButton" data-i18n="chat.exportPdf" title="Exportar conversa para PDF">Exportar PDF</button>
       </div>
       <div id="askStatus" class="status-line"></div>
+      <p class="hint-line" data-i18n="chat.shortcutsHint">Atalhos: Ctrl+Enter envia a pergunta · pressione "?" para ver todos os atalhos.</p>
     </div>
   </section>
 
   <section id="tab-search">
     <div class="panel">
-      <h2>Busca por palavras-chave (sem IA)</h2>
+      <h2 data-i18n="search.title">Busca por palavras-chave (sem IA)</h2>
       <div class="ask-row">
-        <input type="text" id="searchInput" placeholder="Termo de busca..." />
-        <button class="primary" id="searchButton">Buscar</button>
+        <input type="text" id="searchInput" data-i18n-placeholder="search.inputPlaceholder" placeholder="Termo de busca..." />
+        <button class="primary" id="searchButton" data-i18n="search.search">Buscar</button>
       </div>
       <div class="row search-filters">
         <div class="field">
-          <label for="searchExtInput">Filtrar por extensão (opcional)</label>
+          <label for="searchExtInput" data-i18n="search.filterExtension">Filtrar por extensão (opcional)</label>
           <input type="text" id="searchExtInput" placeholder=".pdf" />
         </div>
         <div class="field">
-          <label for="searchFolderInput">Filtrar por pasta (opcional)</label>
+          <label for="searchFolderInput" data-i18n="search.filterFolder">Filtrar por pasta (opcional)</label>
           <input type="text" id="searchFolderInput" placeholder="C:\Users\voce\Documentos\Contratos" />
         </div>
         <div class="field">
-          <label for="searchTagInput">Filtrar por tag (opcional)</label>
+          <label for="searchTagInput" data-i18n="search.filterTag">Filtrar por tag (opcional)</label>
           <input type="text" id="searchTagInput" placeholder="ex.: contrato" list="availableTagsList" />
           <datalist id="availableTagsList"></datalist>
         </div>
       </div>
       <div id="searchResults"></div>
     </div>
+
+    <div class="panel">
+      <h2 data-i18n="search.imageTitle">Busca por similaridade de imagem (CLIP)</h2>
+      <p class="hint" data-i18n="search.imageHint">Requer um modelo CLIP ONNX configurado em Configurações (ClipModelPath).</p>
+      <div class="ask-row">
+        <input type="file" id="imageSearchInput" accept="image/*" />
+        <button class="primary" id="imageSearchButton" data-i18n="search.searchByImage">Buscar por imagem</button>
+      </div>
+      <div id="imageSearchResults"></div>
+    </div>
   </section>
 
   <section id="tab-documents">
     <div class="panel">
-      <h2>Documentos indexados</h2>
-      <button class="primary" id="refreshDocumentsButton">Atualizar lista</button>
+      <h2 data-i18n="documents.title">Documentos indexados</h2>
+      <button class="primary" id="refreshDocumentsButton" data-i18n="documents.refresh">Atualizar lista</button>
       <div id="documentsList"></div>
     </div>
 
     <div class="panel">
-      <h2>Relatório da última indexação</h2>
+      <h2 data-i18n="documents.reportTitle">Relatório da última indexação</h2>
       <div id="indexReport"></div>
+    </div>
+  </section>
+
+  <section id="tab-study">
+    <div class="panel">
+      <h2 data-i18n="study.title">Estudo — flashcards e quiz gerados por IA</h2>
+      <div class="row">
+        <div class="field">
+          <label for="studyDocInput" data-i18n="study.docPath">Caminho do documento indexado</label>
+          <input type="text" id="studyDocInput" data-i18n-placeholder="study.docPathPlaceholder" placeholder="cole o caminho de um documento da aba Documentos" />
+        </div>
+        <div class="field">
+          <label for="studyCountInput" data-i18n="study.count">Quantidade</label>
+          <input type="number" id="studyCountInput" min="1" max="30" value="5" />
+        </div>
+      </div>
+      <button class="primary" id="generateFlashcardsButton" data-i18n="study.generateFlashcards">Gerar flashcards</button>
+      <button id="generateQuizButton" data-i18n="study.generateQuiz">Gerar quiz</button>
+      <div id="studyStatus" class="status-line"></div>
+
+      <h3 data-i18n="study.flashcards">Flashcards</h3>
+      <div id="flashcardsList"></div>
+
+      <h3 data-i18n="study.quiz">Quiz</h3>
+      <div id="quizList"></div>
     </div>
   </section>
 
   <section id="tab-dashboard">
     <div class="panel">
-      <h2>Painel</h2>
-      <button class="primary" id="refreshStatsButton">Atualizar</button>
+      <h2 data-i18n="dashboard.title">Painel</h2>
+      <button class="primary" id="refreshStatsButton" data-i18n="dashboard.refresh">Atualizar</button>
       <div id="statsGrid" class="stats-grid"></div>
-      <h3 class="chart-section-title">Documentos por tipo</h3>
+      <h3 class="chart-section-title" data-i18n="dashboard.byType">Documentos por tipo</h3>
       <div id="extensionChart"></div>
+      <h3 class="chart-section-title" data-i18n="dashboard.overTime">Perguntas ao longo do tempo</h3>
+      <div id="questionsChart"></div>
     </div>
   </section>
 
   <section id="tab-config">
     <div class="panel">
-      <h2>Indexar pasta de documentos</h2>
+      <h2 data-i18n="config.indexFolderTitle">Indexar pasta de documentos</h2>
       <div class="field">
-        <label for="folderInput">Caminho da pasta com seus documentos</label>
+        <label for="folderInput" data-i18n="config.folderPath">Caminho da pasta com seus documentos</label>
         <input type="text" id="folderInput" placeholder="C:\Users\voce\Documentos" />
       </div>
-      <button class="primary" id="indexButton">Indexar</button>
+      <button class="primary" id="indexButton" data-i18n="config.index">Indexar</button>
       <div id="indexStatus" class="status-line"></div>
     </div>
 
     <div class="panel">
-      <h2>Configurações</h2>
+      <h2 data-i18n="config.uploadTitle">Enviar arquivos (arraste e solte)</h2>
+      <p class="hint-line" data-i18n="config.uploadHint">
+        O navegador não expõe o caminho completo de arquivos soltos, então eles são enviados para
+        uma subpasta dedicada dentro da pasta do índice (<code>_uploads</code>) e depois podem ser
+        indexados normalmente.
+      </p>
+      <div id="dropZone" class="drop-zone" tabindex="0" data-i18n="config.dropZone">
+        Arraste arquivos aqui ou clique para selecionar
+        <input type="file" id="uploadFileInput" multiple hidden />
+      </div>
+      <div id="uploadProgress" class="status-line"></div>
+      <div id="uploadedFilesList" class="report-list"></div>
+      <button class="primary" id="indexUploadsButton" disabled data-i18n="config.indexUploads">Indexar arquivos enviados</button>
+      <div id="uploadIndexStatus" class="status-line"></div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="config.shortcutsTitle">Atalhos de teclado</h2>
+      <p class="hint-line" data-i18n="config.shortcutsHint">
+        Atalhos padrão: <kbd>/</kbd> foca a busca · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> envia a
+        pergunta no chat · <kbd>Ctrl</kbd>+<kbd>K</kbd> foca a busca global · <kbd>Esc</kbd> fecha
+        modais. Clique em "Capturar" e pressione a tecla desejada para personalizar.
+      </p>
+      <div id="shortcutsList" class="shortcuts-list"></div>
+      <button id="restoreShortcutsButton" data-i18n="config.restoreShortcuts">Restaurar padrão</button>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="config.title">Configurações</h2>
 
       <div class="field">
-        <label for="llmProviderInput">Provedor de IA para geração de respostas</label>
+        <label for="llmProviderInput" data-i18n="config.llmProvider">Provedor de IA para geração de respostas</label>
         <select id="llmProviderInput">
-          <option value="LlamaSharp">LlamaSharp (embutido, padrão)</option>
-          <option value="Ollama">Ollama (servidor local)</option>
+          <option value="LlamaSharp" data-i18n="config.llmProviderLlamaSharp">LlamaSharp (embutido, padrão)</option>
+          <option value="Ollama" data-i18n="config.llmProviderOllama">Ollama (servidor local)</option>
         </select>
       </div>
 
       <div class="field">
-        <label for="modelPathInput">Caminho do modelo de IA local (.gguf) — usado quando o provedor é LlamaSharp</label>
+        <label for="modelPathInput" data-i18n="config.modelPath">Caminho do modelo de IA local (.gguf) — usado quando o provedor é LlamaSharp</label>
         <input type="text" id="modelPathInput" placeholder="C:\Modelos\Phi-3-mini-4k-instruct.Q4_K_M.gguf" />
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="ollamaUrlInput">URL do servidor Ollama — usado quando o provedor é Ollama</label>
+          <label for="ollamaUrlInput" data-i18n="config.ollamaUrl">URL do servidor Ollama — usado quando o provedor é Ollama</label>
           <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434" />
         </div>
         <div class="field">
-          <label for="ollamaModelInput">Modelo Ollama</label>
+          <label for="ollamaModelInput" data-i18n="config.ollamaModel">Modelo Ollama</label>
           <input type="text" id="ollamaModelInput" placeholder="llama3.2" />
         </div>
       </div>
@@ -130,17 +204,17 @@
       <div class="field">
         <label>
           <input type="checkbox" id="ocrEnabledInput" />
-          Habilitar OCR (Tesseract) para imagens e PDFs digitalizados
+          <span data-i18n="config.ocrEnabled">Habilitar OCR (Tesseract) para imagens e PDFs digitalizados</span>
         </label>
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="tessDataPathInput">Pasta tessdata</label>
+          <label for="tessDataPathInput" data-i18n="config.tessDataPath">Pasta tessdata</label>
           <input type="text" id="tessDataPathInput" placeholder="C:\tessdata" />
         </div>
         <div class="field">
-          <label for="ocrLanguagesInput">Idiomas do OCR (ex.: por+eng)</label>
+          <label for="ocrLanguagesInput" data-i18n="config.ocrLanguages">Idiomas do OCR (ex.: por+eng)</label>
           <input type="text" id="ocrLanguagesInput" placeholder="por+eng" />
         </div>
       </div>
@@ -148,21 +222,21 @@
       <div class="field">
         <label>
           <input type="checkbox" id="embeddingsEnabledInput" />
-          Habilitar embeddings e busca híbrida (BM25 + similaridade vetorial)
+          <span data-i18n="config.embeddingsEnabled">Habilitar embeddings e busca híbrida (BM25 + similaridade vetorial)</span>
         </label>
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="embeddingModelPathInput">Modelo de embeddings (.onnx)</label>
+          <label for="embeddingModelPathInput" data-i18n="config.embeddingModelPath">Modelo de embeddings (.onnx)</label>
           <input type="text" id="embeddingModelPathInput" placeholder="C:\Modelos\embeddings\model.onnx" />
         </div>
         <div class="field">
-          <label for="embeddingTokenizerPathInput">Vocabulário do tokenizer (vocab.txt)</label>
+          <label for="embeddingTokenizerPathInput" data-i18n="config.embeddingTokenizerPath">Vocabulário do tokenizer (vocab.txt)</label>
           <input type="text" id="embeddingTokenizerPathInput" placeholder="C:\Modelos\embeddings\vocab.txt" />
         </div>
         <div class="field">
-          <label for="hybridBm25WeightInput">Peso do BM25 na busca híbrida (0-1)</label>
+          <label for="hybridBm25WeightInput" data-i18n="config.hybridWeight">Peso do BM25 na busca híbrida (0-1)</label>
           <input type="number" id="hybridBm25WeightInput" min="0" max="1" step="0.1" />
         </div>
       </div>
@@ -170,17 +244,17 @@
       <div class="field">
         <label>
           <input type="checkbox" id="rerankingEnabledInput" />
-          Habilitar re-ranking dos resultados com modelo cross-encoder
+          <span data-i18n="config.rerankingEnabled">Habilitar re-ranking dos resultados com modelo cross-encoder</span>
         </label>
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="rerankingModelPathInput">Modelo de re-ranking (.onnx)</label>
+          <label for="rerankingModelPathInput" data-i18n="config.rerankingModelPath">Modelo de re-ranking (.onnx)</label>
           <input type="text" id="rerankingModelPathInput" placeholder="C:\Modelos\reranking\model.onnx" />
         </div>
         <div class="field">
-          <label for="rerankingTokenizerPathInput">Vocabulário do tokenizer (vocab.txt)</label>
+          <label for="rerankingTokenizerPathInput" data-i18n="config.rerankingTokenizerPath">Vocabulário do tokenizer (vocab.txt)</label>
           <input type="text" id="rerankingTokenizerPathInput" placeholder="C:\Modelos\reranking\vocab.txt" />
         </div>
       </div>
@@ -188,47 +262,123 @@
       <div class="field">
         <label>
           <input type="checkbox" id="sttEnabledInput" />
-          Habilitar transcrição de áudio (.wav 16kHz mono) via Whisper
+          <span data-i18n="config.sttEnabled">Habilitar transcrição de áudio (.wav 16kHz mono) via Whisper</span>
         </label>
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="whisperModelPathInput">Modelo Whisper (ggml .bin)</label>
+          <label for="whisperModelPathInput" data-i18n="config.whisperModelPath">Modelo Whisper (ggml .bin)</label>
           <input type="text" id="whisperModelPathInput" placeholder="C:\Modelos\whisper\ggml-base.bin" />
         </div>
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="indexPathInput">Pasta do índice</label>
+          <label for="indexPathInput" data-i18n="config.indexPath">Pasta do índice</label>
           <input type="text" id="indexPathInput" />
         </div>
         <div class="field">
-          <label for="topKInput">Trechos por pergunta (Top-K)</label>
+          <label for="topKInput" data-i18n="config.topK">Trechos por pergunta (Top-K)</label>
           <input type="number" id="topKInput" min="1" max="20" />
         </div>
         <div class="field">
-          <label for="contextSizeInput">Tamanho do contexto (tokens)</label>
+          <label for="contextSizeInput" data-i18n="config.contextSize">Tamanho do contexto (tokens)</label>
           <input type="number" id="contextSizeInput" min="512" max="32768" step="256" />
         </div>
       </div>
       <div class="field">
         <label>
           <input type="checkbox" id="piiRedactionEnabledInput" />
-          Redigir dados pessoais (CPF, CNPJ, e-mail, telefone, cartão) antes de indexar
+          <span data-i18n="config.piiRedaction">Redigir dados pessoais (CPF, CNPJ, e-mail, telefone, cartão) antes de indexar</span>
         </label>
       </div>
 
       <div class="row">
         <div class="field">
-          <label for="gpuLayerCountInput">Camadas do modelo na GPU (0 = somente CPU)</label>
+          <label for="gpuLayerCountInput" data-i18n="config.gpuLayers">Camadas do modelo na GPU (0 = somente CPU)</label>
           <input type="number" id="gpuLayerCountInput" min="0" step="1" />
         </div>
+        <div class="field">
+          <label for="indexingParallelismInput" data-i18n="config.parallelism">Arquivos processados em paralelo na indexação</label>
+          <input type="number" id="indexingParallelismInput" min="1" step="1" />
+        </div>
+      </div>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="incrementalIndexingEnabledInput" />
+          <span data-i18n="config.incrementalIndexing">Indexação incremental (pular arquivos inalterados desde a última indexação)</span>
+        </label>
+      </div>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="autoReindexEnabledInput" />
+          <span data-i18n="config.autoReindex">Reindexar automaticamente ao detectar alterações na pasta de documentos</span>
+        </label>
+      </div>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="llmFallbackEnabledInput" />
+          <span data-i18n="config.llmFallback">Fallback automático de LLM (Ollama primeiro, LLamaSharp local como reserva)</span>
+        </label>
       </div>
 
-      <button class="primary" id="saveConfigButton">Salvar configurações</button>
+      <div class="row">
+        <div class="field">
+          <button id="backupButton" data-i18n="config.backup">Fazer backup do índice</button>
+        </div>
+        <div class="field">
+          <label for="restoreFileInput" data-i18n="config.restore">Restaurar backup (.zip)</label>
+          <input type="file" id="restoreFileInput" accept=".zip" />
+        </div>
+      </div>
+      <div id="backupStatus" class="status-line"></div>
+
+      <button class="primary" id="saveConfigButton" data-i18n="config.save">Salvar configurações</button>
       <div id="configStatus" class="status-line"></div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="agent.title">Agente com ferramentas (busca web e calculadora)</h2>
+      <p class="hint-line warning-text" data-i18n="agent.warning">
+        ATENÇÃO: habilitar esta opção permite que o assistente decida sozinho fazer chamadas de
+        rede externas (busca web) para responder perguntas, fora do funcionamento offline-first
+        padrão do QuestResume. Só ative se confiar no serviço de busca configurado abaixo.
+      </p>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="agentToolsEnabledInput" />
+          <span data-i18n="agent.enable">Habilitar ferramentas do agente (calculadora e busca web)</span>
+        </label>
+      </div>
+      <div class="field">
+        <label for="webSearchEndpointInput" data-i18n="agent.endpoint">URL do serviço de busca web (ex.: SearXNG self-hosted, ?format=json)</label>
+        <input type="text" id="webSearchEndpointInput" placeholder="http://localhost:8080/search" />
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="webhooks.title">Webhooks e notificações</h2>
+      <p class="hint-line" data-i18n="webhooks.hint">
+        Cadastre uma URL para receber um POST com JSON sempre que um evento ocorrer: indexação
+        concluída, erro em documento ou pergunta respondida.
+      </p>
+      <div class="row">
+        <div class="field">
+          <label for="webhookUrlInput" data-i18n="webhooks.url">URL do webhook</label>
+          <input type="text" id="webhookUrlInput" placeholder="https://exemplo.com/webhook" />
+        </div>
+        <div class="field">
+          <label for="webhookEventsInput" data-i18n="webhooks.events">Eventos (separados por vírgula)</label>
+          <input type="text" id="webhookEventsInput" placeholder="indexing.completed,document.error,question.asked" />
+        </div>
+        <div class="field">
+          <label for="webhookSecretInput" data-i18n="webhooks.secret">Segredo (opcional, para assinatura HMAC)</label>
+          <input type="password" id="webhookSecretInput" placeholder="" />
+        </div>
+      </div>
+      <button class="primary" id="addWebhookButton" data-i18n="webhooks.add">Adicionar webhook</button>
+      <div id="webhooksList" class="report-list"></div>
     </div>
   </section>
 </main>
@@ -238,10 +388,60 @@
     <h3 id="previewTitle"></h3>
     <pre id="previewText"></pre>
     <div class="close-row">
-      <button class="primary" id="closePreviewButton">Fechar</button>
+      <button class="primary" id="closePreviewButton" data-i18n="common.close">Fechar</button>
     </div>
   </div>
 </div>
+
+<div id="chunkModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3 id="chunkModalTitle"></h3>
+    <p id="chunkModalMeta" class="hint-line"></p>
+    <pre id="chunkModalText"></pre>
+    <div class="close-row">
+      <button id="openChunkSourceButton" data-i18n="chunk.openSource">Abrir arquivo original</button>
+      <button class="primary" id="closeChunkModalButton" data-i18n="common.close">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div id="shortcutsHelpModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3 data-i18n="config.shortcutsTitle">Atalhos de teclado</h3>
+    <div id="shortcutsHelpList" class="report-list"></div>
+    <div class="close-row">
+      <button class="primary" id="closeShortcutsHelpButton" data-i18n="common.close">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div id="extractTableModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3 data-i18n="extractTable.title">Extrair tabela</h3>
+    <div class="row">
+      <div class="field">
+        <label for="extractInstructionInput" data-i18n="extractTable.instruction">Instrução (opcional)</label>
+        <input type="text" id="extractInstructionInput" placeholder="ex.: apenas a tabela de preços" />
+      </div>
+      <div class="field">
+        <label for="extractFormatInput" data-i18n="extractTable.format">Formato</label>
+        <select id="extractFormatInput">
+          <option value="json">JSON</option>
+          <option value="csv">CSV</option>
+        </select>
+      </div>
+    </div>
+    <button class="primary" id="runExtractTableButton" data-i18n="extractTable.run">Extrair</button>
+    <div id="extractTableStatus" class="status-line"></div>
+    <pre id="extractTableResult"></pre>
+    <div class="close-row">
+      <button id="downloadExtractTableButton" data-i18n="extractTable.download">Baixar</button>
+      <button class="primary" id="closeExtractTableButton" data-i18n="common.close">Fechar</button>
+    </div>
+  </div>
+</div>
+<script src="i18n/i18n.js"></script>
+<script src="charts.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
