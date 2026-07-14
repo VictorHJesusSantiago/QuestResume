@@ -61,6 +61,35 @@ public sealed class RagEngineProvider : IDisposable
     /// the caller disconnects) so a concurrent <c>/api/ask</c>/<c>/api/ask/stream</c> request
     /// can't run inference on the shared model at the same time.
     /// </summary>
+    /// <summary>
+    /// Processes a batch of questions sequentially through <see cref="RagQueryEngine.AskAsync"/>,
+    /// one at a time — each call still goes through <see cref="AskAsync"/> and therefore acquires
+    /// <see cref="_askSemaphore"/>, so questions never run concurrently against the shared local
+    /// LLM. A per-question failure (e.g. the model/Ollama becomes unavailable mid-batch) is
+    /// captured in <see cref="BatchAskResultItem.Error"/> instead of aborting the remaining
+    /// questions.
+    /// </summary>
+    public async Task<List<BatchAskResultItem>> AskBatchAsync(AppOptions options, IReadOnlyList<string> questions, int? topK, CancellationToken cancellationToken)
+    {
+        var results = new List<BatchAskResultItem>(questions.Count);
+
+        foreach (var question in questions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var result = await AskAsync(options, question, topK, history: null, cancellationToken).ConfigureAwait(false);
+                results.Add(new BatchAskResultItem { Question = question, Answer = result.Answer, Sources = result.Sources });
+            }
+            catch (Exception ex) when (ex is ModelNotConfiguredException or OllamaNotAvailableException)
+            {
+                results.Add(new BatchAskResultItem { Question = question, Answer = string.Empty, Sources = Array.Empty<QuestResume.Core.Models.SearchResultItem>(), Error = ex.Message });
+            }
+        }
+
+        return results;
+    }
+
     public async Task<StreamingAskResult> AskStreamAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken)
     {
         var engine = GetEngine(options);
@@ -101,6 +130,74 @@ public sealed class RagEngineProvider : IDisposable
         try
         {
             return await engine.CompareAsync(pathA, pathB, question, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    public async Task<TableExtractionResult> ExtractTableAsync(AppOptions options, string path, string? instruction, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            var service = new StructuredExtractionService(engine.SearchService.GetChunksByPath, llm);
+            return await service.ExtractTableAsync(path, instruction, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    public async Task<List<Flashcard>> GenerateFlashcardsAsync(AppOptions options, string path, int count, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            var service = new FlashcardService(engine.SearchService.GetChunksByPath, llm);
+            return await service.GenerateFlashcardsAsync(path, count, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    public async Task<List<QuizQuestion>> GenerateQuizAsync(AppOptions options, string path, int count, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            var service = new FlashcardService(engine.SearchService.GetChunksByPath, llm);
+            return await service.GenerateQuizAsync(path, count, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _askSemaphore.Release();
+        }
+    }
+
+    public async Task<string> TranslateAsync(AppOptions options, string text, string targetLanguage, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            var service = new TranslationService(llm);
+            return await service.TranslateAsync(text, targetLanguage, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
