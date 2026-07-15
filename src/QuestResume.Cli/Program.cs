@@ -68,6 +68,8 @@ try
         "compare" => await RunCompareAsync(rest),
         "documents" => RunDocuments(rest),
         "remove" => RunRemove(rest),
+        "reindex-file" => await RunReindexFileAsync(rest),
+        "clean-orphans" => await RunCleanOrphansAsync(rest),
         "tag" => RunTag(rest),
         "report" or "errors" => RunReport(rest),
         "audit" => RunAudit(rest),
@@ -85,6 +87,8 @@ try
         "collection" => RunCollection(rest),
         "search-image" => await RunSearchImageAsync(rest),
         "webhook" => RunWebhook(rest),
+        "cloud" => RunCloud(rest),
+        "evaluate" => await RunEvaluateAsync(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
     };
@@ -173,7 +177,18 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
             incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
             masterPassword: masterPassword, masterKeyVerifier: options.EncryptionEnabled ? options.MasterKeyVerifier : null,
             autoSummarizationEnabled: options.AutoSummarizationEnabled, llmProvider: summarizationLlm,
-            webhookNotifier: webhookNotifier);
+            webhookNotifier: webhookNotifier,
+            headingAwareChunkingEnabled: options.HeadingAwareChunkingEnabled,
+            sentenceWindowChunkingEnabled: options.SentenceWindowChunkingEnabled,
+            parentChildChunkingEnabled: options.ParentChildChunkingEnabled,
+            parentChunkSize: options.ParentChunkSize,
+            childChunkSize: options.ChildChunkSize,
+            semanticChunkingEnabled: options.SemanticChunkingEnabled,
+            semanticChunkingThreshold: options.SemanticChunkingThreshold,
+            contextualRetrievalEnabled: options.ContextualRetrievalEnabled,
+            semanticDeduplicationEnabled: options.SemanticDeduplicationEnabled,
+            semanticDuplicateThreshold: options.SemanticDuplicateThreshold,
+            additionalFolders: options.AdditionalWatchedFolders);
 
         Console.WriteLine();
         Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
@@ -233,11 +248,40 @@ int RunSearch(string[] cmdArgs)
             return 1;
         }
 
-        var filters = new SearchFilters(GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"), GetFlagValue(cmdArgs, "--tag"));
-        var results = search.Search(query, topK, filters);
+        var filters = new SearchFilters(
+            GetFlagValue(cmdArgs, "--ext"), GetFlagValue(cmdArgs, "--folder"), GetFlagValue(cmdArgs, "--tag"),
+            Fuzzy: cmdArgs.Contains("--fuzzy"),
+            DateFrom: DateTime.TryParse(GetFlagValue(cmdArgs, "--date-from"), out var dateFrom) ? dateFrom : null,
+            DateTo: DateTime.TryParse(GetFlagValue(cmdArgs, "--date-to"), out var dateTo) ? dateTo : null,
+            MinSizeBytes: long.TryParse(GetFlagValue(cmdArgs, "--min-size"), out var minSize) ? minSize : null,
+            MaxSizeBytes: long.TryParse(GetFlagValue(cmdArgs, "--max-size"), out var maxSize) ? maxSize : null,
+            SortBy: GetFlagValue(cmdArgs, "--sort-by") ?? "relevance",
+            SortDescending: !cmdArgs.Contains("--sort-asc"),
+            Page: GetIntFlagValue(cmdArgs, "--page") ?? 1,
+            PageSize: GetIntFlagValue(cmdArgs, "--page-size") ?? 0);
+
+        IReadOnlyList<SearchResultItem> results;
+        try
+        {
+            results = search.Search(query, topK, filters);
+        }
+        catch (SearchQuerySyntaxException ex)
+        {
+            Console.Error.WriteLine($"Sintaxe de busca inválida: {ex.Message}");
+            return 1;
+        }
+
         if (results.Count == 0)
         {
             Console.WriteLine("Nenhum resultado encontrado.");
+
+            // Corretor ortográfico (item 11): oferece sugestões quando a busca não retorna nada.
+            var suggestions = search.SuggestSpelling(query);
+            if (suggestions.Count > 0)
+            {
+                Console.WriteLine($"Você quis dizer: {string.Join(", ", suggestions)}?");
+            }
+
             return 0;
         }
 
@@ -291,6 +335,10 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         Console.WriteLine();
         Console.WriteLine("Resposta:");
         Console.WriteLine(result.Answer);
+        if (result.ConfidenceScore is { } confidence)
+        {
+            Console.WriteLine($"Confiança: {confidence:P0}{(result.IsFaithful is { } faithful ? $" (sustentada pelos documentos: {(faithful ? "sim" : "não")})" : "")}");
+        }
         Console.WriteLine();
         Console.WriteLine("Fontes:");
         foreach (var source in result.Sources)
@@ -534,6 +582,91 @@ async Task<int> RunCompareAsync(string[] cmdArgs)
     return 0;
 }
 
+async Task<int> RunEvaluateAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var goldenSetPath = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(goldenSetPath))
+    {
+        Console.Error.WriteLine("Uso: questresume evaluate <golden-set.json> [--top-k N]");
+        return 1;
+    }
+
+    if (!File.Exists(goldenSetPath))
+    {
+        Console.Error.WriteLine($"Arquivo não encontrado: {goldenSetPath}");
+        return 1;
+    }
+
+    var topK = GetIntFlagValue(cmdArgs, "--top-k") ?? options.TopK;
+
+    List<QuestResume.Core.Rag.Evaluation.EvaluationCase> cases;
+    try
+    {
+        cases = QuestResume.Core.Rag.Evaluation.RagEvaluationHarness.LoadGoldenSet(goldenSetPath);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Falha ao carregar golden set: {ex.Message}");
+        return 1;
+    }
+
+    var search = new SearchService(options.IndexPath);
+    if (!search.IndexExists())
+    {
+        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+        return 1;
+    }
+
+    using var engine = RagQueryEngineFactory.Create(options, topK);
+
+    Console.WriteLine($"Avaliando {cases.Count} pergunta(s) (isso pode demorar na primeira, enquanto o modelo carrega)...");
+
+    QuestResume.Core.Rag.Evaluation.RagEvaluationReport report;
+    try
+    {
+        report = await QuestResume.Core.Rag.Evaluation.RagEvaluationHarness.RunAsync(engine, cases, topK);
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine("Configure o modelo com: questresume config set-model <caminho.gguf>");
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    Console.WriteLine();
+    foreach (var caseReport in report.CaseReports)
+    {
+        Console.WriteLine($"Pergunta: {caseReport.Question}");
+        Console.WriteLine($"  Recall@k: {caseReport.RecallAtK:P0}");
+        if (caseReport.MissingExpectedSourcePaths.Count > 0)
+        {
+            Console.WriteLine($"  Fontes esperadas não encontradas: {string.Join(", ", caseReport.MissingExpectedSourcePaths)}");
+        }
+        if (caseReport.AnswerContainsMatch is { } match)
+        {
+            Console.WriteLine($"  Contém palavra-chave esperada: {(match ? "sim" : "não")}");
+        }
+        Console.WriteLine();
+    }
+
+    Console.WriteLine("=== Relatório agregado ===");
+    Console.WriteLine($"Casos avaliados: {report.CaseCount}");
+    Console.WriteLine($"Recall@k médio: {report.AverageRecallAtK:P0}");
+    Console.WriteLine(report.AnswerContainsMatchRate is { } rate
+        ? $"Taxa de acerto de palavra-chave: {rate:P0}"
+        : "Taxa de acerto de palavra-chave: N/A (nenhum caso definiu ExpectedAnswerContains)");
+
+    return 0;
+}
+
 int RunDocuments(string[] cmdArgs)
 {
     var options = configService.Load();
@@ -629,6 +762,92 @@ int RunRemove(string[] cmdArgs)
     }
 
     Console.WriteLine($"Removido do índice: {path} ({removed} trecho(s))");
+    return 0;
+}
+
+async Task<int> RunReindexFileAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var filePath = cmdArgs.FirstOrDefault(a => !a.StartsWith("--"));
+
+    if (string.IsNullOrWhiteSpace(filePath))
+    {
+        Console.Error.WriteLine("Uso: questresume reindex-file <caminho_do_arquivo>");
+        return 1;
+    }
+
+    if (!File.Exists(filePath))
+    {
+        Console.Error.WriteLine($"Arquivo não encontrado: {filePath}");
+        return 1;
+    }
+
+    var indexPath = GetFlagValue(cmdArgs, "--index-path") ?? ResolveCollectionIndexPath(options, cmdArgs);
+
+    string? masterPassword = null;
+    if (options.EncryptionEnabled)
+    {
+        Console.Write("Senha mestre: ");
+        masterPassword = ReadMaskedLine();
+        if (string.IsNullOrEmpty(masterPassword) || !QuestResume.Core.Security.MasterKeyManager.VerifyPassword(masterPassword, options.MasterKeyVerifier))
+        {
+            Console.Error.WriteLine("Senha mestre incorreta.");
+            return 1;
+        }
+    }
+
+    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options), loadPlugins: true, pluginLog: Console.WriteLine);
+
+    EmbeddingService? embeddingService = null;
+    VectorStore? vectorStore = null;
+    if (options.EmbeddingsEnabled)
+    {
+        embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
+        vectorStore = new VectorStore(indexPath);
+    }
+
+    using (embeddingService)
+    using (vectorStore)
+    {
+        var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
+        try
+        {
+            var chunkCount = await indexer.ReindexSingleFileAsync(
+                filePath, indexPath, options.ChunkSize, options.ChunkOverlap,
+                piiRedactionEnabled: options.PiiRedactionEnabled,
+                incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
+                masterPassword: masterPassword, masterKeyVerifier: options.EncryptionEnabled ? options.MasterKeyVerifier : null,
+                headingAwareChunkingEnabled: options.HeadingAwareChunkingEnabled,
+                sentenceWindowChunkingEnabled: options.SentenceWindowChunkingEnabled,
+                parentChildChunkingEnabled: options.ParentChildChunkingEnabled,
+                parentChunkSize: options.ParentChunkSize,
+                childChunkSize: options.ChildChunkSize,
+                semanticChunkingEnabled: options.SemanticChunkingEnabled,
+                semanticChunkingThreshold: options.SemanticChunkingThreshold,
+                contextualRetrievalEnabled: options.ContextualRetrievalEnabled);
+
+            Console.WriteLine($"Reindexado: {filePath} ({chunkCount} trecho(s))");
+        }
+        catch (NotSupportedException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+async Task<int> RunCleanOrphansAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var indexPath = GetFlagValue(cmdArgs, "--index-path") ?? ResolveCollectionIndexPath(options, cmdArgs);
+
+    using var vectorStore = options.EmbeddingsEnabled ? new VectorStore(indexPath) : null;
+    var indexer = new DocumentIndexer(vectorStore: vectorStore);
+
+    var removed = await indexer.CleanOrphansAsync(indexPath);
+    Console.WriteLine($"Órfãos removidos do índice: {removed}");
     return 0;
 }
 
@@ -995,7 +1214,8 @@ int RunConfig(string[] cmdArgs)
                                  "set-hybrid-weight|set-stt-enabled|set-whisper-model|" +
                                  "set-reranking-enabled|set-reranking-model|set-reranking-tokenizer|" +
                                  "set-max-file-size|set-excluded-folders|set-pii-redaction|set-gpu-layers|" +
-                                 "set-indexing-parallelism|set-incremental-indexing|set-auto-reindex> [valor]");
+                                 "set-indexing-parallelism|set-incremental-indexing|set-auto-reindex|" +
+                                 "set-faithfulness-check|set-min-relevance-threshold> [valor]");
         return 1;
     }
 
@@ -1039,6 +1259,8 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"LlmFallbackEnabled:     {options.LlmFallbackEnabled}");
             Console.WriteLine($"AgentToolsEnabled:      {options.AgentToolsEnabled}");
             Console.WriteLine($"WebSearchEndpointUrl:   {options.WebSearchEndpointUrl}");
+            Console.WriteLine($"FaithfulnessCheckEnabled: {options.FaithfulnessCheckEnabled}");
+            Console.WriteLine($"MinRelevanceThreshold:    {options.MinRelevanceThreshold}");
             return 0;
 
         case "set-model":
@@ -1424,9 +1646,181 @@ int RunConfig(string[] cmdArgs)
             Console.WriteLine($"WebSearchEndpointUrl definido para: {value}");
             return 0;
 
+        case "set-google-client-id":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-google-client-id <client_id>");
+                return 1;
+            }
+
+            options.GoogleDriveClientId = value;
+            configService.Save(options);
+            Console.WriteLine("GoogleDriveClientId definido.");
+            return 0;
+
+        case "set-onedrive-client-id":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-onedrive-client-id <client_id>");
+                return 1;
+            }
+
+            options.OneDriveClientId = value;
+            configService.Save(options);
+            Console.WriteLine("OneDriveClientId definido.");
+            return 0;
+
+        case "set-dropbox-client-id":
+            if (value is null)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-dropbox-client-id <client_id>");
+                return 1;
+            }
+
+            options.DropboxClientId = value;
+            configService.Save(options);
+            Console.WriteLine("DropboxClientId definido.");
+            return 0;
+
+        case "set-faithfulness-check":
+            if (value is null || !bool.TryParse(value, out var faithfulnessCheckEnabled))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-faithfulness-check <true|false>");
+                return 1;
+            }
+            options.FaithfulnessCheckEnabled = faithfulnessCheckEnabled;
+            configService.Save(options);
+            Console.WriteLine($"FaithfulnessCheckEnabled definido para: {faithfulnessCheckEnabled}");
+            return 0;
+
+        case "set-min-relevance-threshold":
+            if (value is null || !double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var minRelevanceThreshold)
+                || minRelevanceThreshold < 0 || minRelevanceThreshold > 1)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-min-relevance-threshold <valor entre 0 e 1> (0 = desligado)");
+                return 1;
+            }
+            options.MinRelevanceThreshold = minRelevanceThreshold;
+            configService.Save(options);
+            Console.WriteLine($"MinRelevanceThreshold definido para: {minRelevanceThreshold}");
+            return 0;
+
         default:
             Console.Error.WriteLine($"Subcomando de config desconhecido: {sub}");
             return 1;
+    }
+}
+
+int RunCloud(string[] cmdArgs)
+{
+    var options = configService.Load();
+    if (string.IsNullOrWhiteSpace(options.IndexPath))
+    {
+        Console.Error.WriteLine("IndexPath não configurado. Rode 'questresume config set-index <pasta>' primeiro.");
+        return 1;
+    }
+
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant();
+    var subArgs = cmdArgs.Skip(1).ToArray();
+
+    switch (sub)
+    {
+        case "auth":
+            return RunCloudAuth(subArgs, options);
+
+        case "sync":
+            return RunCloudSyncCommand(subArgs, options).GetAwaiter().GetResult();
+
+        default:
+            Console.Error.WriteLine("Uso: questresume cloud <auth|sync> <google|onedrive|dropbox> ...");
+            return 1;
+    }
+}
+
+int RunCloudAuth(string[] cmdArgs, QuestResume.Core.Configuration.AppOptions options)
+{
+    var providerName = cmdArgs.FirstOrDefault()?.ToLowerInvariant();
+    if (string.IsNullOrWhiteSpace(providerName))
+    {
+        Console.Error.WriteLine("Uso: questresume cloud auth <google|onedrive|dropbox>");
+        return 1;
+    }
+
+    try
+    {
+        var provider = QuestResume.Core.CloudSync.CloudProviderFactory.Create(providerName, options);
+
+        Console.WriteLine($"Abrindo o navegador para autenticar com {provider.Name}...");
+        Console.WriteLine("Autorize o acesso na janela do navegador. Aguardando redirecionamento local...");
+
+        var authResult = provider.AuthenticateAsync(url =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch
+            {
+                Console.WriteLine($"Não foi possível abrir o navegador automaticamente. Acesse manualmente: {url}");
+            }
+        }).GetAwaiter().GetResult();
+
+        var tokenStore = new QuestResume.Core.CloudSync.CloudTokenStore(options.IndexPath);
+        tokenStore.Save(provider.Name, authResult);
+
+        Console.WriteLine($"Autenticação com {provider.Name} concluída com sucesso. Token salvo em '{options.IndexPath}'.");
+        return 0;
+    }
+    catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+    {
+        Console.Error.WriteLine($"Erro: {ex.Message}");
+        return 1;
+    }
+}
+
+async Task<int> RunCloudSyncCommand(string[] cmdArgs, QuestResume.Core.Configuration.AppOptions options)
+{
+    if (cmdArgs.Length < 2)
+    {
+        Console.Error.WriteLine("Uso: questresume cloud sync <google|onedrive|dropbox> <pastaRemotaId>");
+        return 1;
+    }
+
+    var providerName = cmdArgs[0].ToLowerInvariant();
+    var remoteFolderId = cmdArgs[1];
+
+    try
+    {
+        var syncService = new QuestResume.Core.CloudSync.CloudSyncService();
+        var result = await syncService.SyncFolderAsync(providerName, remoteFolderId, options.IndexPath, options);
+
+        Console.WriteLine($"Sincronização concluída: {result.FilesDownloaded} arquivo(s) baixado(s) para '{result.LocalFolder}'.");
+        if (result.FoldersSkipped > 0)
+        {
+            Console.WriteLine($"{result.FoldersSkipped} subpasta(s) ignorada(s) (sincronização não-recursiva).");
+        }
+
+        if (result.Errors.Count > 0)
+        {
+            Console.WriteLine($"{result.Errors.Count} erro(s) durante o download:");
+            foreach (var error in result.Errors)
+            {
+                Console.WriteLine($"  - {error}");
+            }
+        }
+
+        Console.WriteLine($"Rode 'questresume index \"{result.LocalFolder}\"' para indexar os arquivos baixados.");
+        return 0;
+    }
+    catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+    {
+        Console.Error.WriteLine($"Erro: {ex.Message}");
+        return 1;
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine($"Erro: {ex.Message}");
+        return 1;
     }
 }
 
@@ -1809,8 +2203,11 @@ static int PrintUsage()
           questresume ask-batch <arquivo.txt> [--top-k N] [--output <arquivo.json>]
           questresume chat [--top-k N]
           questresume compare <arquivoA> <arquivoB> ["<pergunta>"]
+          questresume evaluate <golden-set.json> [--top-k N]
           questresume documents
           questresume remove <caminho_do_arquivo>
+          questresume reindex-file <caminho_do_arquivo>
+          questresume clean-orphans
           questresume tag <caminho_do_arquivo> [tag1 tag2 ...]
           questresume report
           questresume config show
@@ -1837,6 +2234,8 @@ static int PrintUsage()
           questresume config set-excluded-folders <pasta1;pasta2;...> (vazio = nenhuma)
           questresume config set-pii-redaction <true|false>
           questresume config set-gpu-layers <número> (0 = somente CPU)
+          questresume config set-faithfulness-check <true|false>
+          questresume config set-min-relevance-threshold <valor entre 0 e 1> (0 = desligado)
           questresume config set-indexing-parallelism <número >= 1>
           questresume config set-incremental-indexing <true|false>
           questresume config set-auto-reindex <true|false>
@@ -1855,6 +2254,11 @@ static int PrintUsage()
           questresume translate <caminho_ou_"texto direto"> <idioma>
           questresume audit [N]
           questresume stats
+          questresume config set-google-client-id <client_id>
+          questresume config set-onedrive-client-id <client_id>
+          questresume config set-dropbox-client-id <client_id>
+          questresume cloud auth <google|onedrive|dropbox>
+          questresume cloud sync <google|onedrive|dropbox> <pastaRemotaId>
 
         Diagnóstico: use --log-level <Verbose|Debug|Information|Warning|Error|Fatal> ou a variável
         de ambiente QUESTRESUME_LOG_LEVEL para controlar o nível de log (padrão: Warning).
