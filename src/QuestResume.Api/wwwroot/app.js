@@ -5,14 +5,27 @@ const $ = (id) => document.getElementById(id);
 // (persistida em localStorage), via um wrapper em torno de window.fetch — evita duplicar a
 // lógica em cada uma das dezenas de chamadas fetch espalhadas neste arquivo.
 const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init) => {
+window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   if (typeof url === 'string' && url.startsWith('/api')) {
     const collection = localStorage.getItem('activeCollection') || 'default';
     init = init ? { ...init } : {};
     init.headers = new Headers(init.headers || {});
     init.headers.set('X-Collection', collection);
-    return nativeFetch(input, init);
+
+    // Multiusuário (opt-in): quando o servidor tem usuários cadastrados, todo /api/* exige
+    // "Authorization: Bearer <jwt>" (exceto /api/auth/login e /api/plugins, ver Program.cs).
+    // Um servidor sem usuários cadastrados continua funcionando sem token, como sempre.
+    const token = localStorage.getItem('authToken');
+    if (token && !url.startsWith('/api/auth/login')) {
+      init.headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    const response = await nativeFetch(input, init);
+    if (response.status === 401 && !url.startsWith('/api/auth/login')) {
+      showLoginOverlay();
+    }
+    return response;
   }
   return nativeFetch(input, init);
 };
@@ -114,22 +127,37 @@ document.querySelectorAll('nav button').forEach(btn => {
   });
 });
 
-// Dark mode is the default (matches the original color scheme); the toggle switches to a
-// light theme via the [data-theme="light"] CSS overrides, persisted in localStorage.
-const savedTheme = localStorage.getItem('theme');
-if (savedTheme === 'light') {
-  document.documentElement.setAttribute('data-theme', 'light');
-}
-$('themeToggle').addEventListener('click', () => {
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  if (isLight) {
+// Color theme: dark (default), light, high-contrast, green — all implemented as
+// [data-theme="..."] CSS custom-property overrides in styles.css. Persisted in localStorage and
+// applied on load via the #colorThemeSelect in the header.
+const VALID_THEMES = ['dark', 'light', 'high-contrast', 'green'];
+function applyColorTheme(theme) {
+  if (!VALID_THEMES.includes(theme)) theme = 'dark';
+  if (theme === 'dark') {
     document.documentElement.removeAttribute('data-theme');
-    localStorage.setItem('theme', 'dark');
   } else {
-    document.documentElement.setAttribute('data-theme', 'light');
-    localStorage.setItem('theme', 'light');
+    document.documentElement.setAttribute('data-theme', theme);
   }
-});
+  localStorage.setItem('theme', theme);
+  const select = $('colorThemeSelect');
+  if (select) select.value = theme;
+}
+applyColorTheme(localStorage.getItem('theme') || 'dark');
+$('colorThemeSelect').addEventListener('change', () => applyColorTheme($('colorThemeSelect').value));
+
+// Font size: small/medium/large, applied via the --base-font-size CSS custom property on :root
+// (consumed by body { font-size: var(--base-font-size, 16px) } in styles.css). Persisted in
+// localStorage and applied on load via the #fontSizeSelect in the header.
+const FONT_SIZES = { small: '14px', medium: '16px', large: '19px' };
+function applyFontSize(size) {
+  if (!FONT_SIZES[size]) size = 'medium';
+  document.documentElement.style.setProperty('--base-font-size', FONT_SIZES[size]);
+  localStorage.setItem('fontSize', size);
+  const select = $('fontSizeSelect');
+  if (select) select.value = size;
+}
+applyFontSize(localStorage.getItem('fontSize') || 'medium');
+$('fontSizeSelect').addEventListener('change', () => applyFontSize($('fontSizeSelect').value));
 
 async function loadStatus() {
   try {
@@ -182,6 +210,9 @@ async function loadConfig() {
   $('incrementalIndexingEnabledInput').checked = !!config.incrementalIndexingEnabled;
   $('autoReindexEnabledInput').checked = !!config.autoReindexEnabled;
   $('llmFallbackEnabledInput').checked = !!config.llmFallbackEnabled;
+  $('googleDriveClientIdInput').value = config.googleDriveClientId || '';
+  $('oneDriveClientIdInput').value = config.oneDriveClientId || '';
+  $('dropboxClientIdInput').value = config.dropboxClientId || '';
 }
 
 $('saveConfigButton').addEventListener('click', async () => {
@@ -216,7 +247,10 @@ $('saveConfigButton').addEventListener('click', async () => {
       indexingParallelism: parseInt($('indexingParallelismInput').value, 10) || 1,
       incrementalIndexingEnabled: $('incrementalIndexingEnabledInput').checked,
       autoReindexEnabled: $('autoReindexEnabledInput').checked,
-      llmFallbackEnabled: $('llmFallbackEnabledInput').checked
+      llmFallbackEnabled: $('llmFallbackEnabledInput').checked,
+      googleDriveClientId: $('googleDriveClientIdInput').value,
+      oneDriveClientId: $('oneDriveClientIdInput').value,
+      dropboxClientId: $('dropboxClientIdInput').value
     };
     const res = await fetch('/api/config', {
       method: 'PUT',
@@ -232,6 +266,64 @@ $('saveConfigButton').addEventListener('click', async () => {
     $('configStatus').className = 'status-line status-error';
   }
 });
+
+// --- Integrações com nuvem (Google Drive / OneDrive / Dropbox) ---
+// Fluxo OAuth2 Authorization Code + PKCE: obtemos a URL de autorização do backend (que já
+// guarda o code_verifier no servidor, associado a um "state" opaco embutido na própria URL —
+// veja CloudOAuthStateStore.cs), abrimos a URL numa nova aba e, quando o provedor redireciona
+// de volta para /api/cloud/{provider}/callback com "code"+"state" na query string, o próprio
+// endpoint recupera o code_verifier pelo state e troca o código por token — não há nada para o
+// JavaScript desta página fazer além de abrir a aba e aguardar a confirmação nela.
+async function connectCloudProvider(provider) {
+  $('cloudSyncStatus').textContent = `Abrindo autenticação com ${provider}...`;
+  $('cloudSyncStatus').className = 'status-line';
+  try {
+    const res = await fetch(`/api/cloud/${provider}/auth-url`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Falha ao iniciar autenticação.');
+    window.open(data.authorizationUrl, '_blank');
+    $('cloudSyncStatus').textContent =
+      'Autorize o acesso na nova aba. Após o redirecionamento, o QuestResume conclui a conexão automaticamente.';
+  } catch (err) {
+    $('cloudSyncStatus').textContent = `Erro ao conectar com ${provider}: ${err.message}`;
+    $('cloudSyncStatus').className = 'status-line status-error';
+  }
+}
+
+async function syncCloudProvider(provider) {
+  const remoteFolderId = $('cloudRemoteFolderIdInput').value.trim();
+  if (!remoteFolderId) {
+    $('cloudSyncStatus').textContent = 'Informe o ID/caminho da pasta remota antes de sincronizar.';
+    $('cloudSyncStatus').className = 'status-line status-error';
+    return;
+  }
+  $('cloudSyncStatus').textContent = `Sincronizando com ${provider}...`;
+  $('cloudSyncStatus').className = 'status-line';
+  try {
+    const res = await fetch(`/api/cloud/${provider}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remoteFolderId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Falha ao sincronizar.');
+    $('cloudSyncStatus').textContent =
+      `${data.filesDownloaded ?? 0} arquivo(s) baixado(s) para '${data.localFolder ?? ''}'.` +
+      (data.errors && data.errors.length > 0 ? ` ${data.errors.length} erro(s).` : '');
+    $('cloudSyncStatus').className = 'status-line status-ok';
+    await loadStatus();
+  } catch (err) {
+    $('cloudSyncStatus').textContent = `Erro ao sincronizar com ${provider}: ${err.message}`;
+    $('cloudSyncStatus').className = 'status-line status-error';
+  }
+}
+
+$('connectGoogleDriveButton').addEventListener('click', () => connectCloudProvider('google'));
+$('connectOneDriveButton').addEventListener('click', () => connectCloudProvider('onedrive'));
+$('connectDropboxButton').addEventListener('click', () => connectCloudProvider('dropbox'));
+$('syncGoogleDriveButton').addEventListener('click', () => syncCloudProvider('google'));
+$('syncOneDriveButton').addEventListener('click', () => syncCloudProvider('onedrive'));
+$('syncDropboxButton').addEventListener('click', () => syncCloudProvider('dropbox'));
 
 $('backupButton').addEventListener('click', async () => {
   $('backupStatus').textContent = 'Gerando backup...';
@@ -286,16 +378,53 @@ $('restoreFileInput').addEventListener('change', async (event) => {
   }
 });
 
-$('indexButton').addEventListener('click', async () => {
-  const folderPath = $('folderInput').value.trim();
-  if (!folderPath) {
-    $('indexStatus').textContent = 'Informe a pasta a indexar.';
-    $('indexStatus').className = 'status-line status-error';
-    return;
+// --- Barra de progresso da indexação (item 16) ---
+// DocumentIndexer reporta progresso via IProgress<string> no formato "[N/M] mensagem" (ver
+// DocumentIndexer.cs); Program.cs guarda o último texto em IndexingProgressStore e o expõe via
+// GET /api/index/progress. Como não há SSE aqui, fazemos polling nesse endpoint enquanto a
+// chamada POST /api/index (que só retorna ao final) está em andamento.
+let indexProgressPollTimer = null;
+
+function startIndexProgressPolling(rowEl, barEl, textEl) {
+  rowEl.classList.remove('hidden');
+  barEl.removeAttribute('value');
+  textEl.textContent = '';
+  stopIndexProgressPolling();
+  indexProgressPollTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/index/progress');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.current != null && data.total != null && data.total > 0) {
+        barEl.max = data.total;
+        barEl.value = data.current;
+        textEl.textContent = `${data.current} / ${data.total}`;
+      } else {
+        barEl.removeAttribute('value');
+        textEl.textContent = data.message || '';
+      }
+    } catch {
+      // Falha temporária de rede durante o polling não deve interromper a indexação em si.
+    }
+  }, 1000);
+}
+
+function stopIndexProgressPolling() {
+  if (indexProgressPollTimer) {
+    clearInterval(indexProgressPollTimer);
+    indexProgressPollTimer = null;
   }
-  $('indexButton').disabled = true;
-  $('indexStatus').textContent = 'Indexando... isso pode levar alguns minutos.';
-  $('indexStatus').className = 'status-line';
+}
+
+// Dispara POST /api/index e acompanha o progresso via polling; reutilizado pelo botão "Indexar"
+// da aba Configurações e pela última etapa do wizard de primeira execução.
+async function runIndexing(folderPath, { statusEl, buttonEl, progressRowEl, progressBarEl, progressTextEl }) {
+  if (buttonEl) buttonEl.disabled = true;
+  statusEl.textContent = 'Indexando... isso pode levar alguns minutos.';
+  statusEl.className = 'status-line';
+  if (progressRowEl && progressBarEl && progressTextEl) {
+    startIndexProgressPolling(progressRowEl, progressBarEl, progressTextEl);
+  }
   try {
     const res = await fetch('/api/index', {
       method: 'POST',
@@ -304,18 +433,46 @@ $('indexButton').addEventListener('click', async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao indexar.');
-    $('indexStatus').textContent =
+    statusEl.textContent =
       `Concluído: ${data.filesProcessed} arquivos processados, ` +
       `${data.filesSkipped} ignorados, ${data.chunksIndexed} trechos indexados.` +
       (data.errors && data.errors.length ? `\nErros: ${data.errors.join('\n')}` : '');
-    $('indexStatus').className = 'status-line status-ok';
+    statusEl.className = 'status-line status-ok';
     await loadStatus();
     await loadDocuments();
+    return data;
   } catch (err) {
-    $('indexStatus').textContent = `Erro: ${err.message}`;
-    $('indexStatus').className = 'status-line status-error';
+    statusEl.textContent = `Erro: ${err.message}`;
+    statusEl.className = 'status-line status-error';
+    throw err;
   } finally {
-    $('indexButton').disabled = false;
+    if (buttonEl) buttonEl.disabled = false;
+    stopIndexProgressPolling();
+    if (progressRowEl && progressBarEl) {
+      progressBarEl.max = 100;
+      progressBarEl.value = 100;
+    }
+    if (progressRowEl) setTimeout(() => progressRowEl.classList.add('hidden'), 1500);
+  }
+}
+
+$('indexButton').addEventListener('click', async () => {
+  const folderPath = $('folderInput').value.trim();
+  if (!folderPath) {
+    $('indexStatus').textContent = 'Informe a pasta a indexar.';
+    $('indexStatus').className = 'status-line status-error';
+    return;
+  }
+  try {
+    await runIndexing(folderPath, {
+      statusEl: $('indexStatus'),
+      buttonEl: $('indexButton'),
+      progressRowEl: $('indexProgressRow'),
+      progressBarEl: $('indexProgressBar'),
+      progressTextEl: $('indexProgressText')
+    });
+  } catch {
+    // Erro já refletido em indexStatus por runIndexing.
   }
 });
 
@@ -360,7 +517,7 @@ function appendSources(container, sources) {
     link.title = 'Ver o trecho usado nesta resposta';
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      openChunkModal(path, source.chunkIndex ?? 0);
+      openChunkModal(path, source.chunkIndex ?? 0, source.highlight ?? null);
     });
     sourcesDiv.appendChild(link);
   }
@@ -368,7 +525,77 @@ function appendSources(container, sources) {
   container.appendChild(sourcesDiv);
 }
 
-async function openChunkModal(path, chunkIndex) {
+// Confidence badge (item 5): renders AskResult.confidenceScore (0-1) as a green/yellow/red pill.
+// >= 0.66 = alta confiança, >= 0.33 = média, abaixo disso = baixa.
+function appendConfidenceBadge(container, confidenceScore, isFaithful) {
+  if (confidenceScore == null) return;
+
+  const badge = document.createElement('span');
+  const pct = Math.round(confidenceScore * 100);
+  let level, label;
+  if (confidenceScore >= 0.66) {
+    level = 'high'; label = 'Confiança alta';
+  } else if (confidenceScore >= 0.33) {
+    level = 'medium'; label = 'Confiança média';
+  } else {
+    level = 'low'; label = 'Confiança baixa';
+  }
+
+  badge.className = `confidence-badge confidence-${level}`;
+  badge.textContent = `${label}: ${pct}%`;
+  if (isFaithful != null) {
+    badge.title = isFaithful
+      ? 'Verificação de fidelidade: resposta sustentada pelos documentos.'
+      : 'Verificação de fidelidade: possível alucinação — resposta pode não ser sustentada pelos documentos.';
+  }
+
+  container.appendChild(badge);
+}
+
+// Extracts the distinct matched terms from a highlighter fragment (text between the U+0001/
+// U+0002 markers produced by SearchService's Lucene Highlighter) so they can be re-highlighted
+// inside the *full* chunk text shown in the citation modal — the highlight fragment itself is
+// only a ~150-char snippet, not the whole chunk.
+function extractHighlightTerms(highlight) {
+  if (!highlight) return [];
+  const terms = new Set();
+  const parts = highlight.split('');
+  for (let i = 1; i < parts.length; i++) {
+    const [matched] = parts[i].split('');
+    if (matched) terms.add(matched);
+  }
+  return [...terms];
+}
+
+// Renders `chunkText` into `container` as text, wrapping every case-insensitive occurrence of
+// any term in `terms` in a <mark> element — the exact trecho highlighted in the citation.
+function renderChunkTextWithHighlight(container, chunkText, terms) {
+  container.textContent = '';
+  if (!terms.length) {
+    container.textContent = chunkText;
+    return;
+  }
+
+  const escaped = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(chunkText)) !== null) {
+    if (match.index > lastIndex) {
+      container.append(chunkText.slice(lastIndex, match.index));
+    }
+    const mark = document.createElement('mark');
+    mark.textContent = match[0];
+    container.appendChild(mark);
+    lastIndex = match.index + match[0].length;
+    if (match.index === regex.lastIndex) regex.lastIndex++;
+  }
+  if (lastIndex < chunkText.length) {
+    container.append(chunkText.slice(lastIndex));
+  }
+}
+
+async function openChunkModal(path, chunkIndex, highlight) {
   $('chunkModalTitle').textContent = 'Carregando trecho...';
   $('chunkModalMeta').textContent = '';
   $('chunkModalText').textContent = '';
@@ -376,12 +603,14 @@ async function openChunkModal(path, chunkIndex) {
   $('chunkModal').classList.add('active');
 
   try {
-    const res = await fetch(`/api/documents/chunk?path=${encodeURIComponent(path)}&index=${encodeURIComponent(chunkIndex)}`);
+    const highlightParam = highlight ? `&highlight=${encodeURIComponent(highlight)}` : '';
+    const res = await fetch(`/api/documents/chunk?path=${encodeURIComponent(path)}&index=${encodeURIComponent(chunkIndex)}${highlightParam}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao carregar o trecho.');
     $('chunkModalTitle').textContent = data.fileName;
     $('chunkModalMeta').textContent = `Trecho ${data.chunkIndex + 1} de ${data.totalChunks} · ${path}`;
-    $('chunkModalText').textContent = data.chunkText;
+    const terms = extractHighlightTerms(highlight ?? data.highlight);
+    renderChunkTextWithHighlight($('chunkModalText'), data.chunkText, terms);
   } catch (err) {
     $('chunkModalTitle').textContent = 'Erro ao carregar trecho';
     $('chunkModalText').textContent = err.message;
@@ -436,33 +665,346 @@ function appendTranslateControls(container, getText) {
   container.append(row, result);
 }
 
-function addChatMessage(role, text, sources) {
-  const div = document.createElement('div');
-  div.className = `msg ${role}`;
-
-  const textSpan = document.createElement('span');
-  textSpan.className = 'msg-text';
-  textSpan.textContent = text;
-  div.appendChild(textSpan);
-
-  appendSources(div, sources);
-  if (role === 'answer') {
-    appendTranslateControls(div, () => textSpan.textContent);
+// Re-renders `textSpan`'s content as Markdown from `rawText`, using window.renderMarkdown
+// (markdown.js) instead of textContent so answers get bold/italic/code/lists/headings without
+// ever touching innerHTML. Falls back to plain text if markdown.js hasn't loaded for some reason.
+function renderMessageText(textSpan, rawText) {
+  textSpan.rawText = rawText;
+  textSpan.replaceChildren();
+  if (typeof window.renderMarkdown === 'function') {
+    textSpan.appendChild(window.renderMarkdown(rawText));
+  } else {
+    textSpan.textContent = rawText;
   }
-  $('chatLog').appendChild(div);
-  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+}
+
+// --- Sessões de chat persistentes (localStorage) ---
+// Estrutura: { sessions: [{id, name, messages: [{role, text, sources, favorited}], createdAt}],
+// activeSessionId }. O antigo array solto `chatHistory` (histórico da conversa) agora vive dentro
+// das `messages` da sessão ativa.
+const CHAT_SESSIONS_KEY = 'chatSessions';
+const MAX_HISTORY_TURNS = 4;
+
+function makeChatSession(name) {
+  return {
+    id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    messages: [],
+    createdAt: new Date().toISOString()
+  };
+}
+
+function loadChatSessionsStore() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CHAT_SESSIONS_KEY) || 'null');
+    if (raw && Array.isArray(raw.sessions) && raw.sessions.length > 0) return raw;
+  } catch {
+    // Dados corrompidos: recomeça com uma sessão nova.
+  }
+  const session = makeChatSession('Conversa 1');
+  return { sessions: [session], activeSessionId: session.id };
+}
+
+let chatSessionsStore = loadChatSessionsStore();
+let favoritesFilterActive = false;
+let pendingEditIndex = null;
+let currentAbortController = null;
+
+function saveChatSessionsStore() {
+  localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessionsStore));
+}
+
+function getActiveSession() {
+  let session = chatSessionsStore.sessions.find(s => s.id === chatSessionsStore.activeSessionId);
+  if (!session) {
+    session = chatSessionsStore.sessions[0];
+    chatSessionsStore.activeSessionId = session.id;
+  }
+  return session;
+}
+
+function pushMessageToSession(role, text, sources) {
+  const session = getActiveSession();
+  session.messages.push({ role, text, sources: sources || [], favorited: false });
+  saveChatSessionsStore();
+  return session.messages.length - 1;
+}
+
+// All complete question/answer pairs in the active session, used for export and (sliced) as
+// conversational memory sent to the backend.
+function getAllQaPairs() {
+  const session = getActiveSession();
+  const pairs = [];
+  for (let i = 0; i < session.messages.length - 1; i++) {
+    if (session.messages[i].role === 'question' && session.messages[i + 1].role === 'answer') {
+      pairs.push({ question: session.messages[i].text, answer: session.messages[i + 1].text });
+    }
+  }
+  return pairs;
+}
+
+function createChatSession() {
+  const session = makeChatSession(`Conversa ${chatSessionsStore.sessions.length + 1}`);
+  chatSessionsStore.sessions.unshift(session);
+  chatSessionsStore.activeSessionId = session.id;
+  saveChatSessionsStore();
+  renderChatSessionsSidebar();
+  renderChatLogFromSession();
+}
+
+function switchChatSession(id) {
+  if (id === chatSessionsStore.activeSessionId) return;
+  chatSessionsStore.activeSessionId = id;
+  saveChatSessionsStore();
+  pendingEditIndex = null;
+  $('questionInput').value = '';
+  renderChatSessionsSidebar();
+  renderChatLogFromSession();
+}
+
+function deleteChatSession(id) {
+  if (!confirm('Excluir esta conversa? Esta ação não pode ser desfeita.')) return;
+  chatSessionsStore.sessions = chatSessionsStore.sessions.filter(s => s.id !== id);
+  if (chatSessionsStore.sessions.length === 0) {
+    const session = makeChatSession('Conversa 1');
+    chatSessionsStore.sessions.push(session);
+    chatSessionsStore.activeSessionId = session.id;
+  } else if (chatSessionsStore.activeSessionId === id) {
+    chatSessionsStore.activeSessionId = chatSessionsStore.sessions[0].id;
+  }
+  saveChatSessionsStore();
+  renderChatSessionsSidebar();
+  renderChatLogFromSession();
+}
+
+function renameChatSession(id, newName) {
+  const session = chatSessionsStore.sessions.find(s => s.id === id);
+  if (session && newName && newName.trim()) {
+    session.name = newName.trim();
+    saveChatSessionsStore();
+  }
+  renderChatSessionsSidebar();
+}
+
+function sessionMatchesQuery(session, query) {
+  const q = query.toLowerCase();
+  if (session.name.toLowerCase().includes(q)) return true;
+  return session.messages.some(m => (m.text || '').toLowerCase().includes(q));
+}
+
+// Appends `text` to `container` as text nodes plus <mark> elements around case-insensitive
+// occurrences of `query`, mirroring appendHighlighted's approach of avoiding innerHTML.
+function appendTextWithHighlight(container, text, query) {
+  if (!query) {
+    container.append(text);
+    return;
+  }
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  let cursor = 0;
+  let matchAt;
+  while ((matchAt = lowerText.indexOf(lowerQuery, cursor)) !== -1) {
+    container.append(text.slice(cursor, matchAt));
+    const mark = document.createElement('mark');
+    mark.textContent = text.slice(matchAt, matchAt + query.length);
+    container.append(mark);
+    cursor = matchAt + query.length;
+  }
+  container.append(text.slice(cursor));
+}
+
+function renderChatSessionsSidebar() {
+  const listEl = $('chatSessionsList');
+  if (!listEl) return;
+  listEl.replaceChildren();
+
+  const query = ($('chatSessionSearch').value || '').trim();
+  let sessions = chatSessionsStore.sessions;
+  if (favoritesFilterActive) sessions = sessions.filter(s => s.messages.some(m => m.favorited));
+  if (query) sessions = sessions.filter(s => sessionMatchesQuery(s, query));
+
+  $('showFavoritesButton').classList.toggle('active', favoritesFilterActive);
+
+  for (const session of sessions) {
+    const item = document.createElement('div');
+    item.className = 'chat-session-item' + (session.id === chatSessionsStore.activeSessionId ? ' active' : '');
+    item.addEventListener('click', () => switchChatSession(session.id));
+
+    const nameCol = document.createElement('div');
+    nameCol.className = 'chat-session-name-col';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'chat-session-name';
+    const favMark = session.messages.some(m => m.favorited) ? '★ ' : '';
+    appendTextWithHighlight(nameEl, favMark + session.name, query);
+    nameEl.title = 'Duplo clique para renomear';
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'chat-session-rename-input';
+      input.value = session.name;
+      const commit = () => renameChatSession(session.id, input.value);
+      input.addEventListener('click', (ev) => ev.stopPropagation());
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); renderChatSessionsSidebar(); }
+      });
+      input.addEventListener('blur', commit);
+      nameEl.replaceWith(input);
+      input.focus();
+      input.select();
+    });
+    nameCol.appendChild(nameEl);
+
+    if (query) {
+      const match = session.messages.find(m => (m.text || '').toLowerCase().includes(query.toLowerCase()));
+      if (match) {
+        const idx = match.text.toLowerCase().indexOf(query.toLowerCase());
+        const start = Math.max(0, idx - 20);
+        const end = Math.min(match.text.length, idx + query.length + 20);
+        const snippet = (start > 0 ? '…' : '') + match.text.slice(start, end) + (end < match.text.length ? '…' : '');
+        const preview = document.createElement('span');
+        preview.className = 'chat-session-preview';
+        appendTextWithHighlight(preview, snippet, query);
+        nameCol.appendChild(preview);
+      }
+    }
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'chat-session-delete';
+    deleteBtn.textContent = '🗑';
+    deleteBtn.title = 'Excluir conversa';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteChatSession(session.id);
+    });
+
+    item.append(nameCol, deleteBtn);
+    listEl.appendChild(item);
+  }
+
+  if (typeof window.applyI18n === 'function') window.applyI18n();
+}
+
+$('newChatSessionButton').addEventListener('click', createChatSession);
+$('chatSessionSearch').addEventListener('input', () => renderChatSessionsSidebar());
+$('showFavoritesButton').addEventListener('click', () => {
+  favoritesFilterActive = !favoritesFilterActive;
+  renderChatSessionsSidebar();
+});
+
+function copyMessageText(button, text) {
+  navigator.clipboard.writeText(text || '').then(() => {
+    const original = button.textContent;
+    button.textContent = 'Copiado!';
+    setTimeout(() => { button.textContent = original; }, 1500);
+  }).catch(() => {
+    alert('Não foi possível copiar a resposta.');
+  });
+}
+
+function toggleFavorite(index) {
+  const session = getActiveSession();
+  const msg = session.messages[index];
+  if (!msg) return;
+  msg.favorited = !msg.favorited;
+  saveChatSessionsStore();
+  renderChatLogFromSession();
+  renderChatSessionsSidebar();
+}
+
+function startEditMessage(index) {
+  const session = getActiveSession();
+  const msg = session.messages[index];
+  if (!msg) return;
+  $('questionInput').value = msg.text;
+  $('questionInput').focus();
+  pendingEditIndex = index;
+}
+
+// Renders a single stored message (question or answer) into #chatLog, wiring up the per-message
+// action buttons (Editar/Copiar/Regenerar/Favoritar) required by items 11-13.
+function renderStoredMessage(msg, index) {
+  const div = document.createElement('div');
+  div.className = `msg ${msg.role}`;
+  div.dataset.index = String(index);
+
+  const textSpan = document.createElement('div');
+  textSpan.className = 'msg-text';
+  renderMessageText(textSpan, msg.text);
+  div.appendChild(textSpan);
   div.textSpan = textSpan;
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'msg-actions';
+
+  if (msg.role === 'question') {
+    const editBtn = document.createElement('button');
+    editBtn.className = 'msg-action-btn';
+    editBtn.textContent = 'Editar';
+    editBtn.setAttribute('data-i18n', 'chat.edit');
+    editBtn.addEventListener('click', () => startEditMessage(index));
+    actionsRow.appendChild(editBtn);
+  } else if (msg.role === 'answer') {
+    appendSources(div, msg.sources);
+    appendConfidenceBadge(div, msg.confidenceScore, msg.isFaithful);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-action-btn';
+    copyBtn.textContent = 'Copiar';
+    copyBtn.setAttribute('data-i18n', 'chat.copy');
+    copyBtn.addEventListener('click', () => copyMessageText(copyBtn, msg.text));
+
+    const regenBtn = document.createElement('button');
+    regenBtn.className = 'msg-action-btn';
+    regenBtn.textContent = 'Regenerar';
+    regenBtn.setAttribute('data-i18n', 'chat.regenerate');
+    regenBtn.addEventListener('click', () => regenerateAnswer(index));
+
+    const favBtn = document.createElement('button');
+    favBtn.className = 'msg-action-btn msg-fav-btn' + (msg.favorited ? ' favorited' : '');
+    favBtn.textContent = msg.favorited ? '★' : '☆';
+    favBtn.title = 'Favoritar resposta';
+    favBtn.addEventListener('click', () => toggleFavorite(index));
+
+    actionsRow.append(copyBtn, regenBtn, favBtn);
+    appendTranslateControls(div, () => msg.text || '');
+  }
+
+  div.appendChild(actionsRow);
+  $('chatLog').appendChild(div);
   return div;
 }
 
-// Sends `question` to /api/ask/stream and renders the answer incrementally as it's
-// generated (SSE frames: `event: sources|token|done|error` followed by `data: <json>\n\n`),
-// for a ChatGPT-style streaming response. Returns the final assembled answer text.
-async function streamAsk(question) {
+function renderChatLogFromSession() {
+  const chatLog = $('chatLog');
+  chatLog.replaceChildren();
+  const session = getActiveSession();
+  session.messages.forEach((msg, index) => renderStoredMessage(msg, index));
+  chatLog.scrollTop = chatLog.scrollHeight;
+  if (typeof window.applyI18n === 'function') window.applyI18n();
+}
+
+function setAskingState(isAsking) {
+  $('askButton').disabled = isAsking;
+  $('stopGenerationButton').classList.toggle('hidden', !isAsking);
+}
+
+// Sends `question` to /api/ask/stream and renders the answer incrementally as it's generated
+// (SSE frames: `event: sources|token|done|error` followed by `data: <json>\n\n`), for a
+// ChatGPT-style streaming response. `history` is the list of prior Q/A pairs to send as
+// conversational memory. If `existingIndex` is given (regenerate), the answer message at that
+// position in the active session is replaced instead of appending a new one. An AbortController
+// backs the "Parar" button (item 10): aborting mid-stream keeps whatever text was received so far.
+async function streamAsk(question, history, existingIndex) {
+  currentAbortController = new AbortController();
+
   const res = await fetch('/api/ask/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, history: chatHistory.slice(-MAX_HISTORY_TURNS) })
+    body: JSON.stringify({ question, history: history || [] }),
+    signal: currentAbortController.signal
   });
 
   if (!res.ok) {
@@ -470,43 +1012,73 @@ async function streamAsk(question) {
     throw new Error(data.error || 'Falha ao responder.');
   }
 
-  const answerDiv = addChatMessage('answer', '');
+  const session = getActiveSession();
+  let answerIndex;
+  if (existingIndex != null) {
+    answerIndex = existingIndex;
+    const preservedFavorited = session.messages[answerIndex]?.favorited || false;
+    session.messages[answerIndex] = { role: 'answer', text: '', sources: [], favorited: preservedFavorited };
+    const oldDiv = $('chatLog').querySelector(`.msg[data-index="${answerIndex}"]`);
+    if (oldDiv) oldDiv.remove();
+  } else {
+    answerIndex = pushMessageToSession('answer', '', []);
+  }
+  let answerDiv = renderStoredMessage(session.messages[answerIndex], answerIndex);
+  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let answer = '';
   let sources = [];
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    let separatorIndex;
-    while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
-      const frame = buffer.slice(0, separatorIndex);
-      buffer = buffer.slice(separatorIndex + 2);
+      let separatorIndex;
+      while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, separatorIndex);
+        buffer = buffer.slice(separatorIndex + 2);
 
-      const lines = frame.split('\n');
-      const eventLine = lines.find(l => l.startsWith('event: '));
-      const dataLine = lines.find(l => l.startsWith('data: '));
-      if (!eventLine || !dataLine) continue;
+        const lines = frame.split('\n');
+        const eventLine = lines.find(l => l.startsWith('event: '));
+        const dataLine = lines.find(l => l.startsWith('data: '));
+        if (!eventLine || !dataLine) continue;
 
-      const eventName = eventLine.slice('event: '.length);
-      const data = JSON.parse(dataLine.slice('data: '.length));
+        const eventName = eventLine.slice('event: '.length);
+        const data = JSON.parse(dataLine.slice('data: '.length));
 
-      if (eventName === 'sources') {
-        sources = data;
-      } else if (eventName === 'token') {
-        answer += data;
-        answerDiv.textSpan.textContent = answer;
-        $('chatLog').scrollTop = $('chatLog').scrollHeight;
-      } else if (eventName === 'error') {
-        throw new Error(data);
+        if (eventName === 'sources') {
+          sources = data;
+        } else if (eventName === 'token') {
+          answer += data;
+          session.messages[answerIndex].text = answer;
+          renderMessageText(answerDiv.textSpan, answer);
+          $('chatLog').scrollTop = $('chatLog').scrollHeight;
+        } else if (eventName === 'error') {
+          throw new Error(data);
+        }
       }
     }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      session.messages[answerIndex].text = answer;
+      session.messages[answerIndex].sources = sources;
+      saveChatSessionsStore();
+      renderChatSessionsSidebar();
+      return answer;
+    }
+    throw err;
   }
 
+  session.messages[answerIndex].text = answer;
+  session.messages[answerIndex].sources = sources;
+  saveChatSessionsStore();
+
+  answerDiv = $('chatLog').querySelector(`.msg[data-index="${answerIndex}"]`) || answerDiv;
   appendSources(answerDiv, sources);
 
   // /api/ask/stream não retorna sugestões de perguntas relacionadas (geradas apenas em
@@ -521,11 +1093,16 @@ async function streamAsk(question) {
     if (relatedRes.ok) {
       const relatedData = await relatedRes.json();
       renderRelatedQuestions(answerDiv, relatedData.relatedQuestions || []);
+      session.messages[answerIndex].confidenceScore = relatedData.confidenceScore ?? null;
+      session.messages[answerIndex].isFaithful = relatedData.isFaithful ?? null;
+      saveChatSessionsStore();
+      appendConfidenceBadge(answerDiv, relatedData.confidenceScore, relatedData.isFaithful);
     }
   } catch {
     // Sugestões são um extra best-effort; falha aqui não deve afetar a resposta principal.
   }
 
+  renderChatSessionsSidebar();
   return answer;
 }
 
@@ -546,30 +1123,89 @@ function renderRelatedQuestions(container, questions) {
   container.appendChild(wrap);
 }
 
-// Last few question/answer pairs, sent with each /api/ask request so the model has
-// short-term conversational memory (e.g. for follow-up questions). Capped to mirror
-// RagQueryEngine.MaxHistoryTurns.
-const MAX_HISTORY_TURNS = 4;
-const chatHistory = [];
+// Re-sends the question preceding `answerIndex` and replaces the answer at the same position
+// in the active session (item 11 - regenerate).
+async function regenerateAnswer(answerIndex) {
+  const session = getActiveSession();
+  const questionMsg = session.messages[answerIndex - 1];
+  if (!questionMsg || questionMsg.role !== 'question') return;
+
+  const priorMessages = session.messages.slice(0, answerIndex - 1);
+  const history = [];
+  for (let i = 0; i < priorMessages.length - 1; i++) {
+    if (priorMessages[i].role === 'question' && priorMessages[i + 1].role === 'answer') {
+      history.push({ question: priorMessages[i].text, answer: priorMessages[i + 1].text });
+    }
+  }
+
+  setAskingState(true);
+  $('askStatus').textContent = 'Regenerando resposta...';
+  $('askStatus').className = 'status-line';
+  try {
+    await streamAsk(questionMsg.text, history.slice(-MAX_HISTORY_TURNS), answerIndex);
+    $('askStatus').textContent = '';
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      $('askStatus').textContent = 'Geração interrompida.';
+    } else {
+      session.messages[answerIndex].text = `Erro: ${err.message}`;
+      saveChatSessionsStore();
+      renderChatLogFromSession();
+      $('askStatus').textContent = '';
+    }
+  } finally {
+    setAskingState(false);
+    renderChatSessionsSidebar();
+  }
+}
+
+// Submits a new question. If `truncateFromIndex` is given (editing a previous question, item 11),
+// every message from that point on is dropped from the active session before the new
+// question+answer is appended.
+async function submitQuestion(question, truncateFromIndex) {
+  const session = getActiveSession();
+  if (truncateFromIndex != null) {
+    session.messages = session.messages.slice(0, truncateFromIndex);
+    saveChatSessionsStore();
+    renderChatLogFromSession();
+  }
+
+  const history = getAllQaPairs().slice(-MAX_HISTORY_TURNS);
+  const qIndex = pushMessageToSession('question', question, []);
+  renderStoredMessage(session.messages[qIndex], qIndex);
+  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+
+  setAskingState(true);
+  $('askStatus').textContent = 'Pensando... (pode demorar na primeira pergunta, enquanto o modelo carrega)';
+  $('askStatus').className = 'status-line';
+  try {
+    await streamAsk(question, history);
+    $('askStatus').textContent = '';
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      $('askStatus').textContent = 'Geração interrompida.';
+    } else {
+      const idx = pushMessageToSession('answer', `Erro: ${err.message}`, []);
+      renderStoredMessage(session.messages[idx], idx);
+      $('askStatus').textContent = '';
+    }
+  } finally {
+    setAskingState(false);
+    renderChatSessionsSidebar();
+  }
+}
 
 $('askButton').addEventListener('click', async () => {
   const question = $('questionInput').value.trim();
   if (!question) return;
-  addChatMessage('question', question);
+  const truncateFrom = pendingEditIndex;
+  pendingEditIndex = null;
   $('questionInput').value = '';
-  $('askButton').disabled = true;
-  $('askStatus').textContent = 'Pensando... (pode demorar na primeira pergunta, enquanto o modelo carrega)';
-  $('askStatus').className = 'status-line';
-  try {
-    const answer = await streamAsk(question);
-    chatHistory.push({ question, answer });
-    $('askStatus').textContent = '';
-  } catch (err) {
-    addChatMessage('answer', `Erro: ${err.message}`);
-    $('askStatus').textContent = '';
-  } finally {
-    $('askButton').disabled = false;
-  }
+  await submitQuestion(question, truncateFrom);
+});
+
+$('stopGenerationButton').addEventListener('click', () => {
+  if (currentAbortController) currentAbortController.abort();
 });
 
 // Plain Enter submits directly; Ctrl+Enter is handled by the configurable shortcuts listener
@@ -579,10 +1215,11 @@ $('questionInput').addEventListener('keydown', (e) => {
 });
 
 $('exportChatButton').addEventListener('click', () => {
-  if (chatHistory.length === 0) return;
+  const pairs = getAllQaPairs();
+  if (pairs.length === 0) return;
 
   const lines = ['# Conversa - QuestResume', ''];
-  for (const turn of chatHistory) {
+  for (const turn of pairs) {
     lines.push(`## Pergunta`, '', turn.question, '', `## Resposta`, '', turn.answer, '');
   }
 
@@ -596,14 +1233,15 @@ $('exportChatButton').addEventListener('click', () => {
 });
 
 $('exportChatPdfButton').addEventListener('click', async () => {
-  if (chatHistory.length === 0) return;
+  const pairs = getAllQaPairs();
+  if (pairs.length === 0) return;
   $('exportChatPdfButton').disabled = true;
   try {
     const res = await fetch('/api/chat/export-pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        turns: chatHistory.map(t => ({ question: t.question, answer: t.answer, sources: [] }))
+        turns: pairs.map(t => ({ question: t.question, answer: t.answer, sources: [] }))
       })
     });
     if (!res.ok) {
@@ -624,6 +1262,10 @@ $('exportChatPdfButton').addEventListener('click', async () => {
     $('exportChatPdfButton').disabled = false;
   }
 });
+
+// Bootstrap: restore the persisted chat sessions into the sidebar and #chatLog on load (item 7/8).
+renderChatSessionsSidebar();
+renderChatLogFromSession();
 
 $('searchButton').addEventListener('click', async () => {
   const query = $('searchInput').value.trim();
@@ -765,12 +1407,16 @@ async function loadDocuments() {
         extractTableButton.textContent = 'Extrair tabela';
         extractTableButton.addEventListener('click', () => openExtractTableModal(doc.sourcePath));
 
+        const reindexButton = document.createElement('button');
+        reindexButton.textContent = t('documents.reindex');
+        reindexButton.addEventListener('click', () => reindexDocument(doc.sourcePath, reindexButton));
+
         const removeButton = document.createElement('button');
         removeButton.className = 'danger';
         removeButton.textContent = 'Remover';
         removeButton.addEventListener('click', () => removeDocument(doc.sourcePath));
 
-        item.append(info, previewButton, extractTableButton, removeButton);
+        item.append(info, previewButton, extractTableButton, reindexButton, removeButton);
         listEl.appendChild(item);
       }
     }
@@ -935,18 +1581,54 @@ function renderQuestionsChart(questionsByDay) {
   renderBarChart($('questionsChart'), entries);
 }
 
+// --- Paginação do preview de documento (item 15) ---
+// GET /api/documents/preview aceita ?page=N&pageSize=M e retorna { fileName, content, page,
+// totalPages }; o modal mostra botões "Anterior"/"Próxima" e um indicador "Página X de Y" em
+// vez do antigo corte fixo em 20000 caracteres.
+const PREVIEW_PAGE_SIZE = 5000;
+let previewState = { path: null, page: 1, totalPages: 1 };
+
+async function loadPreviewPage(path, page) {
+  const res = await fetch(`/api/documents/preview?path=${encodeURIComponent(path)}&page=${page}&pageSize=${PREVIEW_PAGE_SIZE}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Falha ao carregar pré-visualização.');
+
+  previewState = { path, page: data.page, totalPages: data.totalPages };
+  $('previewTitle').textContent = data.fileName;
+  $('previewText').textContent = data.content;
+  $('previewPageIndicator').textContent = window.t
+    ? window.t('preview.pageIndicator', { page: data.page, totalPages: data.totalPages })
+    : `Página ${data.page} de ${data.totalPages}`;
+  $('previewPrevButton').disabled = data.page <= 1;
+  $('previewNextButton').disabled = data.page >= data.totalPages;
+}
+
 async function previewDocument(path) {
   try {
-    const res = await fetch(`/api/documents/preview?path=${encodeURIComponent(path)}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Falha ao carregar pré-visualização.');
-    $('previewTitle').textContent = data.fileName;
-    $('previewText').textContent = data.text + (data.truncated ? '\n\n[...conteúdo truncado...]' : '');
+    await loadPreviewPage(path, 1);
     $('previewModal').classList.add('active');
   } catch (err) {
     alert(`Erro ao visualizar documento: ${err.message}`);
   }
 }
+
+$('previewPrevButton').addEventListener('click', async () => {
+  if (previewState.page <= 1) return;
+  try {
+    await loadPreviewPage(previewState.path, previewState.page - 1);
+  } catch (err) {
+    alert(`Erro ao carregar página anterior: ${err.message}`);
+  }
+});
+
+$('previewNextButton').addEventListener('click', async () => {
+  if (previewState.page >= previewState.totalPages) return;
+  try {
+    await loadPreviewPage(previewState.path, previewState.page + 1);
+  } catch (err) {
+    alert(`Erro ao carregar próxima página: ${err.message}`);
+  }
+});
 
 $('closePreviewButton').addEventListener('click', () => $('previewModal').classList.remove('active'));
 $('previewModal').addEventListener('click', (e) => {
@@ -962,6 +1644,28 @@ async function removeDocument(path) {
     await loadStatus();
   } catch (err) {
     alert(`Erro ao remover documento: ${err.message}`);
+  }
+}
+
+async function reindexDocument(path, buttonEl) {
+  const originalText = buttonEl.textContent;
+  buttonEl.disabled = true;
+  buttonEl.textContent = t('documents.reindexing');
+  try {
+    const res = await fetch('/api/documents/reindex', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Falha ao reindexar documento.');
+    await loadDocuments();
+    await loadStatus();
+  } catch (err) {
+    alert(`Erro ao reindexar documento: ${err.message}`);
+  } finally {
+    buttonEl.disabled = false;
+    buttonEl.textContent = originalText;
   }
 }
 
@@ -1419,6 +2123,192 @@ $('shortcutsHelpModal').addEventListener('click', (e) => {
 
 renderShortcutsList();
 
-loadStatus();
-loadConfig();
-loadDocuments();
+// --- Login (multiusuário, opt-in) ---
+// Mostrado apenas quando o servidor responde 401 (há usuários cadastrados e ainda não estamos
+// autenticados nesta aba/navegador). Servidores em modo single-user (sem usuários cadastrados)
+// nunca exibem este overlay — o app funciona exatamente como antes.
+function showLoginOverlay() {
+  $('loginOverlay').classList.add('active');
+}
+
+function hideLoginOverlay() {
+  $('loginOverlay').classList.remove('active');
+}
+
+function updateLoggedInUserBadge() {
+  const username = localStorage.getItem('authUsername');
+  if (username) {
+    $('loggedInUser').textContent = `Usuário: ${username}`;
+    $('loggedInUser').classList.remove('hidden');
+    $('logoutButton').classList.remove('hidden');
+  } else {
+    $('loggedInUser').classList.add('hidden');
+    $('logoutButton').classList.add('hidden');
+  }
+}
+
+async function initApp() {
+  await loadStatus();
+  await loadConfig();
+  await loadDocuments();
+  await maybeShowFirstRunWizard();
+}
+
+// --- Wizard de primeira execução (item 17) ---
+// Quando DocumentsFolder, IndexPath e ModelPath estão todos vazios (servidor recém-instalado,
+// nenhuma configuração ainda), mostra um wizard de 3 passos em vez dos campos de configuração
+// vazios da aba Configurações: (1) pasta de documentos, (2) modelo de IA local, (3) salvar +
+// disparar a primeira indexação (reutilizando runIndexing/salvarConfig já existentes).
+let wizardStep = 1;
+
+async function maybeShowFirstRunWizard() {
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) return;
+    const config = await res.json();
+    const isFirstRun = !config.documentsFolder && !config.indexPath && !config.modelPath;
+    if (isFirstRun) {
+      wizardStep = 1;
+      updateWizardStep();
+      $('wizardModal').classList.add('active');
+    }
+  } catch {
+    // Se /api/config falhar aqui, o restante da UI já vai reportar o erro de outra forma
+    // (loadStatus/loadConfig) — não bloqueia a inicialização por causa do wizard.
+  }
+}
+
+function updateWizardStep() {
+  $('wizardStep1').classList.toggle('hidden', wizardStep !== 1);
+  $('wizardStep2').classList.toggle('hidden', wizardStep !== 2);
+  $('wizardStep3').classList.toggle('hidden', wizardStep !== 3);
+  $('wizardBackButton').classList.toggle('hidden', wizardStep === 1);
+  $('wizardNextButton').classList.toggle('hidden', wizardStep === 3);
+  $('wizardFinishButton').classList.toggle('hidden', wizardStep !== 3);
+  $('wizardSkipButton').classList.toggle('hidden', wizardStep === 3);
+}
+
+$('wizardNextButton').addEventListener('click', () => {
+  if (wizardStep < 3) {
+    wizardStep += 1;
+    updateWizardStep();
+  }
+});
+
+$('wizardBackButton').addEventListener('click', () => {
+  if (wizardStep > 1) {
+    wizardStep -= 1;
+    updateWizardStep();
+  }
+});
+
+$('wizardSkipButton').addEventListener('click', () => {
+  $('wizardModal').classList.remove('active');
+});
+
+$('wizardFinishButton').addEventListener('click', async () => {
+  const folderPath = $('wizardFolderInput').value.trim();
+  const modelPath = $('wizardModelPathInput').value.trim();
+  const statusEl = $('wizardStatus');
+
+  if (!folderPath) {
+    statusEl.textContent = window.t ? window.t('wizard.error') + ': ' + window.t('config.folderPath') : 'Informe a pasta de documentos.';
+    statusEl.className = 'status-line status-error';
+    wizardStep = 1;
+    updateWizardStep();
+    return;
+  }
+
+  $('wizardFinishButton').disabled = true;
+  statusEl.textContent = window.t ? window.t('wizard.saving') : 'Salvando configurações...';
+  statusEl.className = 'status-line';
+  try {
+    const current = await (await fetch('/api/config')).json();
+    const updated = { ...current, documentsFolder: folderPath, modelPath };
+    const saveRes = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated)
+    });
+    if (!saveRes.ok) throw new Error(await saveRes.text());
+
+    statusEl.textContent = window.t ? window.t('wizard.indexing') : 'Indexando... isso pode levar alguns minutos.';
+    await runIndexing(folderPath, {
+      statusEl,
+      buttonEl: null,
+      progressRowEl: $('wizardProgressRow'),
+      progressBarEl: $('wizardProgressBar'),
+      progressTextEl: $('wizardProgressText')
+    });
+    statusEl.textContent = window.t ? window.t('wizard.done') : 'Tudo pronto! Sua primeira indexação foi concluída.';
+    statusEl.className = 'status-line status-ok';
+    await loadConfig();
+    setTimeout(() => $('wizardModal').classList.remove('active'), 1500);
+  } catch (err) {
+    statusEl.textContent = `${window.t ? window.t('wizard.error') : 'Erro ao configurar'}: ${err.message}`;
+    statusEl.className = 'status-line status-error';
+  } finally {
+    $('wizardFinishButton').disabled = false;
+  }
+});
+
+$('loginButton').addEventListener('click', async () => {
+  const username = $('loginUsernameInput').value.trim();
+  const password = $('loginPasswordInput').value;
+  if (!username || !password) {
+    $('loginStatus').textContent = 'Informe usuário e senha.';
+    $('loginStatus').className = 'status-line status-error';
+    return;
+  }
+
+  $('loginStatus').textContent = 'Entrando...';
+  $('loginStatus').className = 'status-line';
+  try {
+    const res = await nativeFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Usuário ou senha inválidos.');
+
+    localStorage.setItem('authToken', data.token);
+    localStorage.setItem('authUsername', data.username);
+    $('loginPasswordInput').value = '';
+    $('loginStatus').textContent = '';
+    hideLoginOverlay();
+    updateLoggedInUserBadge();
+    await initApp();
+    await loadCollections();
+  } catch (err) {
+    $('loginStatus').textContent = `Erro ao entrar: ${err.message}`;
+    $('loginStatus').className = 'status-line status-error';
+  }
+});
+
+$('loginPasswordInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('loginButton').click();
+});
+
+$('logoutButton').addEventListener('click', () => {
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('authUsername');
+  location.reload();
+});
+
+updateLoggedInUserBadge();
+
+// Bootstrap: uma chamada leve decide se o overlay de login precisa aparecer antes de disparar
+// o carregamento normal do resto da interface (evita uma enxurrada de respostas 401 no console
+// quando há usuários cadastrados e ainda não há token salvo nesta aba).
+(async () => {
+  try {
+    const probe = await fetch('/api/status');
+    if (probe.status === 401) {
+      return; // showLoginOverlay() já foi chamado pelo wrapper de fetch acima.
+    }
+  } catch {
+    // Rede indisponível — segue para initApp(), que vai falhar de forma visível no status.
+  }
+  await initApp();
+})();
