@@ -110,6 +110,44 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool llmFallbackEnabled;
 
     [ObservableProperty]
+    private string googleDriveClientId = string.Empty;
+
+    [ObservableProperty]
+    private string oneDriveClientId = string.Empty;
+
+    [ObservableProperty]
+    private string dropboxClientId = string.Empty;
+
+    [ObservableProperty]
+    private string uiLanguage = "pt-BR";
+
+    /// <summary>Idiomas aceitos pelo seletor de idioma em Configurações (ver <see cref="AppOptions.UiLanguage"/>).</summary>
+    public string[] UiLanguageOptions { get; } = { "pt-BR", "en-US" };
+
+    partial void OnUiLanguageChanged(string value)
+    {
+        // Applies the new language dictionary immediately (live-swap of MergedDictionaries), as
+        // opposed to only persisting it and requiring a restart — see App.ApplyUiLanguage.
+        App.ApplyUiLanguage(value);
+    }
+
+    /// <summary>Progresso da indexação atual, parseado do formato "[N/M] mensagem" reportado via IProgress&lt;string&gt;.</summary>
+    [ObservableProperty]
+    private int indexingCurrent;
+
+    [ObservableProperty]
+    private int indexingTotal;
+
+    [ObservableProperty]
+    private bool isIndexingProgressVisible;
+
+    [ObservableProperty]
+    private string cloudRemoteFolderId = string.Empty;
+
+    [ObservableProperty]
+    private string cloudSyncStatus = string.Empty;
+
+    [ObservableProperty]
     private string questionText = string.Empty;
 
     [ObservableProperty]
@@ -236,6 +274,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         incrementalIndexingEnabled = _options.IncrementalIndexingEnabled;
         autoReindexEnabled = _options.AutoReindexEnabled;
         llmFallbackEnabled = _options.LlmFallbackEnabled;
+        googleDriveClientId = _options.GoogleDriveClientId;
+        oneDriveClientId = _options.OneDriveClientId;
+        dropboxClientId = _options.DropboxClientId;
+        uiLanguage = _options.UiLanguage;
 
         LoadCollections();
         RefreshStatus();
@@ -417,6 +459,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         IsBusy = true;
         StatusMessage = "Indexando...";
+        IndexingCurrent = 0;
+        IndexingTotal = 0;
+        IsIndexingProgressVisible = true;
 
         try
         {
@@ -436,11 +481,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             using (vectorStore)
             {
                 var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
-                var progress = new Progress<string>(message => StatusMessage = message);
+                var progress = new Progress<string>(UpdateIndexingProgress);
                 var stats = await indexer.IndexFolderAsync(DocumentsFolder, EffectiveIndexPath, _options.ChunkSize, _options.ChunkOverlap, progress,
                     maxFileSizeBytes: _options.MaxFileSizeBytes, excludedFolders: _options.ExcludedFolders,
                     piiRedactionEnabled: _options.PiiRedactionEnabled, parallelism: _options.IndexingParallelism,
-                    incrementalIndexingEnabled: _options.IncrementalIndexingEnabled);
+                    incrementalIndexingEnabled: _options.IncrementalIndexingEnabled,
+                    additionalFolders: _options.AdditionalWatchedFolders);
 
                 StatusMessage = $"Concluído: {stats.FilesProcessed} arquivos processados, " +
                                 $"{stats.FilesSkipped} ignorados, {stats.ChunksIndexed} trechos indexados." +
@@ -460,6 +506,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         finally
         {
             IsBusy = false;
+            IsIndexingProgressVisible = false;
         }
     }
 
@@ -627,7 +674,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             var result = await engine.AskAsync(question, TopK, history);
 
             var sources = result.Sources
-                .Select(s => new SourceReference { FileName = s.FileName, SourcePath = s.SourcePath, ChunkIndex = s.ChunkIndex })
+                .Select(s => new SourceReference { FileName = s.FileName, SourcePath = s.SourcePath, ChunkIndex = s.ChunkIndex, PageNumber = s.PageNumber })
                 .DistinctBy(s => s.SourcePath)
                 .ToList();
 
@@ -1149,7 +1196,123 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _options.IncrementalIndexingEnabled = IncrementalIndexingEnabled;
         _options.AutoReindexEnabled = AutoReindexEnabled;
         _options.LlmFallbackEnabled = LlmFallbackEnabled;
+        _options.GoogleDriveClientId = GoogleDriveClientId;
+        _options.OneDriveClientId = OneDriveClientId;
+        _options.DropboxClientId = DropboxClientId;
+        _options.UiLanguage = UiLanguage;
         _configService.Save(_options);
+    }
+
+    /// <summary>
+    /// Updates <see cref="StatusMessage"/> and, when the message matches the <c>"[N/M] mensagem"</c>
+    /// format reported by <see cref="DocumentIndexer.IndexFolderAsync"/>'s <c>IProgress&lt;string&gt;</c>,
+    /// also updates <see cref="IndexingCurrent"/>/<see cref="IndexingTotal"/> so the Perguntas tab's
+    /// <c>ProgressBar</c> reflects real indexing progress instead of just a status string.
+    /// </summary>
+    private void UpdateIndexingProgress(string message)
+    {
+        StatusMessage = message;
+
+        var match = System.Text.RegularExpressions.Regex.Match(message, @"^\[(\d+)/(\d+)\]");
+        if (match.Success
+            && int.TryParse(match.Groups[1].Value, out var current)
+            && int.TryParse(match.Groups[2].Value, out var total)
+            && total > 0)
+        {
+            IndexingCurrent = current;
+            IndexingTotal = total;
+            IsIndexingProgressVisible = true;
+        }
+    }
+
+    /// <summary>
+    /// Inicia o fluxo de autenticação OAuth2 (Authorization Code + PKCE) com o provedor de
+    /// nuvem informado ("google" ou "onedrive"), abrindo o navegador padrão do usuário e
+    /// aguardando o redirecionamento local. Requer que o respectivo Client ID já tenha sido
+    /// preenchido e salvo (<see cref="SaveConfig"/>).
+    /// </summary>
+    [RelayCommand]
+    private async Task ConnectCloudProviderAsync(string providerName)
+    {
+        try
+        {
+            IsBusy = true;
+            SaveCurrentOptions();
+            CloudSyncStatus = $"Abrindo navegador para autenticar com {providerName}...";
+
+            var provider = QuestResume.Core.CloudSync.CloudProviderFactory.Create(providerName, _options);
+            var authResult = await provider.AuthenticateAsync(url =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    CloudSyncStatus = $"Não foi possível abrir o navegador automaticamente ({ex.Message}). Acesse: {url}";
+                }
+            });
+
+            var tokenStore = new QuestResume.Core.CloudSync.CloudTokenStore(IndexPath);
+            tokenStore.Save(provider.Name, authResult);
+
+            CloudSyncStatus = $"Conectado a {provider.Name} com sucesso.";
+        }
+        catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+        {
+            CloudSyncStatus = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            CloudSyncStatus = $"Erro ao conectar: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Baixa os arquivos da pasta remota (<see cref="CloudRemoteFolderId"/>) do provedor
+    /// informado para <c>&lt;IndexPath&gt;/_cloud_&lt;provedor&gt;/</c>, reaproveitando o
+    /// pipeline normal de indexação em seguida.
+    /// </summary>
+    [RelayCommand]
+    private async Task SyncCloudProviderAsync(string providerName)
+    {
+        if (string.IsNullOrWhiteSpace(CloudRemoteFolderId))
+        {
+            CloudSyncStatus = "Informe o ID da pasta remota antes de sincronizar.";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            SaveCurrentOptions();
+            CloudSyncStatus = $"Sincronizando com {providerName}...";
+
+            var syncService = new QuestResume.Core.CloudSync.CloudSyncService();
+            var result = await syncService.SyncFolderAsync(providerName, CloudRemoteFolderId, IndexPath, _options);
+
+            CloudSyncStatus = $"{result.FilesDownloaded} arquivo(s) baixado(s) para '{result.LocalFolder}'." +
+                               (result.Errors.Count > 0 ? $" {result.Errors.Count} erro(s)." : string.Empty);
+
+            DocumentsFolder = result.LocalFolder;
+            await IndexAsync();
+        }
+        catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+        {
+            CloudSyncStatus = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            CloudSyncStatus = $"Erro ao sincronizar: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     private void RefreshStatus()
