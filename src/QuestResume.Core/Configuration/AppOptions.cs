@@ -156,6 +156,14 @@ public sealed class AppOptions
     public bool AutoReindexEnabled { get; set; } = false;
 
     /// <summary>
+    /// Pastas adicionais (além de <see cref="DocumentsFolder"/>) monitoradas por
+    /// <see cref="QuestResume.Core.Indexing.AutoReindexWatcher"/> quando
+    /// <see cref="AutoReindexEnabled"/> está ativo (item 11) — uma alteração em qualquer uma delas
+    /// dispara a MESMA reindexação consolidada (debounce compartilhado), não uma por pasta.
+    /// </summary>
+    public List<string> AdditionalWatchedFolders { get; set; } = new();
+
+    /// <summary>
     /// Número máximo de linhas mantidas em <c>audit.jsonl</c>; 0 = ilimitado.
     /// Quando o arquivo ultrapassa esse limite após um <c>Append</c>, as entradas mais antigas
     /// são descartadas para evitar crescimento ilimitado em deployments de longa duração.
@@ -238,6 +246,170 @@ public sealed class AppOptions
     /// </summary>
     public string? WebSearchEndpointUrl { get; set; }
 
+    // --- Integrações com nuvem (Google Drive / OneDrive) ---
+    // Veja src/QuestResume.Core/CloudSync/README.md para o passo a passo completo de como criar
+    // um app OAuth no Google Cloud Console / Azure AD Portal. Ambos os fluxos usam Authorization
+    // Code + PKCE ("aplicativo desktop/público"): NENHUM client secret é necessário nem
+    // armazenado aqui — apenas o Client ID público. Sem o Client ID preenchido, os comandos
+    // 'cloud auth <provedor>' falham com uma mensagem clara em PT-BR.
+
+    /// <summary>
+    /// Client ID do app OAuth2 "Aplicativo para computador" criado no Google Cloud Console,
+    /// usado por <see cref="QuestResume.Core.CloudSync.GoogleDriveProvider"/>. Veja
+    /// CloudSync/README.md para como criá-lo. Vazio desabilita 'cloud auth google'.
+    /// </summary>
+    public string GoogleDriveClientId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Application (client) ID do app registrado no Azure AD Portal, usado por
+    /// <see cref="QuestResume.Core.CloudSync.OneDriveProvider"/> (via MSAL). Veja
+    /// CloudSync/README.md para como criá-lo. Vazio desabilita 'cloud auth onedrive'.
+    /// </summary>
+    public string OneDriveClientId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// App key do app registrado no App Console do Dropbox (developers.dropbox.com/apps),
+    /// usado por <see cref="QuestResume.Core.CloudSync.DropboxProvider"/>. Veja
+    /// CloudSync/README.md para como criá-lo. Vazio desabilita 'cloud auth dropbox'.
+    /// </summary>
+    public string DropboxClientId { get; set; } = string.Empty;
+
+    // --- Idioma da interface (Desktop) ---
+
+    /// <summary>
+    /// Idioma da interface do app Desktop ("pt-BR" ou "en-US"). O <c>ResourceDictionary</c>
+    /// correspondente (<c>Resources/Strings.pt-BR.xaml</c> / <c>Strings.en-US.xaml</c>) é
+    /// mesclado em <c>Application.Current.Resources.MergedDictionaries</c> na inicialização e
+    /// trocado em tempo real quando o usuário altera esta opção em Configurações.
+    /// </summary>
+    public string UiLanguage { get; set; } = "pt-BR";
+
+    // --- Busca e qualidade do RAG (Lote 2) ---
+
+    /// <summary>
+    /// Quando habilitado, um chunk é uma única sentença e a recuperação devolve a sentença
+    /// encontrada mais <see cref="SentenceWindowSize"/> sentenças antes/depois como contexto
+    /// (ver <see cref="QuestResume.Core.Indexing.TextChunker.ChunkBySentences"/> e
+    /// <see cref="QuestResume.Core.Indexing.SearchService.ExpandSentenceWindow"/>).
+    /// Ignorado para arquivos de código-fonte e, se <see cref="HeadingAwareChunkingEnabled"/>
+    /// também estiver ativo, para arquivos .md/.html/.htm (a hierarquia de títulos tem
+    /// precedência sobre o chunking por sentença).
+    /// </summary>
+    public bool SentenceWindowChunkingEnabled { get; set; } = false;
+
+    /// <summary>Número de sentenças de contexto antes/depois retornadas por <see cref="SentenceWindowChunkingEnabled"/>.</summary>
+    public int SentenceWindowSize { get; set; } = 2;
+
+    /// <summary>
+    /// Quando habilitado, arquivos .md/.html/.htm são fragmentados respeitando a hierarquia de
+    /// títulos (cada chunk fica dentro de uma seção), em vez do chunking genérico por tamanho.
+    /// Tem precedência sobre <see cref="SentenceWindowChunkingEnabled"/> para esses arquivos.
+    /// Ver <see cref="QuestResume.Core.Indexing.TextChunker.ChunkByHeadings"/>.
+    /// </summary>
+    public bool HeadingAwareChunkingEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Estratégia de combinação dos resultados de BM25 e busca vetorial em
+    /// <see cref="QuestResume.Core.Indexing.HybridSearchService"/>: <c>"Linear"</c> (padrão,
+    /// combinação linear ponderada por <see cref="HybridBm25Weight"/>, comportamento existente)
+    /// ou <c>"Rrf"</c> (Reciprocal Rank Fusion, ver <see cref="RrfK"/>).
+    /// </summary>
+    public string RankFusionStrategy { get; set; } = "Linear";
+
+    /// <summary>Constante <c>k</c> do Reciprocal Rank Fusion (padrão da literatura: 60). Só usado quando <see cref="RankFusionStrategy"/> = "Rrf".</summary>
+    public int RrfK { get; set; } = 60;
+
+    /// <summary>
+    /// Quando habilitado (e um LLM estiver configurado), antes de buscar são gerados 2-3
+    /// termos/sinônimos relacionados à pergunta via LLM e incluídos como termos OU adicionais na
+    /// consulta Lucene (sem substituir os termos originais). Best-effort: falha do LLM cai para
+    /// busca normal. Ver <see cref="QuestResume.Core.Rag.QueryEnhancementService.ExpandQueryAsync"/>.
+    /// </summary>
+    public bool QueryExpansionEnabled { get; set; } = false;
+
+    /// <summary>
+    /// HyDE (Hypothetical Document Embeddings): quando habilitado e embeddings estiverem
+    /// configurados, gera uma resposta hipotética curta via LLM para a pergunta e usa o
+    /// embedding dessa resposta (em vez do embedding da pergunta crua) na busca vetorial.
+    /// Best-effort — falha do LLM cai para o embedding da pergunta original.
+    /// </summary>
+    public bool HydeEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Multi-query retrieval: quando habilitado, gera <see cref="MultiQueryVariations"/> variações
+    /// da pergunta original via LLM, roda a busca híbrida para cada uma e une os resultados (por
+    /// SourcePath+ChunkIndex, via RRF) antes do rerank/corte final por topK. Best-effort — falha
+    /// do LLM cai para busca de query única.
+    /// </summary>
+    public bool MultiQueryEnabled { get; set; } = false;
+
+    /// <summary>Número de variações da pergunta geradas quando <see cref="MultiQueryEnabled"/> está ativo.</summary>
+    public int MultiQueryVariations { get; set; } = 3;
+
+    /// <summary>
+    /// Contextual retrieval: quando habilitado (indexação) e um LLM estiver configurado, gera um
+    /// resumo curto (1-2 frases) do documento inteiro na primeira passada e prefixa esse contexto
+    /// ao texto de cada chunk antes de gerar o embedding (o texto armazenado/mostrado ao usuário
+    /// permanece o chunk original — só o texto usado para embedding leva o prefixo). Best-effort.
+    /// </summary>
+    public bool ContextualRetrievalEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Parent-child chunking: quando habilitado, a busca é feita sobre chunks pequenos ("child",
+    /// <see cref="ChildChunkSize"/>) mas o texto retornado/usado no prompt do LLM é o chunk "pai"
+    /// maior (<see cref="ParentChunkSize"/>) que o contém. Precedência: depois de chunking por
+    /// hierarquia de títulos e chunking semântico, antes de sentence-window (ver
+    /// <see cref="QuestResume.Core.Indexing.DocumentIndexer.IndexFolderAsync"/>).
+    /// </summary>
+    public bool ParentChildChunkingEnabled { get; set; } = false;
+
+    /// <summary>Tamanho (em caracteres) do chunk "pai" retornado ao LLM em <see cref="ParentChildChunkingEnabled"/>.</summary>
+    public int ParentChunkSize { get; set; } = 1500;
+
+    /// <summary>Tamanho (em caracteres) do chunk "filho" usado para busca/embedding em <see cref="ParentChildChunkingEnabled"/>.</summary>
+    public int ChildChunkSize { get; set; } = 200;
+
+    /// <summary>
+    /// Chunking semântico: quando habilitado e embeddings estiverem configurados, divide o texto
+    /// em sentenças, calcula o embedding de cada uma, e quebra um novo chunk sempre que a
+    /// similaridade de cosseno entre sentenças consecutivas cair abaixo de
+    /// <see cref="SemanticChunkingThreshold"/>. Tem precedência sobre parent-child e
+    /// sentence-window; requer embeddings habilitados (cai para o chunking padrão caso contrário).
+    /// </summary>
+    public bool SemanticChunkingEnabled { get; set; } = false;
+
+    /// <summary>Limiar mínimo de similaridade de cosseno entre sentenças consecutivas para permanecerem no mesmo chunk.</summary>
+    public double SemanticChunkingThreshold { get; set; } = 0.5;
+
+    /// <summary>
+    /// Quando habilitado (e embeddings estiverem configurados), além da deduplicação por hash
+    /// exato já existente, compara o embedding médio de um novo documento com os já indexados;
+    /// acima de <see cref="SemanticDuplicateThreshold"/> marca como "quase-duplicata" em
+    /// <see cref="Models.IndexReport.NearDuplicates"/> (não remove automaticamente, só sinaliza).
+    /// </summary>
+    public bool SemanticDeduplicationEnabled { get; set; } = false;
+
+    /// <summary>Limiar de similaridade de cosseno acima do qual dois documentos são marcados como quase-duplicatas.</summary>
+    public double SemanticDuplicateThreshold { get; set; } = 0.97;
+
+    // --- Verificação de fidelidade / anti-alucinação e guardrails ---
+
+    /// <summary>
+    /// Quando habilitado, após <see cref="QuestResume.Core.Rag.RagQueryEngine.AskAsync"/> gerar
+    /// uma resposta, uma segunda chamada curta ao LLM avalia (melhor esforço, nunca lança) se a
+    /// resposta é sustentada pelos trechos recuperados, exposta em
+    /// <see cref="Models.AskResult.IsFaithful"/>. Custa uma chamada extra ao LLM por pergunta.
+    /// </summary>
+    public bool FaithfulnessCheckEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Limiar mínimo (0-1) de relevância média dos trechos recuperados abaixo do qual
+    /// <see cref="QuestResume.Core.Rag.RagQueryEngine.AskAsync"/> devolve uma resposta padrão de
+    /// "não sei" em vez de chamar o LLM, economizando a chamada. <c>0</c> (padrão) desliga o
+    /// guardrail.
+    /// </summary>
+    public double MinRelevanceThreshold { get; set; } = 0;
+
     /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
     /// menor que <see cref="ChunkSize"/>), evitando que uma configuração inválida só seja
@@ -311,6 +483,58 @@ public sealed class AppOptions
         if (MaxBatchQuestions < 1)
         {
             throw new AppOptionsValidationException("MaxBatchQuestions deve ser maior ou igual a 1.");
+        }
+
+        if (UiLanguage != "pt-BR" && UiLanguage != "en-US")
+        {
+            throw new AppOptionsValidationException(
+                $"UiLanguage '{UiLanguage}' é inválido. Valores aceitos: pt-BR, en-US.");
+        }
+
+        if (RankFusionStrategy != "Linear" && RankFusionStrategy != "Rrf")
+        {
+            throw new AppOptionsValidationException(
+                $"RankFusionStrategy '{RankFusionStrategy}' é inválido. Valores aceitos: Linear, Rrf.");
+        }
+
+        if (RrfK <= 0)
+        {
+            throw new AppOptionsValidationException("RrfK deve ser maior que zero.");
+        }
+
+        if (SentenceWindowSize < 0)
+        {
+            throw new AppOptionsValidationException("SentenceWindowSize não pode ser negativo.");
+        }
+
+        if (MultiQueryVariations < 1)
+        {
+            throw new AppOptionsValidationException("MultiQueryVariations deve ser maior ou igual a 1.");
+        }
+
+        if (ParentChunkSize <= 0)
+        {
+            throw new AppOptionsValidationException("ParentChunkSize deve ser maior que zero.");
+        }
+
+        if (ChildChunkSize <= 0 || ChildChunkSize >= ParentChunkSize)
+        {
+            throw new AppOptionsValidationException("ChildChunkSize deve estar entre 1 e ParentChunkSize - 1.");
+        }
+
+        if (SemanticChunkingThreshold < -1 || SemanticChunkingThreshold > 1)
+        {
+            throw new AppOptionsValidationException("SemanticChunkingThreshold deve estar entre -1 e 1.");
+        }
+
+        if (SemanticDuplicateThreshold < -1 || SemanticDuplicateThreshold > 1)
+        {
+            throw new AppOptionsValidationException("SemanticDuplicateThreshold deve estar entre -1 e 1.");
+        }
+
+        if (MinRelevanceThreshold < 0 || MinRelevanceThreshold > 1)
+        {
+            throw new AppOptionsValidationException("MinRelevanceThreshold deve estar entre 0 e 1.");
         }
     }
 
