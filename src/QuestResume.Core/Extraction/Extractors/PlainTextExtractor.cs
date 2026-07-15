@@ -1,3 +1,4 @@
+using QuestResume.Core.Extraction;
 using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
@@ -21,9 +22,10 @@ public sealed class PlainTextExtractor : IFileExtractor
     {
         var info = new FileInfo(path);
 
-        using var stream = File.OpenRead(path);
-        using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
-        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        // Encoding detection (item 9, ver EncodingDetector): checa BOM primeiro; sem BOM, tenta
+        // UTF-8 estrito e cai para Windows-1252/Latin-1 quando os bytes não são UTF-8 válido —
+        // evita corromper arquivos legados/exportados em CP1252 (comuns no Windows).
+        var text = await EncodingDetector.ReadAllTextDetectedAsync(path, cancellationToken).ConfigureAwait(false);
 
         return new ExtractedDocument
         {
