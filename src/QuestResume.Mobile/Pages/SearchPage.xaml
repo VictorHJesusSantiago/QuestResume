@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="QuestResume.Mobile.Pages.SearchPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:QuestResume.Mobile.Models"
+    Title="Busca">
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="16" RowSpacing="10">
+
+        <SearchBar x:Name="QuerySearchBar" Grid.Row="0" Placeholder="Buscar nos documentos..." SearchButtonPressed="OnSearchPressed" />
+
+        <ActivityIndicator x:Name="LoadingIndicator" Grid.Row="1" IsVisible="False" IsRunning="False" />
+
+        <CollectionView x:Name="ResultsView" Grid.Row="2">
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:SearchResultItem">
+                    <VerticalStackLayout Padding="8" Spacing="4">
+                        <Label Text="{Binding FileName}" FontAttributes="Bold" />
+                        <Label Text="{Binding SourcePath}" FontSize="11" TextColor="Gray" LineBreakMode="TailTruncation" />
+                        <Label Text="{Binding ChunkText}" FontSize="13" MaxLines="4" LineBreakMode="TailTruncation" />
+                        <BoxView HeightRequest="1" Color="LightGray" Margin="0,6,0,0" />
+                    </VerticalStackLayout>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+    </Grid>
+
+</ContentPage>
