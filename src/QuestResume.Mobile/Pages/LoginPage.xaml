@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="QuestResume.Mobile.Pages.LoginPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    Title="Entrar">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="14">
+
+            <Label Text="QuestResume" FontSize="28" FontAttributes="Bold" HorizontalOptions="Center" />
+            <Label Text="Conecte-se ao servidor QuestResume" FontSize="14" HorizontalOptions="Center" TextColor="Gray" />
+
+            <Label Text="URL do servidor" FontAttributes="Bold" Margin="0,16,0,0" />
+            <Entry x:Name="ServerUrlEntry" Placeholder="https://meu-servidor:5000" Keyboard="Url" />
+
+            <Label Text="Usuário" FontAttributes="Bold" />
+            <Entry x:Name="UsernameEntry" Placeholder="usuário" />
+
+            <Label Text="Senha" FontAttributes="Bold" />
+            <Entry x:Name="PasswordEntry" Placeholder="senha" IsPassword="True" />
+
+            <Button x:Name="LoginButton" Text="Entrar" Clicked="OnLoginClicked" Margin="0,16,0,0" />
+
+            <ActivityIndicator x:Name="LoadingIndicator" IsVisible="False" IsRunning="False" />
+
+            <Label x:Name="ErrorLabel" TextColor="Red" IsVisible="False" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
