@@ -33,6 +33,12 @@ public sealed class RagQueryEngine : IDisposable
     private readonly int _llmTimeoutSeconds;
     private readonly int _maxAuditLogLines;
     private readonly WebhookNotifier? _webhookNotifier;
+    private readonly bool _faithfulnessCheckEnabled;
+    private readonly double _minRelevanceThreshold;
+
+    /// <summary>Resposta padrão em PT-BR devolvida pelo guardrail de "não sei" (<see cref="_minRelevanceThreshold"/>).</summary>
+    public const string InsufficientContextAnswer =
+        "Não encontrei informação suficiente nos documentos indexados para responder com confiança a essa pergunta.";
 
     /// <summary>
     /// Caches answers for repeated questions (same question + topK, no conversation history),
@@ -77,11 +83,27 @@ public sealed class RagQueryEngine : IDisposable
         int llmTimeoutSeconds = 120,
         int maxAuditLogLines = 0,
         ILlmProvider? llmProviderOverride = null,
-        WebhookNotifier? webhookNotifier = null)
+        WebhookNotifier? webhookNotifier = null,
+        string rankFusionStrategy = "Linear",
+        int rrfK = 60,
+        bool queryExpansionEnabled = false,
+        bool hydeEnabled = false,
+        bool multiQueryEnabled = false,
+        int multiQueryVariations = 3,
+        bool faithfulnessCheckEnabled = false,
+        double minRelevanceThreshold = 0)
     {
         _webhookNotifier = webhookNotifier;
+        _faithfulnessCheckEnabled = faithfulnessCheckEnabled;
+        _minRelevanceThreshold = minRelevanceThreshold;
         _llmProviderOverride = llmProviderOverride;
-        _searchService = new HybridSearchService(searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService);
+        _searchService = new HybridSearchService(
+            searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService, rankFusionStrategy, rrfK,
+            llmFactory: GetOrCreateLlmAsync,
+            queryExpansionEnabled: queryExpansionEnabled,
+            hydeEnabled: hydeEnabled,
+            multiQueryEnabled: multiQueryEnabled,
+            multiQueryVariations: multiQueryVariations);
         _modelPath = modelPath;
         _contextSize = contextSize;
         _defaultTopK = defaultTopK;
@@ -127,6 +149,28 @@ public sealed class RagQueryEngine : IDisposable
 
         var sources = await _searchService.SearchAsync(question, topK ?? _defaultTopK, cancellationToken).ConfigureAwait(false);
 
+        // Guardrail de "não sei" (AppOptions.MinRelevanceThreshold): checado ANTES de chamar o
+        // LLM para economizar a chamada quando os trechos recuperados claramente não são
+        // relevantes o suficiente para sustentar uma resposta.
+        if (_minRelevanceThreshold > 0 && RelevanceScoring.AverageNormalizedScore(sources) < _minRelevanceThreshold)
+        {
+            stopwatch.Stop();
+
+            var guardrailResult = new AskResult
+            {
+                Answer = InsufficientContextAnswer,
+                Sources = sources,
+                ConfidenceScore = RelevanceScoring.ComputeConfidenceScore(sources, isFaithful: null)
+            };
+
+            if (cacheKey is not null)
+            {
+                _answerCache[cacheKey] = guardrailResult;
+            }
+
+            return guardrailResult;
+        }
+
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
 
         var prompt = PromptBuilder.BuildPrompt(question, sources, history);
@@ -143,7 +187,18 @@ public sealed class RagQueryEngine : IDisposable
 
         var relatedQuestions = await TryGenerateRelatedQuestionsAsync(llm, question, answer, cancellationToken).ConfigureAwait(false);
 
-        var result = new AskResult { Answer = answer, Sources = sources, RelatedQuestions = relatedQuestions };
+        bool? isFaithful = _faithfulnessCheckEnabled
+            ? await TryCheckFaithfulnessAsync(llm, sources, answer, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        var result = new AskResult
+        {
+            Answer = answer,
+            Sources = sources,
+            RelatedQuestions = relatedQuestions,
+            IsFaithful = isFaithful,
+            ConfidenceScore = RelevanceScoring.ComputeConfidenceScore(sources, isFaithful)
+        };
 
         if (cacheKey is not null)
         {
@@ -232,6 +287,23 @@ public sealed class RagQueryEngine : IDisposable
 
         var sources = await _searchService.SearchAsync(question, topK ?? _defaultTopK, cancellationToken).ConfigureAwait(false);
 
+        if (_minRelevanceThreshold > 0 && RelevanceScoring.AverageNormalizedScore(sources) < _minRelevanceThreshold)
+        {
+            var guardrailResult = new AskResult
+            {
+                Answer = InsufficientContextAnswer,
+                Sources = sources,
+                ConfidenceScore = RelevanceScoring.ComputeConfidenceScore(sources, isFaithful: null)
+            };
+
+            if (cacheKey is not null)
+            {
+                _answerCache[cacheKey] = guardrailResult;
+            }
+
+            return new StreamingAskResult { Sources = sources, Tokens = SingleTokenStream(InsufficientContextAnswer) };
+        }
+
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
 
         var prompt = PromptBuilder.BuildPrompt(question, sources, history);
@@ -283,7 +355,18 @@ public sealed class RagQueryEngine : IDisposable
         stopwatch.Stop();
 
         var answer = builder.ToString().Trim();
-        var result = new AskResult { Answer = answer, Sources = sources };
+
+        bool? isFaithful = _faithfulnessCheckEnabled
+            ? await TryCheckFaithfulnessAsync(llm, sources, answer, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        var result = new AskResult
+        {
+            Answer = answer,
+            Sources = sources,
+            IsFaithful = isFaithful,
+            ConfidenceScore = RelevanceScoring.ComputeConfidenceScore(sources, isFaithful)
+        };
 
         if (cacheKey is not null)
         {
@@ -309,6 +392,83 @@ public sealed class RagQueryEngine : IDisposable
             sources = sources.Select(s => s.FileName).Distinct().ToList(),
             elapsedMs = stopwatch.Elapsed.TotalMilliseconds
         });
+    }
+
+    /// <summary>
+    /// Pede ao LLM uma segunda avaliação curta ("responda apenas SIM ou NÃO") sobre se
+    /// <paramref name="answer"/> é sustentada pelos trechos recuperados, para
+    /// <see cref="Configuration.AppOptions.FaithfulnessCheckEnabled"/>. Parse defensivo: procura
+    /// os tokens "sim"/"não" (ou "nao") na resposta, priorizando o que aparece primeiro. Nunca
+    /// lança — qualquer falha (LLM indisponível, timeout, resposta ambígua) resulta em
+    /// <c>null</c>, sem comprometer a resposta principal já obtida.
+    /// </summary>
+    private async Task<bool?> TryCheckFaithfulnessAsync(
+        ILlmProvider llm, IReadOnlyList<SearchResultItem> sources, string answer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (sources.Count == 0)
+            {
+                return false;
+            }
+
+            var context = string.Join("\n\n", sources.Select(s => s.ChunkText));
+            var prompt =
+                "Você é um verificador de fatos. Abaixo estão trechos de documentos e uma resposta gerada a partir deles. " +
+                "Responda apenas com uma única palavra: SIM se a resposta é sustentada pelos trechos, ou NÃO caso contrário.\n\n" +
+                $"Trechos:\n{context}\n\n" +
+                $"Resposta:\n{answer}\n\n" +
+                "A resposta é sustentada pelos trechos? (SIM ou NÃO):";
+
+            using var cts = _llmTimeoutSeconds > 0
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+            if (cts is not null) cts.CancelAfter(TimeSpan.FromSeconds(_llmTimeoutSeconds));
+
+            var response = await llm.CompleteAsync(prompt, cts?.Token ?? cancellationToken).ConfigureAwait(false);
+
+            return ParseFaithfulnessResponse(response);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Defensive SIM/NÃO parser for <see cref="TryCheckFaithfulnessAsync"/>: takes whichever of
+    /// the two tokens appears first in the (possibly verbose, despite the prompt) LLM response.
+    /// Returns <c>null</c> when neither token is found.
+    /// </summary>
+    internal static bool? ParseFaithfulnessResponse(string response)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return null;
+        }
+
+        var normalized = response.ToLowerInvariant();
+        var yesIndex = normalized.IndexOf("sim", StringComparison.Ordinal);
+        var noIndexA = normalized.IndexOf("não", StringComparison.Ordinal);
+        var noIndexB = normalized.IndexOf("nao", StringComparison.Ordinal);
+        var noIndex = noIndexA >= 0 && noIndexB >= 0 ? Math.Min(noIndexA, noIndexB) : Math.Max(noIndexA, noIndexB);
+
+        if (yesIndex < 0 && noIndex < 0)
+        {
+            return null;
+        }
+
+        if (noIndex < 0)
+        {
+            return true;
+        }
+
+        if (yesIndex < 0)
+        {
+            return false;
+        }
+
+        return yesIndex < noIndex;
     }
 
     private static string BuildCacheKey(string question, int topK) =>

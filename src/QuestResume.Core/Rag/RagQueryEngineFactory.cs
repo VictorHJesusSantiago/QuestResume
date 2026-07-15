@@ -32,7 +32,9 @@ public sealed record RagEngineKey(
     int LlmTimeoutSeconds,
     int MaxVectorCacheSize,
     int MaxAuditLogLines,
-    bool LlmFallbackEnabled)
+    bool LlmFallbackEnabled,
+    bool FaithfulnessCheckEnabled,
+    double MinRelevanceThreshold)
 {
     public static RagEngineKey From(AppOptions options, int? topK = null) => new(
         options.ModelPath,
@@ -53,7 +55,9 @@ public sealed record RagEngineKey(
         options.LlmTimeoutSeconds,
         options.MaxVectorCacheSize,
         options.MaxAuditLogLines,
-        options.LlmFallbackEnabled);
+        options.LlmFallbackEnabled,
+        options.FaithfulnessCheckEnabled,
+        options.MinRelevanceThreshold);
 }
 
 /// <summary>
@@ -126,7 +130,15 @@ public static class RagQueryEngineFactory
             llmTimeoutSeconds: options.LlmTimeoutSeconds,
             maxAuditLogLines: options.MaxAuditLogLines,
             llmProviderOverride: llmProviderOverride,
-            webhookNotifier: webhookNotifier);
+            webhookNotifier: webhookNotifier,
+            rankFusionStrategy: options.RankFusionStrategy,
+            rrfK: options.RrfK,
+            queryExpansionEnabled: options.QueryExpansionEnabled,
+            hydeEnabled: options.HydeEnabled,
+            multiQueryEnabled: options.MultiQueryEnabled,
+            multiQueryVariations: options.MultiQueryVariations,
+            faithfulnessCheckEnabled: options.FaithfulnessCheckEnabled,
+            minRelevanceThreshold: options.MinRelevanceThreshold);
     }
 
     private static bool IsLlamaSharpConfigured(string modelPath) =>
