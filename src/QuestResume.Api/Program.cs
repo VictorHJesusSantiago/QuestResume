@@ -64,6 +64,8 @@ builder.Services.AddHttpClient();
 // requiring an external collector. Swap AddConsoleExporter for AddOtlpExporter when a
 // Jaeger/Tempo/OTLP endpoint is available.
 builder.Services.AddSingleton<QuestResume.Api.Services.QuestResumeMetrics>();
+// Guarda o último texto de progresso de indexação para o endpoint de polling GET /api/index/progress.
+builder.Services.AddSingleton<QuestResume.Api.Services.IndexingProgressStore>();
 
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(r => r.AddService("QuestResume.Api"))
@@ -512,12 +514,106 @@ app.MapDelete("/api/webhooks", (HttpContext context, string url, ConfigService c
     return removed ? Results.Ok(new { removed = true }) : Results.NotFound(new { error = "Webhook não encontrado." });
 });
 
+app.MapGet("/api/cloud/{provider}/auth-url", (HttpContext context, string provider, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    try
+    {
+        var cloudProvider = QuestResume.Core.CloudSync.CloudProviderFactory.Create(provider, options);
+        var redirectUri = $"{context.Request.Scheme}://{context.Request.Host}/api/cloud/{cloudProvider.Name}/callback";
+        var (authorizationUrl, codeVerifier) = cloudProvider.BuildAuthorizationUrl(redirectUri);
+
+        // O redirecionamento que o provedor faz de volta para /callback só inclui os parâmetros
+        // OAuth2 padrão (code + o state que anexamos abaixo) — não há como o navegador reenviar
+        // codeVerifier/redirectUri sozinho. Por isso guardamos os dois no servidor, associados a
+        // um "state" opaco de uso único, e recuperamos no /callback a partir dele.
+        var state = QuestResume.Core.CloudSync.CloudOAuthStateStore.Save(cloudProvider.Name, codeVerifier, redirectUri);
+        var separator = authorizationUrl.Contains('?') ? '&' : '?';
+        authorizationUrl = $"{authorizationUrl}{separator}state={Uri.EscapeDataString(state)}";
+
+        return Results.Ok(new { authorizationUrl, redirectUri });
+    }
+    catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/cloud/{provider}/callback", async (
+    HttpContext context,
+    string provider,
+    string code,
+    string state,
+    ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    try
+    {
+        var cloudProvider = QuestResume.Core.CloudSync.CloudProviderFactory.Create(provider, options);
+
+        if (!QuestResume.Core.CloudSync.CloudOAuthStateStore.TryConsume(state, cloudProvider.Name, out var codeVerifier, out var redirectUri))
+        {
+            return Results.BadRequest(new
+            {
+                error = "Estado OAuth inválido, expirado ou já utilizado. Inicie o fluxo novamente em 'Conectar " +
+                         $"{cloudProvider.Name}'."
+            });
+        }
+
+        var authResult = await cloudProvider.ExchangeCodeAsync(code, codeVerifier, redirectUri, context.RequestAborted);
+
+        var tokenStore = new QuestResume.Core.CloudSync.CloudTokenStore(options.IndexPath);
+        tokenStore.Save(cloudProvider.Name, authResult);
+
+        return Results.Ok(new { connected = true, provider = cloudProvider.Name });
+    }
+    catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/cloud/{provider}/sync", async (
+    HttpContext context,
+    string provider,
+    CloudSyncRequest request,
+    ConfigService configService,
+    CancellationToken cancellationToken) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+
+    if (string.IsNullOrWhiteSpace(request.RemoteFolderId))
+    {
+        return Results.BadRequest(new { error = "Informe o ID da pasta remota (remoteFolderId)." });
+    }
+
+    try
+    {
+        var syncService = new QuestResume.Core.CloudSync.CloudSyncService();
+        var result = await syncService.SyncFolderAsync(provider, request.RemoteFolderId, options.IndexPath, options, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (QuestResume.Core.CloudSync.CloudProviderNotConfiguredException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/index", async (
     HttpContext context,
     IndexRequest? request,
     ConfigService configService,
     RagEngineProvider engineProvider,
     QuestResume.Api.Services.QuestResumeMetrics metrics,
+    QuestResume.Api.Services.IndexingProgressStore progressStore,
     ILogger<Program> logger,
     CancellationToken cancellationToken) =>
 {
@@ -589,12 +685,33 @@ app.MapPost("/api/index", async (
             options.IndexPath, log: msg => logger.LogWarning("{WebhookMessage}", msg));
 
         logger.LogInformation("Iniciando indexação de '{Folder}' em '{IndexPath}'", folder, options.IndexPath);
-        var stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap,
-            cancellationToken: cancellationToken, maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders,
-            piiRedactionEnabled: options.PiiRedactionEnabled, parallelism: options.IndexingParallelism,
-            incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
-            autoSummarizationEnabled: options.AutoSummarizationEnabled, llmProvider: summarizationLlm,
-            webhookNotifier: webhookNotifier);
+        progressStore.Start();
+        var progress = new Progress<string>(progressStore.Report);
+        IndexStats stats;
+        try
+        {
+            stats = await indexer.IndexFolderAsync(folder, options.IndexPath, options.ChunkSize, options.ChunkOverlap,
+                cancellationToken: cancellationToken, maxFileSizeBytes: options.MaxFileSizeBytes, excludedFolders: options.ExcludedFolders,
+                piiRedactionEnabled: options.PiiRedactionEnabled, parallelism: options.IndexingParallelism,
+                incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
+                autoSummarizationEnabled: options.AutoSummarizationEnabled, llmProvider: summarizationLlm,
+                webhookNotifier: webhookNotifier, progress: progress,
+                headingAwareChunkingEnabled: options.HeadingAwareChunkingEnabled,
+                sentenceWindowChunkingEnabled: options.SentenceWindowChunkingEnabled,
+                parentChildChunkingEnabled: options.ParentChildChunkingEnabled,
+                parentChunkSize: options.ParentChunkSize,
+                childChunkSize: options.ChildChunkSize,
+                semanticChunkingEnabled: options.SemanticChunkingEnabled,
+                semanticChunkingThreshold: options.SemanticChunkingThreshold,
+                contextualRetrievalEnabled: options.ContextualRetrievalEnabled,
+                semanticDeduplicationEnabled: options.SemanticDeduplicationEnabled,
+                semanticDuplicateThreshold: options.SemanticDuplicateThreshold,
+                additionalFolders: options.AdditionalWatchedFolders);
+        }
+        finally
+        {
+            progressStore.Finish();
+        }
         logger.LogInformation(
             "Indexação concluída: {FilesProcessed} arquivo(s), {ChunksIndexed} trecho(s), {Errors} erro(s)",
             stats.FilesProcessed, stats.ChunksIndexed, stats.Errors.Count);
@@ -624,6 +741,12 @@ app.MapPost("/api/index", async (
     }
 }).RequireRateLimiting("indexing");
 
+app.MapGet("/api/index/progress", (QuestResume.Api.Services.IndexingProgressStore progressStore) =>
+{
+    var snapshot = progressStore.GetSnapshot();
+    return Results.Ok(new IndexingProgressResponse(snapshot.Running, snapshot.Message, snapshot.Current, snapshot.Total));
+});
+
 app.MapPost("/api/search", (HttpContext context, SearchRequest request, ConfigService configService, LuceneIndexManager indexManager, ILogger<Program> logger) =>
 {
     if (string.IsNullOrWhiteSpace(request.Query))
@@ -639,10 +762,117 @@ app.MapPost("/api/search", (HttpContext context, SearchRequest request, ConfigSe
         return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
     }
 
-    var filters = new SearchFilters(request.Extension, request.FolderPath, request.Tag);
-    var results = search.Search(request.Query, request.TopK ?? options.TopK, filters);
-    logger.LogDebug("POST /api/search query={Query} topK={TopK} results={Count}", request.Query, request.TopK ?? options.TopK, results.Count);
-    return Results.Ok(results);
+    var filters = new SearchFilters(
+        request.Extension, request.FolderPath, request.Tag, request.Fuzzy,
+        request.DateFrom, request.DateTo, request.MinSizeBytes, request.MaxSizeBytes,
+        request.SortBy, request.SortDescending, request.Page, request.PageSize);
+
+    try
+    {
+        var results = search.Search(request.Query, request.TopK ?? options.TopK, filters);
+        logger.LogDebug("POST /api/search query={Query} topK={TopK} results={Count}", request.Query, request.TopK ?? options.TopK, results.Count);
+        return Results.Ok(results);
+    }
+    catch (SearchQuerySyntaxException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+// Corretor ortográfico (item 11): consultado à parte de /api/search (não embutido na resposta)
+// para não alterar o contrato existente (array simples de SearchResultItem) já usado pela Web UI
+// e por testes de integração — o chamador decide quando pedir sugestões (ex.: resultado vazio).
+app.MapGet("/api/search/didyoumean", (HttpContext context, string q, ConfigService configService, LuceneIndexManager indexManager) =>
+{
+    if (string.IsNullOrWhiteSpace(q))
+    {
+        return Results.Ok(Array.Empty<string>());
+    }
+
+    var options = ResolveForUser(configService.Load(), context);
+    var search = new SearchService(options.IndexPath, indexManager);
+    return Results.Ok(search.SuggestSpelling(q));
+});
+
+// Autocomplete/sugestões (item 12).
+app.MapGet("/api/search/suggest", (HttpContext context, string q, ConfigService configService, LuceneIndexManager indexManager) =>
+{
+    if (string.IsNullOrWhiteSpace(q))
+    {
+        return Results.Ok(Array.Empty<string>());
+    }
+
+    var options = ResolveForUser(configService.Load(), context);
+    var search = new SearchService(options.IndexPath, indexManager);
+    return Results.Ok(search.Suggest(q));
+});
+
+// "Mais como este" (item 17).
+app.MapGet("/api/documents/similar", async (HttpContext context, string path, int? topK, ConfigService configService, LuceneIndexManager indexManager, ILogger<Program> logger) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        return Results.BadRequest(new { error = "Informe o caminho do documento de referência (path)." });
+    }
+
+    var options = ResolveForUser(configService.Load(), context);
+
+    using var vectorStore = options.EmbeddingsEnabled ? new VectorStore(options.IndexPath, options.MaxVectorCacheSize) : null;
+    var search = new SearchService(options.IndexPath, indexManager, vectorStore, clipService: null);
+
+    if (!search.IndexExists())
+    {
+        return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
+    }
+
+    try
+    {
+        var results = await search.FindSimilarAsync(path, topK ?? options.TopK);
+        return Results.Ok(results);
+    }
+    catch (QuestResume.Core.Embeddings.EmbeddingsNotConfiguredException ex)
+    {
+        logger.LogWarning("GET /api/documents/similar — embeddings não configurados: {Message}", ex.Message);
+        return Results.BadRequest(new { error = "Busca por documentos similares requer embeddings habilitados (EmbeddingsEnabled)." });
+    }
+});
+
+// Clustering automático de documentos por tema (item 1). Rótulos de cluster são gerados via LLM
+// em melhor esforço (best-effort) — o próprio LLM configurado é reaproveitado quando disponível;
+// se o LLM não carregar, o clustering ainda funciona, apenas sem rótulo.
+app.MapGet("/api/documents/clusters", async (HttpContext context, int? k, ConfigService configService, RagEngineProvider engineProvider, LuceneIndexManager indexManager, ILogger<Program> logger, CancellationToken cancellationToken) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+
+    using var vectorStore = options.EmbeddingsEnabled ? new VectorStore(options.IndexPath, options.MaxVectorCacheSize) : null;
+    var search = new SearchService(options.IndexPath, indexManager, vectorStore, clipService: null);
+
+    if (!search.IndexExists())
+    {
+        return Results.BadRequest(new { error = "Nenhum índice encontrado. Indexe uma pasta primeiro." });
+    }
+
+    ILlmProvider? llmProvider = null;
+    try
+    {
+        var engine = engineProvider.GetEngine(options);
+        llmProvider = await engine.GetLlmProviderAsync(cancellationToken);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "GET /api/documents/clusters — LLM indisponível para gerar rótulos, clusters ficarão sem rótulo");
+    }
+
+    try
+    {
+        var clusters = await search.ClusterDocumentsAsync(k, llmProvider, cancellationToken);
+        return Results.Ok(clusters);
+    }
+    catch (QuestResume.Core.Embeddings.EmbeddingsNotConfiguredException ex)
+    {
+        logger.LogWarning("GET /api/documents/clusters — embeddings não configurados: {Message}", ex.Message);
+        return Results.BadRequest(new { error = "Clustering de documentos requer embeddings habilitados (EmbeddingsEnabled)." });
+    }
 });
 
 app.MapPost("/api/ask", async (
@@ -871,6 +1101,68 @@ app.MapDelete("/api/documents", (HttpContext context, string path, ConfigService
     return Results.Ok(new { removedChunks });
 });
 
+app.MapPost("/api/documents/reindex", async (
+    HttpContext context,
+    ReindexFileRequest request,
+    ConfigService configService,
+    RagEngineProvider engineProvider,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Path))
+    {
+        return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    }
+
+    if (!File.Exists(request.Path))
+    {
+        return Results.NotFound(new { error = $"Arquivo não encontrado: {request.Path}" });
+    }
+
+    var options = ResolveForUser(configService.Load(), context);
+
+    var registry = new ExtractorRegistry(ExtractorRegistry.DefaultExtractors(options), loadPlugins: true, pluginLog: msg => logger.LogInformation("{PluginMessage}", msg));
+
+    EmbeddingService? embeddingService = null;
+    VectorStore? vectorStore = null;
+    if (options.EmbeddingsEnabled)
+    {
+        embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
+        vectorStore = new VectorStore(options.IndexPath);
+    }
+
+    using (embeddingService)
+    using (vectorStore)
+    {
+        var indexer = new DocumentIndexer(registry, embeddingService, vectorStore);
+        try
+        {
+            var chunkCount = await indexer.ReindexSingleFileAsync(
+                request.Path, options.IndexPath, options.ChunkSize, options.ChunkOverlap,
+                piiRedactionEnabled: options.PiiRedactionEnabled,
+                incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
+                masterPassword: null, masterKeyVerifier: null,
+                headingAwareChunkingEnabled: options.HeadingAwareChunkingEnabled,
+                sentenceWindowChunkingEnabled: options.SentenceWindowChunkingEnabled,
+                parentChildChunkingEnabled: options.ParentChildChunkingEnabled,
+                parentChunkSize: options.ParentChunkSize,
+                childChunkSize: options.ChildChunkSize,
+                semanticChunkingEnabled: options.SemanticChunkingEnabled,
+                semanticChunkingThreshold: options.SemanticChunkingThreshold,
+                contextualRetrievalEnabled: options.ContextualRetrievalEnabled,
+                cancellationToken: cancellationToken);
+
+            engineProvider.InvalidateVectorCache();
+            logger.LogInformation("POST /api/documents/reindex — path={Path} chunks={Chunks}", request.Path, chunkCount);
+            return Results.Ok(new { chunkCount });
+        }
+        catch (NotSupportedException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+});
+
 app.MapGet("/api/index-report", (HttpContext context, ConfigService configService, ILogger<Program> logger) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -885,7 +1177,7 @@ app.MapGet("/api/stats", (HttpContext context, ConfigService configService, Luce
     return Results.Ok(DashboardService.Compute(options.IndexPath, options, indexManager));
 });
 
-app.MapGet("/api/documents/preview", (HttpContext context, string path, ConfigService configService, LuceneIndexManager indexManager) =>
+app.MapGet("/api/documents/preview", (HttpContext context, string path, int? page, int? pageSize, ConfigService configService, LuceneIndexManager indexManager) =>
 {
     if (string.IsNullOrWhiteSpace(path))
     {
@@ -901,15 +1193,23 @@ app.MapGet("/api/documents/preview", (HttpContext context, string path, ConfigSe
         return Results.NotFound(new { error = $"Documento não encontrado no índice: {path}" });
     }
 
-    const int maxChars = 20000;
-    var text = string.Join("\n\n", chunks.Select(c => c.ChunkText));
-    var truncated = text.Length > maxChars;
-    if (truncated)
-    {
-        text = text[..maxChars];
-    }
+    // Paginação real do conteúdo do documento — antes truncava em 20000 caracteres sem
+    // navegação; agora divide o texto completo em páginas de tamanho fixo (pageSize)
+    // e retorna a página solicitada, permitindo ao Web UI navegar com "Anterior"/"Próxima".
+    var effectivePageSize = pageSize.GetValueOrDefault(5000);
+    if (effectivePageSize <= 0) effectivePageSize = 5000;
+    var effectivePage = page.GetValueOrDefault(1);
+    if (effectivePage <= 0) effectivePage = 1;
 
-    return Results.Ok(new { fileName = chunks[0].FileName, text, truncated });
+    var fullText = string.Join("\n\n", chunks.Select(c => c.ChunkText));
+    var totalPages = fullText.Length == 0 ? 1 : (int)Math.Ceiling(fullText.Length / (double)effectivePageSize);
+    if (effectivePage > totalPages) effectivePage = totalPages;
+
+    var start = (effectivePage - 1) * effectivePageSize;
+    var length = Math.Min(effectivePageSize, Math.Max(0, fullText.Length - start));
+    var content = fullText.Length == 0 ? string.Empty : fullText.Substring(start, length);
+
+    return Results.Ok(new DocumentPreviewResponse(chunks[0].FileName, content, effectivePage, totalPages));
 });
 
 app.MapPost("/api/documents/extract-table", async (
@@ -1299,7 +1599,7 @@ app.MapPost("/api/upload", async (HttpContext context, HttpRequest request, Conf
 // Returns a single chunk of text for a specific document + chunk index, used by the Web UI's
 // clickable citations to show exactly the passage the LLM used to answer a question (rather than
 // the whole document preview).
-app.MapGet("/api/documents/chunk", (HttpContext context, string path, int index, ConfigService configService, LuceneIndexManager indexManager) =>
+app.MapGet("/api/documents/chunk", (HttpContext context, string path, int index, string? highlight, ConfigService configService, LuceneIndexManager indexManager) =>
 {
     if (string.IsNullOrWhiteSpace(path))
     {
@@ -1316,7 +1616,11 @@ app.MapGet("/api/documents/chunk", (HttpContext context, string path, int index,
     }
 
     var chunk = chunks.FirstOrDefault(c => c.ChunkIndex == index) ?? chunks[Math.Clamp(index, 0, chunks.Count - 1)];
-    return Results.Ok(new { fileName = chunk.FileName, sourcePath = chunk.SourcePath, chunkIndex = chunk.ChunkIndex, chunkText = chunk.ChunkText, totalChunks = chunks.Count });
+    // `highlight` (optional): the exact fragment string (with the Lucene highlighter's U+0001/
+    // U+0002 markers) that the caller already has from a prior /api/ask or /api/search response
+    // for this same chunk — echoed back so the Web UI can mark the precise passage used inside
+    // the modal even when it navigates here directly (e.g. a bookmarked/shared link).
+    return Results.Ok(new { fileName = chunk.FileName, sourcePath = chunk.SourcePath, chunkIndex = chunk.ChunkIndex, chunkText = chunk.ChunkText, totalChunks = chunks.Count, highlight });
 });
 
 // Exports the given chat history as a PDF (mirrors the Web UI's existing Markdown export), using
@@ -1412,4 +1716,10 @@ static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFact
         return false;
     }
 }
+
+// Exposes the top-level-statements-generated Program class as public so
+// Microsoft.AspNetCore.Mvc.Testing's WebApplicationFactory<Program> (used by
+// tests/QuestResume.Api.IntegrationTests) can reference it — by default that class is
+// generated as `internal`, which is inaccessible from another assembly.
+public partial class Program { }
 
