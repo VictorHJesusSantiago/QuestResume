@@ -30,4 +30,12 @@ public interface ISearchService
     int RemoveDocument(string sourcePath);
 
     IReadOnlyList<SearchResultItem> Search(string queryText, int topK = 5, SearchFilters? filters = null);
+
+    /// <summary>
+    /// Groups indexed documents by topic via simple k-means over each document's average chunk
+    /// embedding. Requires embeddings to be enabled/available. See
+    /// <see cref="SearchService.ClusterDocumentsAsync"/> for the algorithm and label-generation details.
+    /// </summary>
+    Task<IReadOnlyList<Models.DocumentCluster>> ClusterDocumentsAsync(
+        int? k = null, Rag.ILlmProvider? llmProvider = null, CancellationToken cancellationToken = default);
 }
