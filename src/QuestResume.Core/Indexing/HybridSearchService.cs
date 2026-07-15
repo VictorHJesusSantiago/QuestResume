@@ -24,19 +24,40 @@ public sealed class HybridSearchService
     private readonly IEmbeddingService? _embeddingService;
     private readonly double _bm25Weight;
     private readonly ICrossEncoderService? _crossEncoder;
+    private readonly bool _useRrf;
+    private readonly int _rrfK;
+    private readonly Func<CancellationToken, Task<QuestResume.Core.Rag.ILlmProvider>>? _llmFactory;
+    private readonly bool _queryExpansionEnabled;
+    private readonly bool _hydeEnabled;
+    private readonly bool _multiQueryEnabled;
+    private readonly int _multiQueryVariations;
 
     public HybridSearchService(
         ISearchService searchService,
         IVectorStore? vectorStore = null,
         IEmbeddingService? embeddingService = null,
         double bm25Weight = 0.5,
-        ICrossEncoderService? crossEncoder = null)
+        ICrossEncoderService? crossEncoder = null,
+        string rankFusionStrategy = "Linear",
+        int rrfK = 60,
+        Func<CancellationToken, Task<QuestResume.Core.Rag.ILlmProvider>>? llmFactory = null,
+        bool queryExpansionEnabled = false,
+        bool hydeEnabled = false,
+        bool multiQueryEnabled = false,
+        int multiQueryVariations = 3)
     {
         _searchService = searchService;
         _vectorStore = vectorStore;
         _embeddingService = embeddingService;
         _bm25Weight = bm25Weight;
         _crossEncoder = crossEncoder;
+        _useRrf = string.Equals(rankFusionStrategy, "Rrf", StringComparison.OrdinalIgnoreCase);
+        _rrfK = rrfK > 0 ? rrfK : 60;
+        _llmFactory = llmFactory;
+        _queryExpansionEnabled = queryExpansionEnabled;
+        _hydeEnabled = hydeEnabled;
+        _multiQueryEnabled = multiQueryEnabled;
+        _multiQueryVariations = multiQueryVariations > 0 ? multiQueryVariations : 3;
     }
 
     /// <summary>
@@ -47,33 +68,130 @@ public sealed class HybridSearchService
     /// </summary>
     public IReadOnlyList<SearchResultItem> GetChunksByPath(string path) => _searchService.GetChunksByPath(path);
 
+    /// <summary>
+    /// Runs hybrid retrieval for <paramref name="queryText"/>, optionally enhanced by LLM-backed
+    /// query-quality features (all opt-in and best-effort — an LLM failure at any stage silently
+    /// falls back to the corresponding non-enhanced behaviour, never breaking the search):
+    /// <list type="bullet">
+    /// <item>Query expansion (<see cref="Configuration.AppOptions.QueryExpansionEnabled"/>): 2-3
+    /// LLM-suggested related terms are OR'd into the BM25 query text.</item>
+    /// <item>HyDE (<see cref="Configuration.AppOptions.HydeEnabled"/>): the vector search embeds
+    /// an LLM-generated hypothetical answer instead of the raw question.</item>
+    /// <item>Multi-query (<see cref="Configuration.AppOptions.MultiQueryEnabled"/>): retrieval is
+    /// run once per LLM-generated question variation (plus the original), and the resulting
+    /// ranked lists are merged via Reciprocal Rank Fusion (see <see cref="CombineRrf"/>)
+    /// regardless of <see cref="Configuration.AppOptions.RankFusionStrategy"/> — RRF is a natural
+    /// fit for merging an arbitrary number of ranked lists, whereas the linear combination is
+    /// only meaningful for exactly two (BM25 + vector).</item>
+    /// </list>
+    /// </summary>
     public async Task<IReadOnlyList<SearchResultItem>> SearchAsync(string queryText, int topK, CancellationToken cancellationToken = default)
     {
         var candidateK = _crossEncoder is not null ? topK * RerankCandidateMultiplier : topK;
 
-        var bm25Results = _searchService.Search(queryText, candidateK);
+        var enhancementsRequested = _queryExpansionEnabled || _hydeEnabled || _multiQueryEnabled;
+        QuestResume.Core.Rag.ILlmProvider? llm = null;
+        if (enhancementsRequested && _llmFactory is not null)
+        {
+            try
+            {
+                llm = await _llmFactory(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                llm = null; // Best-effort: LLM unavailable, all enhancements below are skipped.
+            }
+        }
+
+        IReadOnlyList<string>? extraTerms = null;
+        string? hydeText = null;
+        var queryVariations = new List<string> { queryText };
+
+        if (llm is not null)
+        {
+            var enhancer = new QuestResume.Core.Rag.QueryEnhancementService(llm);
+
+            if (_queryExpansionEnabled)
+            {
+                try
+                {
+                    extraTerms = await enhancer.ExpandQueryAsync(queryText, cancellationToken).ConfigureAwait(false);
+                }
+                catch { /* best-effort */ }
+            }
+
+            if (_hydeEnabled && _vectorStore is not null && _embeddingService is not null)
+            {
+                try
+                {
+                    hydeText = await enhancer.GenerateHypotheticalAnswerAsync(queryText, cancellationToken).ConfigureAwait(false);
+                }
+                catch { /* best-effort */ }
+            }
+
+            if (_multiQueryEnabled)
+            {
+                try
+                {
+                    var variations = await enhancer.GenerateQueryVariationsAsync(queryText, _multiQueryVariations, cancellationToken).ConfigureAwait(false);
+                    queryVariations.AddRange(variations);
+                }
+                catch { /* best-effort */ }
+            }
+        }
 
         IReadOnlyList<SearchResultItem> combined;
-        if (_vectorStore is null || _embeddingService is null)
+        if (queryVariations.Count > 1)
         {
-            combined = bm25Results;
+            var perVariationLists = new List<IReadOnlyList<SearchResultItem>>(queryVariations.Count);
+            foreach (var variation in queryVariations)
+            {
+                var isOriginal = ReferenceEquals(variation, queryText) || variation == queryText;
+                perVariationLists.Add(await SearchSingleVariationAsync(
+                    variation, extraTerms, isOriginal ? hydeText : null, candidateK, cancellationToken).ConfigureAwait(false));
+            }
+
+            combined = CombineRrf(perVariationLists, candidateK);
         }
         else
         {
-            IReadOnlyList<SearchResultItem> vectorResults;
-            try
-            {
-                var queryEmbedding = await _embeddingService.EmbedAsync(queryText, cancellationToken).ConfigureAwait(false);
-                vectorResults = _vectorStore.Search(queryEmbedding, candidateK);
-                combined = Combine(bm25Results, vectorResults, candidateK);
-            }
-            catch (EmbeddingsNotConfiguredException)
-            {
-                combined = bm25Results;
-            }
+            combined = await SearchSingleVariationAsync(queryText, extraTerms, hydeText, candidateK, cancellationToken).ConfigureAwait(false);
         }
 
         return await ApplyRerankingAsync(queryText, combined, topK, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs BM25 + (optional) vector retrieval for a single query variation and combines them
+    /// using the configured <see cref="Configuration.AppOptions.RankFusionStrategy"/> — the same
+    /// per-variation building block used both for a plain single-query search and for each
+    /// variation in multi-query retrieval.
+    /// </summary>
+    private async Task<IReadOnlyList<SearchResultItem>> SearchSingleVariationAsync(
+        string queryText, IReadOnlyList<string>? extraTerms, string? hydeText, int candidateK, CancellationToken cancellationToken)
+    {
+        var bm25QueryText = extraTerms is { Count: > 0 }
+            ? $"{queryText} {string.Join(' ', extraTerms.Select(t => $"OR {t}"))}"
+            : queryText;
+
+        var bm25Results = _searchService.Search(bm25QueryText, candidateK);
+
+        if (_vectorStore is null || _embeddingService is null)
+        {
+            return bm25Results;
+        }
+
+        try
+        {
+            var textForEmbedding = !string.IsNullOrWhiteSpace(hydeText) ? hydeText! : queryText;
+            var queryEmbedding = await _embeddingService.EmbedAsync(textForEmbedding, cancellationToken).ConfigureAwait(false);
+            var vectorResults = _vectorStore.Search(queryEmbedding, candidateK);
+            return Combine(bm25Results, vectorResults, candidateK);
+        }
+        catch (EmbeddingsNotConfiguredException)
+        {
+            return bm25Results;
+        }
     }
 
     /// <summary>
@@ -117,6 +235,11 @@ public sealed class HybridSearchService
         IReadOnlyList<SearchResultItem> vectorResults,
         int topK)
     {
+        if (_useRrf)
+        {
+            return CombineRrf(new[] { bm25Results, vectorResults }, topK);
+        }
+
         var bm25Scores = NormalizeScores(bm25Results);
         var vectorScores = NormalizeScores(vectorResults);
 
@@ -139,6 +262,38 @@ public sealed class HybridSearchService
         }
 
         return combined.Values
+            .OrderByDescending(entry => entry.Score)
+            .Take(topK)
+            .Select(entry => entry.Item)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Reciprocal Rank Fusion (<see cref="Configuration.AppOptions.RankFusionStrategy"/> = "Rrf"):
+    /// for each result, <c>score_rrf = sum(1 / (k + rank_in_list))</c> across every ranked list it
+    /// appears in (BM25, vector, and — via <see cref="SearchWithVariationsAsync"/> — one list per
+    /// multi-query variation). Rank is 1-based within each list. Unlike the linear combination,
+    /// RRF doesn't need score normalization since it only depends on rank order.
+    /// </summary>
+    public IReadOnlyList<SearchResultItem> CombineRrf(IEnumerable<IReadOnlyList<SearchResultItem>> resultLists, int topK)
+    {
+        var scores = new Dictionary<(string SourcePath, int ChunkIndex), (SearchResultItem Item, double Score)>();
+
+        foreach (var list in resultLists)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                var item = list[i];
+                var key = (item.SourcePath, item.ChunkIndex);
+                var contribution = 1.0 / (_rrfK + i + 1);
+
+                scores[key] = scores.TryGetValue(key, out var existing)
+                    ? (existing.Item, existing.Score + contribution)
+                    : (item, contribution);
+            }
+        }
+
+        return scores.Values
             .OrderByDescending(entry => entry.Score)
             .Take(topK)
             .Select(entry => entry.Item)
