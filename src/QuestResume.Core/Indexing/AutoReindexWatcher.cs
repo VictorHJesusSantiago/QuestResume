@@ -7,82 +7,108 @@ namespace QuestResume.Core.Indexing;
 /// </summary>
 public sealed class AutoReindexWatcher : IDisposable
 {
-    private readonly string _folderPath;
+    private readonly IReadOnlyList<string> _folderPaths;
     private readonly Func<CancellationToken, Task> _onReindexRequested;
     private readonly TimeSpan _debounce;
     private readonly Action<string>? _log;
 
-    private FileSystemWatcher? _watcher;
+    private readonly List<FileSystemWatcher> _watchers = new();
     private Timer? _debounceTimer;
     private readonly object _lock = new();
     private bool _reindexInProgress;
     private bool _pendingWhileRunning;
     private bool _disposed;
 
-    /// <param name="folderPath">Folder to watch recursively.</param>
-    /// <param name="onReindexRequested">Callback invoked (once) after the debounce window elapses.</param>
+    /// <param name="folderPath">Primary folder to watch recursively.</param>
+    /// <param name="onReindexRequested">Callback invoked (once) after the debounce window elapses, consolidating changes across every watched folder.</param>
     /// <param name="debounce">Quiet period after the last change before reindexing runs. Default 5s.</param>
     /// <param name="log">Optional PT-BR status logger.</param>
+    /// <param name="additionalFolders">
+    /// Extra folders watched alongside <paramref name="folderPath"/> (item 11,
+    /// <see cref="Configuration.AppOptions.AdditionalWatchedFolders"/>) — a change in any of them
+    /// (or <paramref name="folderPath"/>) restarts the same shared debounce timer, so a batch of
+    /// edits spread across multiple folders still triggers a single consolidated reindex.
+    /// </param>
     public AutoReindexWatcher(
         string folderPath,
         Func<CancellationToken, Task> onReindexRequested,
         TimeSpan? debounce = null,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        IEnumerable<string>? additionalFolders = null)
     {
-        _folderPath = folderPath ?? throw new ArgumentNullException(nameof(folderPath));
+        if (folderPath is null) throw new ArgumentNullException(nameof(folderPath));
+
+        var folders = new List<string> { folderPath };
+        if (additionalFolders is not null)
+        {
+            foreach (var extra in additionalFolders)
+            {
+                if (!string.IsNullOrWhiteSpace(extra) && !folders.Contains(extra, StringComparer.OrdinalIgnoreCase))
+                {
+                    folders.Add(extra);
+                }
+            }
+        }
+
+        _folderPaths = folders;
         _onReindexRequested = onReindexRequested ?? throw new ArgumentNullException(nameof(onReindexRequested));
         _debounce = debounce ?? TimeSpan.FromSeconds(5);
         _log = log;
     }
 
-    /// <summary>Starts watching. Safe to call once; call <see cref="Stop"/>/<see cref="Dispose"/> before starting again.</summary>
+    /// <summary>Starts watching every configured folder. Safe to call once; call <see cref="Stop"/>/<see cref="Dispose"/> before starting again.</summary>
     public void Start()
     {
-        if (_watcher is not null)
+        if (_watchers.Count > 0)
         {
             return;
         }
-
-        if (!Directory.Exists(_folderPath))
-        {
-            _log?.Invoke($"Auto-reindexação não iniciada: pasta não encontrada: {_folderPath}");
-            return;
-        }
-
-        _watcher = new FileSystemWatcher(_folderPath)
-        {
-            IncludeSubdirectories = true,
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
-        };
-
-        _watcher.Changed += OnFileSystemEvent;
-        _watcher.Created += OnFileSystemEvent;
-        _watcher.Deleted += OnFileSystemEvent;
-        _watcher.Renamed += OnFileSystemEvent;
-        _watcher.Error += OnWatcherError;
 
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
-        _watcher.EnableRaisingEvents = true;
 
-        _log?.Invoke($"Auto-reindexação ativada, monitorando: {_folderPath}");
+        foreach (var folder in _folderPaths)
+        {
+            if (!Directory.Exists(folder))
+            {
+                _log?.Invoke($"Auto-reindexação não iniciada para a pasta (não encontrada): {folder}");
+                continue;
+            }
+
+            var watcher = new FileSystemWatcher(folder)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+            };
+
+            watcher.Changed += OnFileSystemEvent;
+            watcher.Created += OnFileSystemEvent;
+            watcher.Deleted += OnFileSystemEvent;
+            watcher.Renamed += OnFileSystemEvent;
+            watcher.Error += OnWatcherError;
+
+            watcher.EnableRaisingEvents = true;
+            _watchers.Add(watcher);
+
+            _log?.Invoke($"Auto-reindexação ativada, monitorando: {folder}");
+        }
     }
 
-    /// <summary>Stops watching and cancels any pending (not-yet-fired) debounce timer.</summary>
+    /// <summary>Stops watching every folder and cancels any pending (not-yet-fired) debounce timer.</summary>
     public void Stop()
     {
         lock (_lock)
         {
-            if (_watcher is not null)
+            foreach (var watcher in _watchers)
             {
-                _watcher.EnableRaisingEvents = false;
-                _watcher.Changed -= OnFileSystemEvent;
-                _watcher.Created -= OnFileSystemEvent;
-                _watcher.Deleted -= OnFileSystemEvent;
-                _watcher.Renamed -= OnFileSystemEvent;
-                _watcher.Error -= OnWatcherError;
-                _watcher.Dispose();
-                _watcher = null;
+                watcher.EnableRaisingEvents = false;
+                watcher.Changed -= OnFileSystemEvent;
+                watcher.Created -= OnFileSystemEvent;
+                watcher.Deleted -= OnFileSystemEvent;
+                watcher.Renamed -= OnFileSystemEvent;
+                watcher.Error -= OnWatcherError;
+                watcher.Dispose();
             }
+            _watchers.Clear();
 
             _debounceTimer?.Dispose();
             _debounceTimer = null;
