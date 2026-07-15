@@ -5,35 +5,64 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:QuestResume.Desktop"
         xmlns:converters="clr-namespace:QuestResume.Desktop.Converters"
+        xmlns:behaviors="clr-namespace:QuestResume.Desktop.Behaviors"
         mc:Ignorable="d"
         Title="QuestResume" Height="650" Width="900"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
+    <Window.InputBindings>
+        <!-- Atalhos de teclado: Ctrl+Enter envia a pergunta, Ctrl+K foca a caixa de pergunta,
+             Ctrl+I inicia a indexação. Mantidos consistentes com os atalhos padrão do Web UI. -->
+        <KeyBinding Key="Return" Modifiers="Ctrl" Command="{Binding AskCommand}"/>
+        <KeyBinding Key="K" Modifiers="Ctrl" Command="{Binding FocusQuestionCommand}"/>
+        <KeyBinding Key="I" Modifiers="Ctrl" Command="{Binding IndexCommand}"/>
+    </Window.InputBindings>
     <Window.Resources>
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
     </Window.Resources>
+    <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="10,10,10,0" HorizontalAlignment="Left">
+        <TextBlock Text="Coleção:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+        <ComboBox Width="160" ItemsSource="{Binding AvailableCollections}"
+                  SelectedItem="{Binding SelectedCollection, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox x:Name="NewCollectionNameBox" Width="120" Padding="4" Margin="10,0,0,0"
+                 VerticalContentAlignment="Center" ToolTip="Nome da nova coleção"/>
+        <Button Content="Criar coleção" Padding="8,4" Margin="5,0,0,0"
+                Command="{Binding CreateCollectionCommand}" CommandParameter="{Binding Text, ElementName=NewCollectionNameBox}"/>
+    </StackPanel>
     <TabControl Margin="10">
-        <TabItem Header="Perguntas">
+        <TabItem Header="{DynamicResource Tab_Perguntas}">
             <DockPanel Margin="10">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
                     <TextBox Text="{Binding DocumentsFolder, UpdateSourceTrigger=PropertyChanged}"
                              Width="500" Padding="5" VerticalContentAlignment="Center" Margin="0,0,5,0"/>
-                    <Button Content="Procurar..." Command="{Binding BrowseFolderCommand}" Padding="10,4" Margin="0,0,5,0"/>
-                    <Button Content="Indexar" Command="{Binding IndexCommand}" Padding="10,4"/>
+                    <Button Content="{DynamicResource Btn_Procurar}" Command="{Binding BrowseFolderCommand}" Padding="10,4" Margin="0,0,5,0"/>
+                    <Button Content="{DynamicResource Btn_Indexar}" Command="{Binding IndexCommand}" Padding="10,4"/>
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}"
                            Margin="0,10,0,0" TextWrapping="Wrap" Foreground="Gray"/>
+
+                <ProgressBar DockPanel.Dock="Bottom" Height="16" Margin="0,6,0,0"
+                             Minimum="0" Maximum="{Binding IndexingTotal}" Value="{Binding IndexingCurrent}"
+                             Visibility="{Binding IsIndexingProgressVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+                <TextBlock DockPanel.Dock="Bottom" Margin="0,4,0,0" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                           Text="Atalhos: Ctrl+Enter envia a pergunta · Ctrl+K foca esta caixa · Ctrl+I indexa a pasta configurada."/>
 
                 <Grid DockPanel.Dock="Bottom" Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0" Padding="5" VerticalContentAlignment="Center" Margin="0,0,5,0"
+                    <TextBox x:Name="QuestionTextBox" Grid.Column="0" Padding="5" VerticalContentAlignment="Center" Margin="0,0,5,0"
                              Text="{Binding QuestionText, UpdateSourceTrigger=PropertyChanged}"/>
-                    <Button Grid.Column="1" Content="Perguntar" Command="{Binding AskCommand}" Padding="10,4" Margin="0,0,5,0"/>
-                    <Button Grid.Column="2" Content="Exportar conversa" Command="{Binding ExportChatCommand}" Padding="10,4"/>
+                    <Button Grid.Column="1" Content="{DynamicResource Btn_Perguntar}" Command="{Binding AskCommand}" Padding="10,4" Margin="0,0,5,0"
+                            ToolTip="Ctrl+Enter"/>
+                    <Button Grid.Column="2" Content="Exportar conversa" Command="{Binding ExportChatCommand}" Padding="10,4" Margin="0,0,5,0"/>
+                    <Button Grid.Column="3" Content="Exportar PDF" Command="{Binding ExportChatPdfCommand}" Padding="10,4"/>
                 </Grid>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -43,7 +72,29 @@
                                 <Border Margin="0,4" Padding="8" CornerRadius="4" Background="#F0F0F0">
                                     <StackPanel>
                                         <TextBlock Text="{Binding Role}" FontWeight="Bold" FontSize="11" Foreground="Gray"/>
-                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        <TextBlock behaviors:MarkdownTextBehavior.MarkdownText="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <ComboBox Width="70" Padding="3" FontSize="11"
+                                                      ItemsSource="{Binding DataContext.TranslateLanguageOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      SelectedItem="{Binding DataContext.TranslateTargetLanguage, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <Button Content="Traduzir" Padding="8,3" FontSize="11" Margin="5,0,0,0"
+                                                    Command="{Binding DataContext.TranslateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                        <ItemsControl ItemsSource="{Binding RelatedQuestions}" Margin="0,4,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="{Binding}" Padding="6,2" FontSize="11" Margin="0,0,4,4"
+                                                            Command="{Binding DataContext.AskRelatedQuestionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
                                                      Visibility="{Binding Sources, Converter={StaticResource NullToVisibilityConverter}}">
                                             <TextBlock Text="Fontes: " FontStyle="Italic" FontSize="11" Foreground="Gray"/>
@@ -55,20 +106,36 @@
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Button Content="{Binding FileName}"
-                                                                ToolTip="{Binding SourcePath}"
-                                                                Command="{Binding DataContext.OpenSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                CommandParameter="{Binding SourcePath}"
-                                                                Margin="0,0,8,0" Padding="0" Cursor="Hand"
-                                                                Background="Transparent" BorderThickness="0">
-                                                            <Button.Template>
-                                                                <ControlTemplate TargetType="Button">
-                                                                    <TextBlock Text="{TemplateBinding Content}"
-                                                                               TextDecorations="Underline"
-                                                                               Foreground="#0066CC" FontSize="11"/>
-                                                                </ControlTemplate>
-                                                            </Button.Template>
-                                                        </Button>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,8,0">
+                                                            <Button Content="{Binding DisplayLabel}"
+                                                                    ToolTip="Ver o trecho usado nesta resposta"
+                                                                    Command="{Binding DataContext.ViewSourceChunkCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Margin="0,0,4,0" Padding="0" Cursor="Hand"
+                                                                    Background="Transparent" BorderThickness="0">
+                                                                <Button.Template>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <TextBlock Text="{TemplateBinding Content}"
+                                                                                   TextDecorations="Underline"
+                                                                                   Foreground="#0066CC" FontSize="11"/>
+                                                                    </ControlTemplate>
+                                                                </Button.Template>
+                                                            </Button>
+                                                            <Button Content="(abrir arquivo)"
+                                                                    ToolTip="{Binding SourcePath}"
+                                                                    Command="{Binding DataContext.OpenSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding SourcePath}"
+                                                                    Padding="0" Cursor="Hand"
+                                                                    Background="Transparent" BorderThickness="0">
+                                                                <Button.Template>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <TextBlock Text="{TemplateBinding Content}"
+                                                                                   TextDecorations="Underline"
+                                                                                   Foreground="Gray" FontSize="11"/>
+                                                                    </ControlTemplate>
+                                                                </Button.Template>
+                                                            </Button>
+                                                        </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
@@ -82,7 +149,7 @@
             </DockPanel>
         </TabItem>
 
-        <TabItem Header="Documentos">
+        <TabItem Header="{DynamicResource Tab_Documentos}">
             <DockPanel Margin="10">
                 <Button DockPanel.Dock="Top" Content="Atualizar lista" Command="{Binding LoadDocumentsCommand}"
                         Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,10"/>
@@ -138,6 +205,9 @@
                                                     </MultiBinding>
                                                 </TextBlock.Text>
                                             </TextBlock>
+                                            <TextBlock Text="{Binding Summary, StringFormat='Resumo: {0}'}" Foreground="Gray" FontSize="11"
+                                                       TextWrapping="Wrap" Margin="0,3,0,0"
+                                                       Visibility="{Binding Summary, Converter={StaticResource NullToVisibilityConverter}}"/>
                                             <Grid Margin="0,5,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
@@ -151,9 +221,14 @@
                                                         CommandParameter="{Binding}"/>
                                             </Grid>
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Remover" Padding="10,4" VerticalAlignment="Center" Margin="10,0,0,0"
-                                                Command="{Binding DataContext.RemoveDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding SourcePath}"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
+                                            <Button Content="Extrair tabela" Padding="10,4" Margin="0,0,0,5"
+                                                    Command="{Binding DataContext.ExtractTableCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding SourcePath}"/>
+                                            <Button Content="Remover" Padding="10,4"
+                                                    Command="{Binding DataContext.RemoveDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding SourcePath}"/>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -163,14 +238,113 @@
             </DockPanel>
         </TabItem>
 
-        <TabItem Header="Configurações">
+        <TabItem Header="{DynamicResource Tab_Estudo}">
+            <DockPanel Margin="10">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBox Width="450" Padding="5" Margin="0,0,5,0" VerticalContentAlignment="Center"
+                             Text="{Binding StudyDocumentPath, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Caminho do documento indexado (copie da aba Documentos)"/>
+                    <TextBox Width="50" Padding="5" Margin="0,0,5,0" VerticalContentAlignment="Center"
+                             Text="{Binding StudyCount, UpdateSourceTrigger=PropertyChanged}" ToolTip="Quantidade"/>
+                    <Button Content="Gerar flashcards" Command="{Binding GenerateFlashcardsCommand}" Padding="10,4" Margin="0,0,5,0"/>
+                    <Button Content="Gerar quiz" Command="{Binding GenerateQuizCommand}" Padding="10,4"/>
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="Gray"/>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Flashcards" FontWeight="Bold" Margin="0,0,0,5"
+                                   Visibility="{Binding Flashcards, Converter={StaticResource NullToVisibilityConverter}}"/>
+                        <ItemsControl ItemsSource="{Binding Flashcards}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,4" Padding="10" CornerRadius="4" Background="#F0F0F0" Cursor="Hand">
+                                        <Border.InputBindings>
+                                            <MouseBinding MouseAction="LeftClick"
+                                                          Command="{Binding FlipCommand}"/>
+                                        </Border.InputBindings>
+                                        <StackPanel>
+                                            <TextBlock Text="Pergunta:" FontWeight="Bold" FontSize="11" Foreground="Gray"/>
+                                            <TextBlock Text="{Binding Question}" TextWrapping="Wrap" Margin="0,2,0,6"/>
+                                            <TextBlock Text="Resposta (clique para revelar):" FontWeight="Bold" FontSize="11" Foreground="Gray"
+                                                       Visibility="{Binding IsFlipped, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding Answer}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                       Visibility="{Binding IsFlipped, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="Quiz" FontWeight="Bold" Margin="0,15,0,5"
+                                   Visibility="{Binding QuizQuestions, Converter={StaticResource NullToVisibilityConverter}}"/>
+                        <ItemsControl ItemsSource="{Binding QuizQuestions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,4" Padding="10" CornerRadius="4" Background="#F0F0F0">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Question}" FontWeight="Bold" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                            <ItemsControl ItemsSource="{Binding IndexedOptions}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Content="{Binding Text}" HorizontalAlignment="Left" HorizontalContentAlignment="Left"
+                                                                Padding="8,4" Margin="0,2" Width="500"
+                                                                Command="{Binding DataContext.SelectQuizOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                CommandParameter="{Binding}">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Question.IsAnswered}" Value="True">
+                                                                            <Setter Property="Background" Value="#EEEEEE"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Margin="0,6,0,0" FontWeight="Bold"
+                                                       Visibility="{Binding IsAnswered, Converter={StaticResource NullToVisibilityConverter}}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCorrect}" Value="True">
+                                                                <Setter Property="Text" Value="Correto!"/>
+                                                                <Setter Property="Foreground" Value="Green"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsCorrect}" Value="False">
+                                                                <Setter Property="Text" Value="Incorreto."/>
+                                                                <Setter Property="Foreground" Value="#CC0000"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+
+        <TabItem Header="{DynamicResource Tab_Configuracoes}">
             <StackPanel Margin="20" MaxWidth="550" HorizontalAlignment="Left">
-                <TextBlock Text="Provedor de IA para geração de respostas" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="{DynamicResource Config_Idioma}" FontWeight="Bold" Margin="0,0,0,5"/>
+                <ComboBox Margin="0,0,0,15" Width="220" HorizontalAlignment="Left" Padding="5"
+                          ItemsSource="{Binding UiLanguageOptions}"
+                          SelectedItem="{Binding UiLanguage, UpdateSourceTrigger=PropertyChanged}"/>
+
+                <TextBlock Text="{DynamicResource Config_ProvedorIA}" FontWeight="Bold" Margin="0,0,0,5"/>
                 <ComboBox Margin="0,0,0,15" Width="220" HorizontalAlignment="Left" Padding="5"
                           ItemsSource="{Binding LlmProviderOptions}"
                           SelectedItem="{Binding LlmProvider, UpdateSourceTrigger=PropertyChanged}"/>
 
-                <TextBlock Text="Modelo de IA local (.gguf) — usado quando o provedor é LLamaSharp" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="{DynamicResource Config_ModeloLocal}" FontWeight="Bold" Margin="0,0,0,5"/>
                 <Grid Margin="0,0,0,15">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -178,7 +352,7 @@
                     </Grid.ColumnDefinitions>
                     <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0"
                              Text="{Binding ModelPath, UpdateSourceTrigger=PropertyChanged}"/>
-                    <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseModelCommand}" Padding="10,4"/>
+                    <Button Grid.Column="1" Content="{DynamicResource Btn_Procurar}" Command="{Binding BrowseModelCommand}" Padding="10,4"/>
                 </Grid>
 
                 <TextBlock Text="Ollama — usado quando o provedor é Ollama" FontWeight="Bold" Margin="0,0,0,5"/>
@@ -301,27 +475,92 @@
                     </Grid>
                 </StackPanel>
 
-                <TextBlock Text="Pasta do índice" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="{DynamicResource Config_PastaIndice}" FontWeight="Bold" Margin="0,0,0,5"/>
                 <Grid Margin="0,0,0,15">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBox Grid.Column="0" Padding="5" Margin="0,0,5,0" Text="{Binding IndexPath, UpdateSourceTrigger=PropertyChanged}"/>
-                    <Button Grid.Column="1" Content="Procurar..." Command="{Binding BrowseIndexPathCommand}" Padding="10,4"/>
+                    <Button Grid.Column="1" Content="{DynamicResource Btn_Procurar}" Command="{Binding BrowseIndexPathCommand}" Padding="10,4"/>
                 </Grid>
 
-                <TextBlock Text="Trechos por pergunta (Top-K)" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="{DynamicResource Config_TopK}" FontWeight="Bold" Margin="0,0,0,5"/>
                 <TextBox Padding="5" Margin="0,0,0,15" Width="100" HorizontalAlignment="Left"
                          Text="{Binding TopK, UpdateSourceTrigger=PropertyChanged}"/>
 
-                <TextBlock Text="Tamanho do contexto (tokens)" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="{DynamicResource Config_ContextSize}" FontWeight="Bold" Margin="0,0,0,5"/>
                 <TextBox Padding="5" Margin="0,0,0,15" Width="100" HorizontalAlignment="Left"
                          Text="{Binding ContextSize, UpdateSourceTrigger=PropertyChanged}"/>
 
-                <Button Content="Salvar configurações" Command="{Binding SaveConfigCommand}"
-                        Padding="10,4" HorizontalAlignment="Left"/>
+                <TextBlock Text="Indexação paralela / incremental / automática" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="Arquivos processados em paralelo na indexação" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                <TextBox Padding="5" Margin="0,0,0,8" Width="100" HorizontalAlignment="Left"
+                         Text="{Binding IndexingParallelism, UpdateSourceTrigger=PropertyChanged}"/>
+                <CheckBox Margin="0,0,0,8" Content="Indexação incremental (pular arquivos inalterados)"
+                          IsChecked="{Binding IncrementalIndexingEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                <CheckBox Margin="0,0,0,8" Content="Reindexar automaticamente ao detectar alterações na pasta"
+                          IsChecked="{Binding AutoReindexEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                <CheckBox Margin="0,0,0,15" Content="Fallback automático de LLM (Ollama, com LLamaSharp local como reserva)"
+                          IsChecked="{Binding LlmFallbackEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+
+                <TextBlock Text="Backup e restauração do índice" FontWeight="Bold" Margin="0,0,0,5"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                    <Button Content="Fazer backup..." Command="{Binding BackupIndexCommand}" Padding="10,4" Margin="0,0,10,0"/>
+                    <Button Content="Restaurar backup..." Command="{Binding RestoreIndexCommand}" Padding="10,4"/>
+                </StackPanel>
+
+                <Button Content="{DynamicResource Btn_Salvar}" Command="{Binding SaveConfigCommand}"
+                        Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,15"/>
+
+                <TextBlock Text="Integrações com nuvem (Google Drive / OneDrive / Dropbox)" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="Crie um app OAuth no Google Cloud Console / Azure AD Portal / App Console do Dropbox e informe o Client ID (App Key) abaixo (veja CloudSync/README.md). Client secret não é necessário (fluxo PKCE)." Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                        <TextBlock Text="Google Drive Client ID" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding GoogleDriveClientId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="5,0,5,0">
+                        <TextBlock Text="OneDrive Client ID" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding OneDriveClientId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="5,0,0,0">
+                        <TextBlock Text="Dropbox App Key" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                        <TextBox Padding="5" Text="{Binding DropboxClientId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Conectar Google Drive" Command="{Binding ConnectCloudProviderCommand}" CommandParameter="google" Padding="10,4" Margin="0,0,10,0"/>
+                    <Button Content="Conectar OneDrive" Command="{Binding ConnectCloudProviderCommand}" CommandParameter="onedrive" Padding="10,4" Margin="0,0,10,0"/>
+                    <Button Content="Conectar Dropbox" Command="{Binding ConnectCloudProviderCommand}" CommandParameter="dropbox" Padding="10,4"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,8">
+                    <TextBlock Text="ID/caminho da pasta remota (Google Drive folderId, OneDrive itemId ou caminho do Dropbox, ex.: /Documentos)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                    <TextBox Padding="5" Text="{Binding CloudRemoteFolderId, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Sincronizar Google Drive" Command="{Binding SyncCloudProviderCommand}" CommandParameter="google" Padding="10,4" Margin="0,0,10,0"/>
+                    <Button Content="Sincronizar OneDrive" Command="{Binding SyncCloudProviderCommand}" CommandParameter="onedrive" Padding="10,4" Margin="0,0,10,0"/>
+                    <Button Content="Sincronizar Dropbox" Command="{Binding SyncCloudProviderCommand}" CommandParameter="dropbox" Padding="10,4"/>
+                </StackPanel>
+                <TextBlock Text="{Binding CloudSyncStatus}" Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,15"/>
+
+                <TextBlock Text="Plugins" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="Extratores de terceiros carregados de %LOCALAPPDATA%\QuestResume\plugins" Foreground="Gray" FontSize="11" Margin="0,0,0,5"/>
+                <ItemsControl ItemsSource="{Binding LoadedPlugins}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,0,0,3"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </TabItem>
     </TabControl>
+    </DockPanel>
 </Window>
