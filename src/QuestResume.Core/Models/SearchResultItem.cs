@@ -22,4 +22,16 @@ public sealed class SearchResultItem
     /// these markers to render the matches (e.g. as <c>&lt;mark&gt;</c> elements).
     /// </summary>
     public string? Highlight { get; init; }
+
+    /// <summary>
+    /// Number (1-based) of the page where this chunk begins in the source document, when known
+    /// (currently only for PDFs). <c>null</c> when the source file has no page information.
+    /// </summary>
+    public int? PageNumber { get; init; }
+
+    /// <summary>UTC last-write time of the source file, as indexed. Used for <see cref="SearchSortBy"/> and date-range filters.</summary>
+    public DateTime ModifiedUtc { get; init; }
+
+    /// <summary>Size in bytes of the source file, as indexed. Used for size-range filters.</summary>
+    public long SizeBytes { get; init; }
 }
