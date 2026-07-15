@@ -79,16 +79,17 @@ public sealed class ExtractorRegistry
         {
             yield return new PdfExtractor(ocrEnabled: true, options.TessDataPath, options.OcrLanguages);
             yield return new ImageOcrExtractor(options.TessDataPath, options.OcrLanguages);
+            yield return new OpenXmlExtractor(ocrEnabled: true, options.TessDataPath, options.OcrLanguages);
         }
         else
         {
             yield return new PdfExtractor();
+            yield return new OpenXmlExtractor();
         }
-
-        yield return new OpenXmlExtractor();
         yield return new HtmlExtractor();
         yield return new OdtExtractor();
         yield return new OdsExtractor();
+        yield return new OdpExtractor();
         yield return new IWorkExtractor();
         yield return new RtfExtractor();
         yield return new EpubExtractor();
