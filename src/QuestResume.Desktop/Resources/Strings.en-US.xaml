@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+
+    <!-- Main tabs -->
+    <system:String x:Key="Tab_Perguntas">Questions</system:String>
+    <system:String x:Key="Tab_Documentos">Documents</system:String>
+    <system:String x:Key="Tab_Estudo">Study</system:String>
+    <system:String x:Key="Tab_Configuracoes">Settings</system:String>
+
+    <!-- Main action buttons -->
+    <system:String x:Key="Btn_Perguntar">Ask</system:String>
+    <system:String x:Key="Btn_Buscar">Search</system:String>
+    <system:String x:Key="Btn_Indexar">Index</system:String>
+    <system:String x:Key="Btn_Salvar">Save settings</system:String>
+    <system:String x:Key="Btn_Entrar">Sign in</system:String>
+    <system:String x:Key="Btn_Sair">Sign out</system:String>
+    <system:String x:Key="Btn_Procurar">Browse...</system:String>
+
+    <!-- Main settings screen labels -->
+    <system:String x:Key="Config_Idioma">Interface language</system:String>
+    <system:String x:Key="Config_ProvedorIA">AI provider for answer generation</system:String>
+    <system:String x:Key="Config_ModeloLocal">Local AI model (.gguf) — used when the provider is LLamaSharp</system:String>
+    <system:String x:Key="Config_PastaIndice">Index folder</system:String>
+    <system:String x:Key="Config_TopK">Chunks per question (Top-K)</system:String>
+    <system:String x:Key="Config_ContextSize">Context size (tokens)</system:String>
+
+</ResourceDictionary>

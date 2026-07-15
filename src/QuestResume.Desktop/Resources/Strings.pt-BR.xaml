@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+
+    <!-- Abas principais -->
+    <system:String x:Key="Tab_Perguntas">Perguntas</system:String>
+    <system:String x:Key="Tab_Documentos">Documentos</system:String>
+    <system:String x:Key="Tab_Estudo">Estudo</system:String>
+    <system:String x:Key="Tab_Configuracoes">Configurações</system:String>
+
+    <!-- Botões de ação principais -->
+    <system:String x:Key="Btn_Perguntar">Perguntar</system:String>
+    <system:String x:Key="Btn_Buscar">Buscar</system:String>
+    <system:String x:Key="Btn_Indexar">Indexar</system:String>
+    <system:String x:Key="Btn_Salvar">Salvar configurações</system:String>
+    <system:String x:Key="Btn_Entrar">Entrar</system:String>
+    <system:String x:Key="Btn_Sair">Sair</system:String>
+    <system:String x:Key="Btn_Procurar">Procurar...</system:String>
+
+    <!-- Rótulos principais da tela de configurações -->
+    <system:String x:Key="Config_Idioma">Idioma da interface</system:String>
+    <system:String x:Key="Config_ProvedorIA">Provedor de IA para geração de respostas</system:String>
+    <system:String x:Key="Config_ModeloLocal">Modelo de IA local (.gguf) — usado quando o provedor é LLamaSharp</system:String>
+    <system:String x:Key="Config_PastaIndice">Pasta do índice</system:String>
+    <system:String x:Key="Config_TopK">Trechos por pergunta (Top-K)</system:String>
+    <system:String x:Key="Config_ContextSize">Tamanho do contexto (tokens)</system:String>
+
+</ResourceDictionary>
