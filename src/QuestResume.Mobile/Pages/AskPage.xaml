@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="QuestResume.Mobile.Pages.AskPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:QuestResume.Mobile.Models"
+    Title="Perguntar">
+
+    <Grid RowDefinitions="*,Auto,Auto,Auto" Padding="16" RowSpacing="10">
+
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Spacing="12">
+
+                <Label x:Name="AnswerLabel" FontSize="15" IsVisible="False" />
+
+                <Label Text="Fontes" FontAttributes="Bold" IsVisible="False" x:Name="SourcesHeaderLabel" />
+                <CollectionView x:Name="SourcesView">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:SearchResultItem">
+                            <VerticalStackLayout Padding="6" Spacing="2">
+                                <Label Text="{Binding FileName}" FontAttributes="Bold" FontSize="13" />
+                                <Label Text="{Binding ChunkText}" FontSize="12" MaxLines="3" LineBreakMode="TailTruncation" TextColor="Gray" />
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <ActivityIndicator x:Name="LoadingIndicator" Grid.Row="1" IsVisible="False" IsRunning="False" />
+
+        <Editor x:Name="QuestionEditor" Grid.Row="2" Placeholder="Digite sua pergunta..." AutoSize="TextChanges" MaxLength="2000" />
+
+        <Button x:Name="AskButton" Grid.Row="3" Text="Perguntar" Clicked="OnAskClicked" />
+
+    </Grid>
+
+</ContentPage>
