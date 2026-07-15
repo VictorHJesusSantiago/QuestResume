@@ -28,4 +28,17 @@ public sealed class SourceReference
     /// used by <see cref="MainViewModel.ViewSourceChunkCommand"/> to show the exact passage.
     /// </summary>
     public int ChunkIndex { get; init; }
+
+    /// <summary>
+    /// 1-based page number where the cited chunk begins, mirrored from
+    /// <see cref="QuestResume.Core.Models.SearchResultItem.PageNumber"/>, or <c>null</c> when the
+    /// source document has no page information (e.g. non-PDF files).
+    /// </summary>
+    public int? PageNumber { get; init; }
+
+    /// <summary>
+    /// Display text for the citation button: the file name, plus " (página N)" when
+    /// <see cref="PageNumber"/> is known.
+    /// </summary>
+    public string DisplayLabel => PageNumber is int page ? $"{FileName} (página {page})" : FileName;
 }
