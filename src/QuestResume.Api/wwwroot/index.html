@@ -7,6 +7,24 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
+<div id="loginOverlay" class="modal-overlay">
+  <div class="modal-box">
+    <h3 data-i18n="login.title">Entrar no QuestResume</h3>
+    <p class="hint" data-i18n="login.hint">Este servidor exige autenticação (há usuários cadastrados).</p>
+    <div class="field">
+      <label for="loginUsernameInput" data-i18n="login.username">Usuário</label>
+      <input type="text" id="loginUsernameInput" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label for="loginPasswordInput" data-i18n="login.password">Senha</label>
+      <input type="password" id="loginPasswordInput" autocomplete="current-password" />
+    </div>
+    <button class="primary" id="loginButton" data-i18n="login.submit">Entrar</button>
+    <div id="loginStatus" class="status-line"></div>
+  </div>
+</div>
+
 <header>
   <div>
     <h1>QuestResume</h1>
@@ -19,8 +37,21 @@
       <option value="pt-BR">Português</option>
       <option value="en-US">English</option>
     </select>
+    <select id="fontSizeSelect" title="Tamanho da fonte">
+      <option value="small" data-i18n="settings.fontSizeSmall">Pequena</option>
+      <option value="medium" data-i18n="settings.fontSizeMedium">Média</option>
+      <option value="large" data-i18n="settings.fontSizeLarge">Grande</option>
+    </select>
+    <select id="colorThemeSelect" title="Tema de cor">
+      <option value="dark" data-i18n="settings.themeDark">Escuro</option>
+      <option value="light" data-i18n="settings.themeLight">Claro</option>
+      <option value="high-contrast" data-i18n="settings.themeHighContrast">Alto contraste</option>
+      <option value="green" data-i18n="settings.themeGreen">Verde</option>
+    </select>
     <div id="statusBadge" class="status-line" data-i18n="header.loadingStatus">Carregando status...</div>
-    <button id="themeToggle" class="theme-toggle" data-i18n="header.theme" title="Alternar tema claro/escuro">Tema</button>
+    <span id="loggedInUser" class="status-line hidden"></span>
+    <button id="logoutButton" class="hidden" data-i18n="header.logout" title="Sair">Sair</button>
+    <button id="themeToggle" class="theme-toggle hidden" data-i18n="header.theme" title="Alternar tema claro/escuro">Tema</button>
   </div>
 </header>
 
@@ -35,17 +66,26 @@
 
 <main>
   <section id="tab-chat" class="active">
-    <div class="panel">
-      <h2 data-i18n="chat.title">Perguntas (RAG com IA local)</h2>
-      <div id="chatLog" class="chat-log"></div>
-      <div class="ask-row">
-        <input type="text" id="questionInput" data-i18n-placeholder="chat.inputPlaceholder" placeholder="Digite sua pergunta..." />
-        <button class="primary" id="askButton" data-i18n="chat.ask">Perguntar</button>
-        <button id="exportChatButton" data-i18n="chat.exportMarkdown" title="Exportar conversa para Markdown">Exportar conversa</button>
-        <button id="exportChatPdfButton" data-i18n="chat.exportPdf" title="Exportar conversa para PDF">Exportar PDF</button>
+    <div class="chat-layout">
+      <aside id="chatSessionsSidebar" class="chat-sessions-sidebar">
+        <button class="primary" id="newChatSessionButton" data-i18n="chat.session.new">Nova conversa</button>
+        <input type="text" id="chatSessionSearch" class="chat-session-search" data-i18n-placeholder="chat.session.searchPlaceholder" placeholder="Buscar nas conversas..." />
+        <button id="showFavoritesButton" class="chat-session-fav-filter" data-i18n="chat.session.showFavorites" title="Ver apenas conversas com respostas favoritadas">Ver favoritos</button>
+        <div id="chatSessionsList" class="chat-sessions-list"></div>
+      </aside>
+      <div class="panel chat-main-panel">
+        <h2 data-i18n="chat.title">Perguntas (RAG com IA local)</h2>
+        <div id="chatLog" class="chat-log"></div>
+        <div class="ask-row">
+          <input type="text" id="questionInput" data-i18n-placeholder="chat.inputPlaceholder" placeholder="Digite sua pergunta..." />
+          <button class="primary" id="askButton" data-i18n="chat.ask">Perguntar</button>
+          <button id="stopGenerationButton" class="danger hidden" data-i18n="chat.stop" title="Parar a geração da resposta">Parar</button>
+          <button id="exportChatButton" data-i18n="chat.exportMarkdown" title="Exportar conversa para Markdown">Exportar conversa</button>
+          <button id="exportChatPdfButton" data-i18n="chat.exportPdf" title="Exportar conversa para PDF">Exportar PDF</button>
+        </div>
+        <div id="askStatus" class="status-line"></div>
+        <p class="hint-line" data-i18n="chat.shortcutsHint">Atalhos: Ctrl+Enter envia a pergunta · pressione "?" para ver todos os atalhos.</p>
       </div>
-      <div id="askStatus" class="status-line"></div>
-      <p class="hint-line" data-i18n="chat.shortcutsHint">Atalhos: Ctrl+Enter envia a pergunta · pressione "?" para ver todos os atalhos.</p>
     </div>
   </section>
 
@@ -143,6 +183,11 @@
         <input type="text" id="folderInput" placeholder="C:\Users\voce\Documentos" />
       </div>
       <button class="primary" id="indexButton" data-i18n="config.index">Indexar</button>
+      <div class="index-progress-row hidden" id="indexProgressRow">
+        <label for="indexProgressBar" data-i18n="index.progressLabel">Progresso da indexação</label>
+        <progress id="indexProgressBar" max="100" value="0"></progress>
+        <span id="indexProgressText"></span>
+      </div>
       <div id="indexStatus" class="status-line"></div>
     </div>
 
@@ -323,6 +368,38 @@
         </label>
       </div>
 
+      <h3 data-i18n="config.cloudTitle">Integrações com nuvem (Google Drive / OneDrive / Dropbox)</h3>
+      <p class="hint" data-i18n="config.cloudHint">Crie um app OAuth no Google Cloud Console / Azure AD Portal / App Console do Dropbox e informe o Client ID (App Key) abaixo — veja CloudSync/README.md. Client secret não é necessário (fluxo PKCE).</p>
+      <div class="row">
+        <div class="field">
+          <label for="googleDriveClientIdInput" data-i18n="config.googleClientId">Google Drive Client ID</label>
+          <input type="text" id="googleDriveClientIdInput" />
+        </div>
+        <div class="field">
+          <label for="oneDriveClientIdInput" data-i18n="config.oneDriveClientId">OneDrive Client ID</label>
+          <input type="text" id="oneDriveClientIdInput" />
+        </div>
+        <div class="field">
+          <label for="dropboxClientIdInput" data-i18n="config.dropboxClientId">Dropbox App Key</label>
+          <input type="text" id="dropboxClientIdInput" />
+        </div>
+      </div>
+      <div class="row">
+        <button id="connectGoogleDriveButton" data-i18n="config.connectGoogleDrive">Conectar Google Drive</button>
+        <button id="connectOneDriveButton" data-i18n="config.connectOneDrive">Conectar OneDrive</button>
+        <button id="connectDropboxButton" data-i18n="config.connectDropbox">Conectar Dropbox</button>
+      </div>
+      <div class="field">
+        <label for="cloudRemoteFolderIdInput" data-i18n="config.cloudRemoteFolder">ID/caminho da pasta remota (Google Drive folderId, OneDrive itemId ou caminho do Dropbox, ex.: /Documentos)</label>
+        <input type="text" id="cloudRemoteFolderIdInput" />
+      </div>
+      <div class="row">
+        <button id="syncGoogleDriveButton" data-i18n="config.syncGoogleDrive">Sincronizar Google Drive</button>
+        <button id="syncOneDriveButton" data-i18n="config.syncOneDrive">Sincronizar OneDrive</button>
+        <button id="syncDropboxButton" data-i18n="config.syncDropbox">Sincronizar Dropbox</button>
+      </div>
+      <div id="cloudSyncStatus" class="status-line"></div>
+
       <div class="row">
         <div class="field">
           <button id="backupButton" data-i18n="config.backup">Fazer backup do índice</button>
@@ -387,8 +464,55 @@
   <div class="modal-box">
     <h3 id="previewTitle"></h3>
     <pre id="previewText"></pre>
+    <div class="preview-pagination-row">
+      <button id="previewPrevButton" data-i18n="preview.previous">Anterior</button>
+      <span id="previewPageIndicator"></span>
+      <button id="previewNextButton" data-i18n="preview.next">Próxima</button>
+    </div>
     <div class="close-row">
       <button class="primary" id="closePreviewButton" data-i18n="common.close">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div id="wizardModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3 data-i18n="wizard.title">Bem-vindo ao QuestResume</h3>
+    <p class="hint" data-i18n="wizard.subtitle">Vamos configurar o essencial em 3 passos rápidos.</p>
+
+    <div id="wizardStep1" class="wizard-step">
+      <h4 data-i18n="wizard.step1Title">1. Pasta de documentos</h4>
+      <p class="hint-line" data-i18n="wizard.step1Hint">Escolha a pasta onde estão os documentos que você quer poder pesquisar e perguntar.</p>
+      <div class="field">
+        <label for="wizardFolderInput" data-i18n="config.folderPath">Caminho da pasta com seus documentos</label>
+        <input type="text" id="wizardFolderInput" placeholder="C:\Users\voce\Documentos" />
+      </div>
+    </div>
+
+    <div id="wizardStep2" class="wizard-step hidden">
+      <h4 data-i18n="wizard.step2Title">2. Modelo de IA local</h4>
+      <p class="hint-line" data-i18n="wizard.step2Hint">Informe o caminho de um modelo .gguf (LlamaSharp) já baixado no seu computador. Você pode ajustar isso depois em Configurações.</p>
+      <div class="field">
+        <label for="wizardModelPathInput" data-i18n="config.modelPath">Caminho do modelo de IA local (.gguf) — usado quando o provedor é LlamaSharp</label>
+        <input type="text" id="wizardModelPathInput" placeholder="C:\Modelos\Phi-3-mini-4k-instruct.Q4_K_M.gguf" />
+      </div>
+    </div>
+
+    <div id="wizardStep3" class="wizard-step hidden">
+      <h4 data-i18n="wizard.step3Title">3. Primeira indexação</h4>
+      <p class="hint-line" data-i18n="wizard.step3Hint">Vamos salvar suas configurações e indexar a pasta escolhida. Isso pode levar alguns minutos, dependendo da quantidade de documentos.</p>
+      <div class="index-progress-row hidden" id="wizardProgressRow">
+        <progress id="wizardProgressBar" max="100" value="0"></progress>
+        <span id="wizardProgressText"></span>
+      </div>
+      <div id="wizardStatus" class="status-line"></div>
+    </div>
+
+    <div class="close-row wizard-nav-row">
+      <button id="wizardSkipButton" data-i18n="wizard.skip">Pular por enquanto</button>
+      <button id="wizardBackButton" class="hidden" data-i18n="wizard.back">Voltar</button>
+      <button class="primary" id="wizardNextButton" data-i18n="wizard.next">Avançar</button>
+      <button class="primary hidden" id="wizardFinishButton" data-i18n="wizard.finish">Salvar e indexar</button>
     </div>
   </div>
 </div>
@@ -442,6 +566,7 @@
 </div>
 <script src="i18n/i18n.js"></script>
 <script src="charts.js"></script>
+<script src="markdown.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
