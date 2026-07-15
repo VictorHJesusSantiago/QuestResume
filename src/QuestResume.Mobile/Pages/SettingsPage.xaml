@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="QuestResume.Mobile.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    Title="Configurações">
+
+    <VerticalStackLayout Padding="24" Spacing="14">
+
+        <Label Text="Usuário conectado" FontAttributes="Bold" />
+        <Label x:Name="UsernameLabel" />
+
+        <Label Text="URL do servidor" FontAttributes="Bold" Margin="0,16,0,0" />
+        <Entry x:Name="ServerUrlEntry" Keyboard="Url" />
+        <Button Text="Salvar URL do servidor" Clicked="OnSaveServerUrlClicked" />
+
+        <Button Text="Sair (logout)" Clicked="OnLogoutClicked" BackgroundColor="IndianRed" TextColor="White" Margin="0,24,0,0" />
+
+    </VerticalStackLayout>
+
+</ContentPage>
