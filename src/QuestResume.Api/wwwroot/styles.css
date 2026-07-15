@@ -8,6 +8,7 @@
   --accent-dark: #0284c7;
   --ok: #4ade80;
   --error: #f87171;
+  --base-font-size: 16px;
 }
 :root[data-theme="light"] {
   --bg: #f1f5f9;
@@ -25,12 +26,53 @@
 :root[data-theme="light"] select {
   background: #ffffff;
 }
+
+/* Tema de alto contraste — maximiza o contraste texto/fundo para acessibilidade (WCAG AAA-ish),
+   sobrepondo as mesmas custom properties usadas pelos temas claro/escuro acima. */
+:root[data-theme="high-contrast"] {
+  --bg: #000000;
+  --panel: #000000;
+  --panel-light: #ffffff;
+  --text: #ffffff;
+  --muted: #eeeeee;
+  --accent: #ffff00;
+  --accent-dark: #ffff00;
+  --ok: #00ff00;
+  --error: #ff3b3b;
+}
+:root[data-theme="high-contrast"] input[type="text"],
+:root[data-theme="high-contrast"] input[type="number"],
+:root[data-theme="high-contrast"] select {
+  background: #000000;
+  color: #ffffff;
+}
+:root[data-theme="high-contrast"] .stat-card { background: #000000; }
+:root[data-theme="high-contrast"] .md-code-block { background: #000000; }
+:root[data-theme="high-contrast"] button.primary { color: #000000; }
+
+/* Tema "Verde" — variação de cor de destaque (accent) sobre o layout escuro, para quem prefere
+   um tom diferente do azul padrão. */
+:root[data-theme="green"] {
+  --bg: #0b1a12;
+  --panel: #10241a;
+  --panel-light: #1e4030;
+  --text: #e3f7ea;
+  --muted: #8fbfa2;
+  --accent: #34d399;
+  --accent-dark: #059669;
+  --ok: #4ade80;
+  --error: #f87171;
+}
+:root[data-theme="green"] .stat-card { background: #081209; }
+:root[data-theme="green"] .md-code-block { background: #081209; }
+
 * { box-sizing: border-box; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
+  font-size: var(--base-font-size, 16px);
 }
 header {
   padding: 1rem 1.5rem;
@@ -125,6 +167,126 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 }
 .status-ok { color: var(--ok); }
 .status-error { color: var(--error); }
+.chat-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.chat-sessions-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--panel-light);
+  border-radius: 8px;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.chat-sessions-sidebar #newChatSessionButton { width: 100%; }
+.chat-session-search {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--panel-light);
+  background: #0b1220;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.chat-session-fav-filter {
+  background: transparent;
+  border: 1px solid var(--panel-light);
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.chat-session-fav-filter.active {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: #fff;
+}
+.chat-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow-y: auto;
+  max-height: 55vh;
+}
+.chat-session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+}
+.chat-session-item:hover { background: var(--panel-light); }
+.chat-session-item.active {
+  background: var(--panel-light);
+  border-color: var(--accent-dark);
+}
+.chat-session-name-col { flex: 1; min-width: 0; }
+.chat-session-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-session-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 0.1rem;
+}
+.chat-session-rename-input {
+  width: 100%;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--accent-dark);
+  background: #0b1220;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.chat-session-delete {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  padding: 0.1rem 0.3rem;
+}
+.chat-session-delete:hover { color: var(--error); }
+.chat-main-panel { flex: 1; min-width: 0; }
+.msg-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+.msg-action-btn {
+  background: transparent;
+  border: 1px solid var(--panel-light);
+  color: var(--muted);
+  padding: 0.25rem 0.55rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.msg-action-btn:hover { color: var(--text); border-color: var(--accent); }
+.msg-fav-btn.favorited { color: #facc15; border-color: #facc15; }
+@media (max-width: 720px) {
+  .chat-layout { flex-direction: column; }
+  .chat-sessions-sidebar { width: 100%; }
+}
 .chat-log {
   display: flex;
   flex-direction: column;
@@ -150,6 +312,61 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   text-decoration: underline;
   margin: 0 0.15rem;
 }
+
+/* Confidence badge (item 5): heuristic score combining retrieval relevance and, when the
+   faithfulness check is enabled, whether the LLM judged the answer supported by the sources. */
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  margin-top: 0.5rem;
+  margin-right: 0.5rem;
+}
+.confidence-badge.confidence-high { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); }
+.confidence-badge.confidence-medium { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.4); }
+.confidence-badge.confidence-low { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.4); }
+
+/* Markdown rendering (markdown.js) for chat answers. */
+.msg-text .md-paragraph { margin: 0 0 0.6rem 0; }
+.msg-text .md-paragraph:last-child { margin-bottom: 0; }
+.msg-text .md-heading { margin: 0.8rem 0 0.4rem 0; line-height: 1.25; }
+.msg-text .md-heading:first-child { margin-top: 0; }
+.msg-text .md-list { margin: 0 0 0.6rem 0; padding-left: 1.4rem; }
+.msg-text .md-list:last-child { margin-bottom: 0; }
+.msg-text .md-list li { margin-bottom: 0.2rem; }
+.msg-text .md-inline-code {
+  background: var(--panel-light);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.88em;
+}
+.md-code-block {
+  background: #0b1220;
+  border: 1px solid var(--panel-light);
+  border-radius: 6px;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+  margin: 0 0 0.6rem 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.msg-text .md-code-block:last-child { margin-bottom: 0; }
+.md-code-block code { white-space: pre; }
+.md-code-line { display: block; }
+:root[data-theme="light"] .md-code-block { background: #0f172a; }
+
+/* Basic syntax-highlighting tokens shared by markdown.js code blocks. Colors are chosen to work
+   on the dark code-block background used in both light and dark themes (see .md-code-block). */
+.tok-keyword { color: #c792ea; font-weight: 600; }
+.tok-string { color: #a5d6a7; }
+.tok-comment { color: #8a94a6; font-style: italic; }
+.tok-number { color: #f78c6c; }
 .ask-row { display: flex; gap: 0.5rem; }
 .ask-row input { flex: 1; }
 .result-item {
@@ -168,7 +385,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   color: var(--muted);
   margin-left: 0.4rem;
 }
-.result-item mark, .msg mark {
+.result-item mark, .msg mark, .modal-box mark {
   background: var(--accent-dark);
   color: #fff;
   border-radius: 3px;
@@ -319,6 +536,7 @@ input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
 .flashcard-question { font-weight: 600; }
 .flashcard-answer { margin-top: 0.5rem; }
 .flashcard-answer.hidden { display: none; }
+.hidden { display: none !important; }
 .quiz-question {
   background: var(--panel);
   border: 1px solid var(--panel-light);
@@ -387,5 +605,60 @@ kbd {
   padding: 0.3rem 0.6rem;
   border-radius: 6px;
   background: var(--panel-light);
+  font-size: 0.85rem;
+}
+
+/* Barra de progresso da indexação (item 16) */
+.index-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.index-progress-row label { margin: 0; flex-shrink: 0; }
+.index-progress-row progress {
+  flex: 1;
+  height: 0.9rem;
+  accent-color: var(--accent);
+}
+.index-progress-row span {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Paginação do preview de documento (item 15) */
+.preview-pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.preview-pagination-row button {
+  background: transparent;
+  border: 1px solid var(--panel-light);
+  color: var(--text);
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.preview-pagination-row button:disabled { opacity: 0.4; cursor: default; }
+.preview-pagination-row span { font-size: 0.85rem; color: var(--muted); }
+
+/* Wizard de primeira execução (item 17) */
+.wizard-step h4 { margin: 0 0 0.4rem 0; }
+.wizard-nav-row { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.wizard-nav-row #wizardSkipButton { margin-right: auto; }
+
+/* Controle de tamanho de fonte e tema de cor no cabeçalho (item 18) */
+#fontSizeSelect, #colorThemeSelect {
+  width: auto;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--panel-light);
+  background: #0b1220;
+  color: var(--text);
   font-size: 0.85rem;
 }
