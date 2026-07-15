@@ -38,7 +38,8 @@ public sealed class AutoReindexHostedService : IHostedService, IDisposable
         _watcher = new AutoReindexWatcher(
             options.DocumentsFolder,
             ReindexAsync,
-            log: message => _logger.LogInformation("{Message}", message));
+            log: message => _logger.LogInformation("{Message}", message),
+            additionalFolders: options.AdditionalWatchedFolders);
 
         _watcher.Start();
         return Task.CompletedTask;
@@ -72,7 +73,8 @@ public sealed class AutoReindexHostedService : IHostedService, IDisposable
                 excludedFolders: options.ExcludedFolders,
                 piiRedactionEnabled: options.PiiRedactionEnabled,
                 parallelism: options.IndexingParallelism,
-                incrementalIndexingEnabled: options.IncrementalIndexingEnabled).ConfigureAwait(false);
+                incrementalIndexingEnabled: options.IncrementalIndexingEnabled,
+                additionalFolders: options.AdditionalWatchedFolders).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Reindexação automática concluída: {FilesProcessed} arquivo(s), {ChunksIndexed} trecho(s), {Errors} erro(s)",
