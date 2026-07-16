@@ -41,6 +41,43 @@ public class DocumentIndexerTests
     }
 
     [Fact]
+    public async Task IndexFolderAsync_IndexesFilesFromAdditionalFolders()
+    {
+        // Item 11: DocumentsFolder + AppOptions.AdditionalWatchedFolders — files that live
+        // outside DocumentsFolder must still be scanned and become searchable, keeping their
+        // original absolute path in the Lucene document.
+        var folder = Path.Combine(Path.GetTempPath(), $"multi-docs-{Guid.NewGuid()}");
+        var extraFolder = Path.Combine(Path.GetTempPath(), $"multi-extra-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"multi-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(extraFolder);
+
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(folder, "principal.txt"), "Documento na pasta principal sobre girafas.");
+            var extraFilePath = Path.Combine(extraFolder, "adicional.txt");
+            await File.WriteAllTextAsync(extraFilePath, "Documento na pasta adicional sobre elefantes.");
+
+            var indexer = new DocumentIndexer();
+            var stats = await indexer.IndexFolderAsync(folder, indexPath, additionalFolders: new[] { extraFolder });
+
+            Assert.Equal(2, stats.FilesProcessed);
+
+            var search = new SearchService(indexPath);
+            var results = search.Search("elefantes", 10);
+            var hit = Assert.Single(results);
+            Assert.Equal(extraFilePath, hit.SourcePath);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(extraFolder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task IndexFolderAsync_WritesIndexReportWithDuplicates()
     {
         var folder = Path.Combine(Path.GetTempPath(), $"report-docs-{Guid.NewGuid()}");
@@ -300,6 +337,135 @@ public class DocumentIndexerTests
 
             var oldResults = search.Search("original", 10);
             Assert.Empty(oldResults);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IndexFolderAsync_Incremental_ReindexWithNoChanges_LeavesIndexUntouched()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"incremental-nochange-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"incremental-nochange-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                await File.WriteAllTextAsync(Path.Combine(folder, $"arquivo{i}.txt"), $"Conteúdo estável número {i}.");
+            }
+
+            var indexer = new DocumentIndexer();
+            await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            var search = new SearchService(indexPath);
+            var docCountBefore = search.GetDocumentCount();
+            var filesBefore = search.GetIndexedFiles().Select(f => f.SourcePath).OrderBy(p => p).ToList();
+
+            await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            var searchAfter = new SearchService(indexPath);
+            var docCountAfter = searchAfter.GetDocumentCount();
+            var filesAfter = searchAfter.GetIndexedFiles().Select(f => f.SourcePath).OrderBy(p => p).ToList();
+
+            Assert.Equal(docCountBefore, docCountAfter);
+            Assert.Equal(filesBefore, filesAfter);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IndexFolderAsync_Incremental_ChangingOneOfManyFiles_OnlyReprocessesThatFile()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"incremental-partial-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"incremental-partial-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            var paths = new List<string>();
+            for (var i = 0; i < 5; i++)
+            {
+                var p = Path.Combine(folder, $"doc{i}.txt");
+                await File.WriteAllTextAsync(p, $"Conteúdo exclusivo e estável número {i}.");
+                paths.Add(p);
+            }
+
+            var indexer = new DocumentIndexer();
+            await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            // Only doc2.txt changes.
+            await Task.Delay(50);
+            await File.WriteAllTextAsync(paths[2], "Conteúdo totalmente novo, palavra-chave: modificadíssimo.");
+            File.SetLastWriteTimeUtc(paths[2], DateTime.UtcNow);
+
+            await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+
+            var search = new SearchService(indexPath);
+
+            // The changed file reflects its new content.
+            var changedResults = search.Search("modificadíssimo", 10);
+            Assert.Single(changedResults);
+            Assert.Equal(paths[2], changedResults[0].SourcePath);
+
+            // Every other file is still searchable with its original content.
+            for (var i = 0; i < 5; i++)
+            {
+                if (i == 2) continue;
+                var results = search.Search($"exclusivo e estável número {i}", 10);
+                Assert.Contains(results, r => r.SourcePath == paths[i]);
+            }
+
+            Assert.Equal(5, search.GetIndexedFiles().Count);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+            Directory.Delete(indexPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task IndexFolderAsync_Incremental_RemovingFileFromDisk_RemovesItsChunksFromIndex()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"incremental-removed-docs-{Guid.NewGuid()}");
+        var indexPath = Path.Combine(Path.GetTempPath(), $"incremental-removed-index-{Guid.NewGuid()}");
+
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            var keepPath = Path.Combine(folder, "fica.txt");
+            var removePath = Path.Combine(folder, "sai.txt");
+            await File.WriteAllTextAsync(keepPath, "Documento que permanece indexado.");
+            await File.WriteAllTextAsync(removePath, "Documento que será removido do disco.");
+
+            var indexer = new DocumentIndexer();
+            var firstRun = await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+            Assert.Equal(2, firstRun.FilesProcessed);
+
+            File.Delete(removePath);
+
+            var secondRun = await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
+            Assert.Equal(1, secondRun.FilesRemoved);
+
+            var search = new SearchService(indexPath);
+            Assert.Empty(search.GetChunksByPath(removePath));
+            Assert.NotEmpty(search.GetChunksByPath(keepPath));
+
+            var files = search.GetIndexedFiles();
+            Assert.Single(files);
+            Assert.Equal(keepPath, files[0].SourcePath);
         }
         finally
         {
