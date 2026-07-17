@@ -1,6 +1,7 @@
 using System.Text;
 using LLama;
 using LLama.Common;
+using LLama.Sampling;
 
 namespace QuestResume.Core.Rag;
 
@@ -12,18 +13,20 @@ public sealed class LocalLlmService : IDisposable
 {
     private readonly LLamaWeights _weights;
     private readonly ModelParams _modelParams;
+    private readonly LlmSamplingOptions _sampling;
 
-    private LocalLlmService(LLamaWeights weights, ModelParams modelParams)
+    private LocalLlmService(LLamaWeights weights, ModelParams modelParams, LlmSamplingOptions sampling)
     {
         _weights = weights;
         _modelParams = modelParams;
+        _sampling = sampling;
     }
 
     /// <summary>
     /// Loads the model at <paramref name="modelPath"/>. Throws <see cref="ModelNotConfiguredException"/>
     /// if the path is empty or the file doesn't exist.
     /// </summary>
-    public static LocalLlmService Load(string modelPath, int contextSize = 4096, int gpuLayerCount = 0)
+    public static LocalLlmService Load(string modelPath, int contextSize = 4096, int gpuLayerCount = 0, LlmSamplingOptions? sampling = null)
     {
         if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
         {
@@ -37,7 +40,7 @@ public sealed class LocalLlmService : IDisposable
         };
 
         var weights = LLamaWeights.LoadFromFile(modelParams);
-        return new LocalLlmService(weights, modelParams);
+        return new LocalLlmService(weights, modelParams, sampling ?? LlmSamplingOptions.Default);
     }
 
     /// <summary>
@@ -62,10 +65,21 @@ public sealed class LocalLlmService : IDisposable
     {
         var executor = new StatelessExecutor(_weights, _modelParams);
 
+        var samplingPipeline = new DefaultSamplingPipeline
+        {
+            Temperature = (float)_sampling.Temperature,
+            TopP = (float)_sampling.TopP
+        };
+        if (_sampling.Seed is int seed)
+        {
+            samplingPipeline.Seed = (uint)seed;
+        }
+
         var inferenceParams = new InferenceParams
         {
             MaxTokens = 512,
-            AntiPrompts = new List<string> { "PERGUNTA_DO_USUARIO:", "<documento" }
+            AntiPrompts = new List<string> { "PERGUNTA_DO_USUARIO:", "<documento" },
+            SamplingPipeline = samplingPipeline
         };
 
         return executor.InferAsync(prompt, inferenceParams, cancellationToken);
