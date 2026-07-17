@@ -16,6 +16,7 @@ public sealed class OllamaLlmProvider : ILlmProvider
     private readonly bool _ownsHttpClient;
     private readonly string _baseUrl;
     private readonly string _model;
+    private readonly LlmSamplingOptions _sampling;
 
     /// <param name="baseUrl">Ex.: "http://localhost:11434".</param>
     /// <param name="model">Nome do modelo Ollama (ex.: "llama3.2").</param>
@@ -23,17 +24,20 @@ public sealed class OllamaLlmProvider : ILlmProvider
     /// Cliente HTTP opcional, útil para testes (injetar <see cref="HttpMessageHandler"/> fake).
     /// Quando omitido, um cliente próprio é criado e descartado junto com o provider.
     /// </param>
-    public OllamaLlmProvider(string baseUrl, string model, HttpClient? httpClient = null)
+    public OllamaLlmProvider(string baseUrl, string model, HttpClient? httpClient = null, LlmSamplingOptions? sampling = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
         _model = model;
         _httpClient = httpClient ?? new HttpClient();
         _ownsHttpClient = httpClient is null;
+        _sampling = sampling ?? LlmSamplingOptions.Default;
     }
+
+    private OllamaOptions BuildOptions() => new(_sampling.Temperature, _sampling.TopP, _sampling.Seed);
 
     public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        var request = new OllamaGenerateRequest(_model, prompt, false);
+        var request = new OllamaGenerateRequest(_model, prompt, false, BuildOptions());
 
         HttpResponseMessage response;
         try
@@ -66,7 +70,7 @@ public sealed class OllamaLlmProvider : ILlmProvider
     /// </summary>
     public async IAsyncEnumerable<string> CompleteStreamAsync(string prompt, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var request = new OllamaGenerateRequest(_model, prompt, true);
+        var request = new OllamaGenerateRequest(_model, prompt, true, BuildOptions());
 
         HttpResponseMessage response;
         try
@@ -124,7 +128,18 @@ public sealed class OllamaLlmProvider : ILlmProvider
     private sealed record OllamaGenerateRequest(
         [property: JsonPropertyName("model")] string Model,
         [property: JsonPropertyName("prompt")] string Prompt,
-        [property: JsonPropertyName("stream")] bool Stream);
+        [property: JsonPropertyName("stream")] bool Stream,
+        [property: JsonPropertyName("options")] OllamaOptions Options);
+
+    /// <summary>
+    /// Subconjunto do objeto <c>options</c> da API do Ollama (<c>POST /api/generate</c>) usado
+    /// para amostragem (item 1). <c>seed</c> é omitido do JSON quando <c>null</c> (semente aleatória).
+    /// </summary>
+    private sealed record OllamaOptions(
+        [property: JsonPropertyName("temperature")] double Temperature,
+        [property: JsonPropertyName("top_p")] double TopP,
+        [property: JsonPropertyName("seed")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Seed);
 
     private sealed record OllamaGenerateResponse(
         [property: JsonPropertyName("response")] string? Response,
