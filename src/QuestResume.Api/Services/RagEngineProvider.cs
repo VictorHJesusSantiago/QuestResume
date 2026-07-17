@@ -40,14 +40,25 @@ public sealed class RagEngineProvider : IDisposable
         }
     }
 
-    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken)
+    /// <summary>
+    /// Obtém o provedor de LLM do engine configurado (item 7 — usado pelo endpoint de benchmark).
+    /// Não segura o semáforo de perguntas: o benchmark deve rodar isoladamente por conta do
+    /// chamador.
+    /// </summary>
+    public Task<ILlmProvider> GetLlmProviderAsync(AppOptions options, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        return engine.GetLlmProviderAsync(cancellationToken);
+    }
+
+    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken, string? persona = null)
     {
         var engine = GetEngine(options);
 
         await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await engine.AskAsync(question, topK, history, cancellationToken).ConfigureAwait(false);
+            return await engine.AskAsync(question, topK, history, cancellationToken, persona).ConfigureAwait(false);
         }
         finally
         {
@@ -135,6 +146,74 @@ public sealed class RagEngineProvider : IDisposable
         {
             _askSemaphore.Release();
         }
+    }
+
+    public async Task<AskResult> CompareAsync(AppOptions options, IReadOnlyList<string> paths, string question, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try { return await engine.CompareAsync(paths, question, cancellationToken).ConfigureAwait(false); }
+        finally { _askSemaphore.Release(); }
+    }
+
+    public async Task<AskResult> SummarizeMultipleAsync(AppOptions options, IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try { return await engine.SummarizeMultipleAsync(paths, cancellationToken).ConfigureAwait(false); }
+        finally { _askSemaphore.Release(); }
+    }
+
+    public async Task<MindMapNode> GenerateMindMapAsync(AppOptions options, string path, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            return await new MindMapService(engine.SearchService.GetChunksByPath, llm).GenerateAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _askSemaphore.Release(); }
+    }
+
+    public async Task<List<TimelineEvent>> ExtractTimelineAsync(AppOptions options, string path, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            return await new TimelineExtractionService(engine.SearchService.GetChunksByPath, llm).ExtractAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _askSemaphore.Release(); }
+    }
+
+    public async Task<List<string>> GenerateOutlineAsync(AppOptions options, string path, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            return await new DocumentOutlineService(engine.SearchService.GetChunksByPath, llm).GenerateAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _askSemaphore.Release(); }
+    }
+
+    public async Task<List<ExtractedEntity>> ExtractEntitiesAsync(AppOptions options, string path, CancellationToken cancellationToken)
+    {
+        var engine = GetEngine(options);
+        await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var llm = await engine.GetLlmProviderAsync(cancellationToken).ConfigureAwait(false);
+            var chunks = engine.SearchService.GetChunksByPath(path);
+            if (chunks.Count == 0)
+                throw new InvalidOperationException($"Nenhum conteúdo indexado foi encontrado para '{path}'.");
+            var text = string.Join("\n\n", chunks.Select(c => c.ChunkText));
+            return await new EntityExtractionService(llm).ExtractAsync(text, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _askSemaphore.Release(); }
     }
 
     public async Task<TableExtractionResult> ExtractTableAsync(AppOptions options, string path, string? instruction, CancellationToken cancellationToken)
