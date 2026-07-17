@@ -35,6 +35,12 @@ public sealed class RagQueryEngine : IDisposable
     private readonly WebhookNotifier? _webhookNotifier;
     private readonly bool _faithfulnessCheckEnabled;
     private readonly double _minRelevanceThreshold;
+    private readonly LlmSamplingOptions _sampling;
+    private readonly string _customSystemPrompt;
+    private readonly Persistence.PromptPersonaStore? _personaStore;
+    private readonly string _summarizationModelPath;
+    private readonly SemaphoreSlim _auxLlmInitLock = new(1, 1);
+    private ILlmProvider? _auxLlm;
 
     /// <summary>Resposta padrão em PT-BR devolvida pelo guardrail de "não sei" (<see cref="_minRelevanceThreshold"/>).</summary>
     public const string InsufficientContextAnswer =
@@ -91,15 +97,23 @@ public sealed class RagQueryEngine : IDisposable
         bool multiQueryEnabled = false,
         int multiQueryVariations = 3,
         bool faithfulnessCheckEnabled = false,
-        double minRelevanceThreshold = 0)
+        double minRelevanceThreshold = 0,
+        LlmSamplingOptions? sampling = null,
+        string customSystemPrompt = "",
+        Persistence.PromptPersonaStore? personaStore = null,
+        string summarizationModelPath = "")
     {
         _webhookNotifier = webhookNotifier;
         _faithfulnessCheckEnabled = faithfulnessCheckEnabled;
         _minRelevanceThreshold = minRelevanceThreshold;
+        _sampling = sampling ?? LlmSamplingOptions.Default;
+        _customSystemPrompt = customSystemPrompt ?? string.Empty;
+        _personaStore = personaStore;
+        _summarizationModelPath = summarizationModelPath ?? string.Empty;
         _llmProviderOverride = llmProviderOverride;
         _searchService = new HybridSearchService(
             searchService, vectorStore, embeddingService, hybridBm25Weight, crossEncoderService, rankFusionStrategy, rrfK,
-            llmFactory: GetOrCreateLlmAsync,
+            llmFactory: GetOrCreateAuxLlmAsync,
             queryExpansionEnabled: queryExpansionEnabled,
             hydeEnabled: hydeEnabled,
             multiQueryEnabled: multiQueryEnabled,
@@ -133,12 +147,14 @@ public sealed class RagQueryEngine : IDisposable
     /// <remarks>
     /// Use <see cref="SearchService"/> directly for keyword search without an LLM.
     /// </remarks>
-    public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default)
+    public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null)
     {
+        var systemPromptOverride = ResolveSystemPrompt(personaName);
+
         // Only cache standalone questions: a follow-up's correct answer depends on the
         // conversation history, so it can't reuse an answer computed without it.
         var useCache = history is null || history.Count == 0;
-        var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK) : null;
+        var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK, systemPromptOverride) : null;
 
         if (cacheKey is not null && _answerCache.TryGetValue(cacheKey, out var cached))
         {
@@ -173,7 +189,7 @@ public sealed class RagQueryEngine : IDisposable
 
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
 
-        var prompt = PromptBuilder.BuildPrompt(question, sources, history);
+        var prompt = PromptBuilder.BuildPrompt(question, sources, history, systemPromptOverride);
 
         using var cts = _llmTimeoutSeconds > 0
             ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
@@ -275,10 +291,11 @@ public sealed class RagQueryEngine : IDisposable
     /// and audit-logged once the returned <see cref="StreamingAskResult.Tokens"/> stream is
     /// fully enumerated.
     /// </summary>
-    public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default)
+    public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null)
     {
+        var systemPromptOverride = ResolveSystemPrompt(personaName);
         var useCache = history is null || history.Count == 0;
-        var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK) : null;
+        var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK, systemPromptOverride) : null;
 
         if (cacheKey is not null && _answerCache.TryGetValue(cacheKey, out var cached))
         {
@@ -306,7 +323,7 @@ public sealed class RagQueryEngine : IDisposable
 
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
 
-        var prompt = PromptBuilder.BuildPrompt(question, sources, history);
+        var prompt = PromptBuilder.BuildPrompt(question, sources, history, systemPromptOverride);
 
         // Timeout is enforced inside StreamAndRecordAsync via a linked CTS so the semaphore
         // held by RagEngineProvider is released when the stream times out.
@@ -471,8 +488,8 @@ public sealed class RagQueryEngine : IDisposable
         return yesIndex < noIndex;
     }
 
-    private static string BuildCacheKey(string question, int topK) =>
-        $"{topK}|{question.Trim().ToLowerInvariant()}";
+    private static string BuildCacheKey(string question, int topK, string? systemPromptOverride = null) =>
+        $"{topK}|{(systemPromptOverride ?? string.Empty).GetHashCode()}|{question.Trim().ToLowerInvariant()}";
 
     /// <summary>
     /// Answers <paramref name="question"/> about two specific indexed files, e.g. "what
@@ -480,26 +497,64 @@ public sealed class RagQueryEngine : IDisposable
     /// (via <see cref="HybridSearchService.GetChunksByPath"/>) rather than ranking by
     /// relevance, since both documents are explicitly chosen by the caller.
     /// </summary>
-    public async Task<AskResult> CompareAsync(string pathA, string pathB, string question, CancellationToken cancellationToken = default)
-    {
-        var chunksA = _searchService.GetChunksByPath(pathA);
-        var chunksB = _searchService.GetChunksByPath(pathB);
+    public Task<AskResult> CompareAsync(string pathA, string pathB, string question, CancellationToken cancellationToken = default) =>
+        CompareAsync(new[] { pathA, pathB }, question, cancellationToken);
 
-        if (chunksA.Count == 0 && chunksB.Count == 0)
+    /// <summary>
+    /// Versão generalizada de <see cref="CompareAsync(string,string,string,CancellationToken)"/>
+    /// para 2 ou mais documentos.
+    /// </summary>
+    public async Task<AskResult> CompareAsync(IReadOnlyList<string> paths, string question, CancellationToken cancellationToken = default)
+    {
+        if (paths is null || paths.Count < 2)
+            throw new ArgumentException("Informe ao menos dois documentos para comparar.", nameof(paths));
+
+        var chunksPerDoc = paths.Select(p => _searchService.GetChunksByPath(p)).ToList();
+
+        if (chunksPerDoc.All(c => c.Count == 0))
         {
             return new AskResult
             {
-                Answer = "Nenhum dos dois arquivos informados foi encontrado no índice. Verifique os caminhos e indexe a pasta novamente se necessário.",
+                Answer = "Nenhum dos arquivos informados foi encontrado no índice. Verifique os caminhos e indexe a pasta novamente se necessário.",
                 Sources = Array.Empty<SearchResultItem>()
             };
         }
 
         var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
 
-        var prompt = PromptBuilder.BuildComparisonPrompt(question, pathA, pathB, chunksA, chunksB);
+        var prompt = PromptBuilder.BuildMultiComparisonPrompt(question, paths, chunksPerDoc);
         var answer = await llm.CompleteAsync(prompt, cancellationToken).ConfigureAwait(false);
 
-        return new AskResult { Answer = answer, Sources = chunksA.Concat(chunksB).ToList() };
+        return new AskResult { Answer = answer, Sources = chunksPerDoc.SelectMany(c => c).ToList() };
+    }
+
+    /// <summary>
+    /// Resumo executivo consolidado de vários documentos (item 6): junta os primeiros N caracteres
+    /// de cada documento (capado por documento, como <see cref="CompareAsync(IReadOnlyList{string},string,CancellationToken)"/>)
+    /// e pede ao LLM um único resumo executivo.
+    /// </summary>
+    public async Task<AskResult> SummarizeMultipleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
+    {
+        if (paths is null || paths.Count == 0)
+            throw new ArgumentException("Informe ao menos um documento para resumir.", nameof(paths));
+
+        var chunksPerDoc = paths.Select(p => _searchService.GetChunksByPath(p)).ToList();
+
+        if (chunksPerDoc.All(c => c.Count == 0))
+        {
+            return new AskResult
+            {
+                Answer = "Nenhum dos arquivos informados foi encontrado no índice. Verifique os caminhos e indexe a pasta novamente se necessário.",
+                Sources = Array.Empty<SearchResultItem>()
+            };
+        }
+
+        var llm = await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
+
+        var prompt = PromptBuilder.BuildMultiSummaryPrompt(paths, chunksPerDoc);
+        var answer = await llm.CompleteAsync(prompt, cancellationToken).ConfigureAwait(false);
+
+        return new AskResult { Answer = answer, Sources = chunksPerDoc.SelectMany(c => c).ToList() };
     }
 
     /// <summary>
@@ -541,9 +596,29 @@ public sealed class RagQueryEngine : IDisposable
 
         return _llmProviderKind switch
         {
-            LlmProviderKind.Ollama => new OllamaLlmProvider(_ollamaBaseUrl, _ollamaModel, _httpClient),
-            _ => new LlamaSharpLlmProvider(_modelPath, _contextSize, _gpuLayerCount)
+            LlmProviderKind.Ollama => new OllamaLlmProvider(_ollamaBaseUrl, _ollamaModel, _httpClient, _sampling),
+            _ => new LlamaSharpLlmProvider(_modelPath, _contextSize, _gpuLayerCount, _sampling)
         };
+    }
+
+    /// <summary>
+    /// Resolve o prompt de sistema efetivo para uma pergunta (item 2/3): uma persona nomeada
+    /// (<paramref name="personaName"/>) tem precedência; na ausência dela, usa-se
+    /// <see cref="Configuration.AppOptions.CustomSystemPrompt"/>; e por fim o prompt padrão do
+    /// projeto. Retorna <c>null</c> (prompt padrão) quando nada é configurado.
+    /// </summary>
+    private string? ResolveSystemPrompt(string? personaName)
+    {
+        if (!string.IsNullOrWhiteSpace(personaName) && _personaStore is not null)
+        {
+            var persona = _personaStore.Find(personaName);
+            if (persona is not null && !string.IsNullOrWhiteSpace(persona.SystemPrompt))
+            {
+                return persona.SystemPrompt;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(_customSystemPrompt) ? null : _customSystemPrompt;
     }
 
     /// <summary>
@@ -558,13 +633,56 @@ public sealed class RagQueryEngine : IDisposable
     public Task<ILlmProvider> GetLlmProviderAsync(CancellationToken cancellationToken = default) =>
         GetOrCreateLlmAsync(cancellationToken);
 
+    /// <summary>
+    /// Obtém o provedor de LLM para tarefas auxiliares baratas (sumarização, expansão de consulta,
+    /// HyDE) — item 5. Quando <see cref="Configuration.AppOptions.SummarizationModelPath"/> está
+    /// configurado (e o provedor principal é o LLamaSharp embutido), carrega um segundo modelo
+    /// menor apontado por esse caminho; caso contrário, reaproveita o provedor principal para não
+    /// carregar dois modelos na memória.
+    /// </summary>
+    public Task<ILlmProvider> GetAuxiliaryLlmProviderAsync(CancellationToken cancellationToken = default) =>
+        GetOrCreateAuxLlmAsync(cancellationToken);
+
+    private async Task<ILlmProvider> GetOrCreateAuxLlmAsync(CancellationToken cancellationToken)
+    {
+        // Opt-in: só usa modelo auxiliar separado com o provedor LLamaSharp embutido e um caminho
+        // configurado que exista em disco. Caso contrário, reaproveita o provedor principal.
+        if (string.IsNullOrWhiteSpace(_summarizationModelPath)
+            || !File.Exists(_summarizationModelPath)
+            || _llmProviderKind != LlmProviderKind.LlamaSharp
+            || _llmProviderOverride is not null)
+        {
+            return await GetOrCreateLlmAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (_auxLlm is not null)
+        {
+            return _auxLlm;
+        }
+
+        await _auxLlmInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return _auxLlm ??= new LlamaSharpLlmProvider(_summarizationModelPath, _contextSize, _gpuLayerCount, _sampling);
+        }
+        finally
+        {
+            _auxLlmInitLock.Release();
+        }
+    }
+
 
     public void Dispose()
     {
         _llm?.Dispose();
+        if (!ReferenceEquals(_auxLlm, _llm))
+        {
+            _auxLlm?.Dispose();
+        }
         _embeddingService?.Dispose();
         _crossEncoderService?.Dispose();
         _vectorStore?.Dispose();
         _llmInitLock.Dispose();
+        _auxLlmInitLock.Dispose();
     }
 }

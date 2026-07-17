@@ -34,7 +34,12 @@ public sealed record RagEngineKey(
     int MaxAuditLogLines,
     bool LlmFallbackEnabled,
     bool FaithfulnessCheckEnabled,
-    double MinRelevanceThreshold)
+    double MinRelevanceThreshold,
+    double LlmTemperature,
+    double LlmTopP,
+    int? LlmSeed,
+    string CustomSystemPrompt,
+    string SummarizationModelPath)
 {
     public static RagEngineKey From(AppOptions options, int? topK = null) => new(
         options.ModelPath,
@@ -57,7 +62,12 @@ public sealed record RagEngineKey(
         options.MaxAuditLogLines,
         options.LlmFallbackEnabled,
         options.FaithfulnessCheckEnabled,
-        options.MinRelevanceThreshold);
+        options.MinRelevanceThreshold,
+        options.LlmTemperature,
+        options.LlmTopP,
+        options.LlmSeed,
+        options.CustomSystemPrompt,
+        options.SummarizationModelPath);
 }
 
 /// <summary>
@@ -74,6 +84,9 @@ public static class RagQueryEngineFactory
         var providerKind = Enum.TryParse<LlmProviderKind>(options.LlmProvider, ignoreCase: true, out var kind)
             ? kind
             : LlmProviderKind.LlamaSharp;
+
+        var sampling = new LlmSamplingOptions(options.LlmTemperature, options.LlmTopP, options.LlmSeed);
+        var personaStore = new PromptPersonaStore(options.IndexPath);
 
         IVectorStore? vectorStore = null;
         IEmbeddingService? embeddingService = null;
@@ -107,8 +120,8 @@ public static class RagQueryEngineFactory
         {
             llmProviderOverride = new RoutingLlmProvider(new ILlmProvider[]
             {
-                new OllamaLlmProvider(options.OllamaBaseUrl, options.OllamaModel, httpClient),
-                new LlamaSharpLlmProvider(options.ModelPath, options.ContextSize, options.GpuLayerCount)
+                new OllamaLlmProvider(options.OllamaBaseUrl, options.OllamaModel, httpClient, sampling),
+                new LlamaSharpLlmProvider(options.ModelPath, options.ContextSize, options.GpuLayerCount, sampling)
             });
         }
 
@@ -138,7 +151,11 @@ public static class RagQueryEngineFactory
             multiQueryEnabled: options.MultiQueryEnabled,
             multiQueryVariations: options.MultiQueryVariations,
             faithfulnessCheckEnabled: options.FaithfulnessCheckEnabled,
-            minRelevanceThreshold: options.MinRelevanceThreshold);
+            minRelevanceThreshold: options.MinRelevanceThreshold,
+            sampling: sampling,
+            customSystemPrompt: options.CustomSystemPrompt,
+            personaStore: personaStore,
+            summarizationModelPath: options.SummarizationModelPath);
     }
 
     private static bool IsLlamaSharpConfigured(string modelPath) =>
