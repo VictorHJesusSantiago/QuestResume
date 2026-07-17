@@ -114,6 +114,48 @@ public sealed class AppOptions
     /// </summary>
     public int GpuLayerCount { get; set; } = 0;
 
+    // --- Amostragem do LLM (item 1) ---
+
+    /// <summary>
+    /// Temperatura de amostragem do LLM (0 = determinístico, valores maiores = mais aleatório).
+    /// Repassada ao <c>DefaultSamplingPipeline.Temperature</c> do LLamaSharp e ao campo
+    /// <c>options.temperature</c> da API do Ollama. Padrão: 0.8.
+    /// </summary>
+    public double LlmTemperature { get; set; } = 0.8;
+
+    /// <summary>
+    /// Amostragem nucleus (top-p): mantém apenas os tokens cuja massa de probabilidade acumulada
+    /// atinge este valor. Repassada ao <c>DefaultSamplingPipeline.TopP</c> do LLamaSharp e ao
+    /// campo <c>options.top_p</c> do Ollama. Padrão: 0.9.
+    /// </summary>
+    public double LlmTopP { get; set; } = 0.9;
+
+    /// <summary>
+    /// Semente do gerador aleatório do LLM. <c>null</c> (padrão) = semente aleatória a cada
+    /// inferência (resultados variam); um valor fixo torna as respostas reproduzíveis. Repassada
+    /// ao <c>DefaultSamplingPipeline.Seed</c> do LLamaSharp e ao campo <c>options.seed</c> do Ollama.
+    /// </summary>
+    public int? LlmSeed { get; set; }
+
+    // --- Prompt de sistema customizável (itens 2 e 5) ---
+
+    /// <summary>
+    /// Prompt de sistema customizado. Quando não vazio, SUBSTITUI a instrução de sistema padrão
+    /// do <see cref="QuestResume.Core.Rag.PromptBuilder"/> na construção do prompt de resposta do
+    /// RAG (o restante — tags &lt;documento&gt;, histórico, pergunta — é mantido). Vazio = usa o
+    /// prompt padrão do projeto.
+    /// </summary>
+    public string CustomSystemPrompt { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Caminho para um modelo .gguf menor/mais barato usado apenas em tarefas auxiliares
+    /// (sumarização, expansão de consulta, HyDE) via <see cref="QuestResume.Core.Rag.SummarizationService"/>
+    /// e <see cref="QuestResume.Core.Rag.QueryEnhancementService"/>. OPT-IN: vazio (padrão) = essas
+    /// tarefas usam o mesmo modelo principal de <see cref="ModelPath"/>, evitando carregar dois
+    /// modelos na memória.
+    /// </summary>
+    public string SummarizationModelPath { get; set; } = string.Empty;
+
     // --- Resiliência ---
 
     /// <summary>
@@ -140,6 +182,21 @@ public sealed class AppOptions
     /// Padrão: <see cref="Environment.ProcessorCount"/>.
     /// </summary>
     public int IndexingParallelism { get; set; } = Math.Max(1, Environment.ProcessorCount);
+
+    /// <summary>
+    /// Atraso, em milissegundos, aplicado após o processamento de cada arquivo durante a
+    /// indexação (<c>Task.Delay</c>). Quando maior que 0, funciona como um regulador ("throttle")
+    /// que reduz o uso de CPU/disco em máquinas compartilhadas ao custo de indexação mais lenta.
+    /// Padrão: 0 (sem atraso).
+    /// </summary>
+    public int IndexingThrottleDelayMs { get; set; } = 0;
+
+    /// <summary>
+    /// Quando habilitado (opt-in), a lista de arquivos é ordenada por data de última modificação
+    /// (<c>LastWriteTimeUtc</c>) em ordem decrescente antes do processamento, de modo que os
+    /// arquivos mais recentes sejam indexados primeiro. Padrão: <c>false</c>.
+    /// </summary>
+    public bool PrioritizeRecentFiles { get; set; } = false;
 
     /// <summary>
     /// Quando habilitado, arquivos cujo hash SHA-256 e data de modificação não mudaram desde a
@@ -392,6 +449,22 @@ public sealed class AppOptions
     /// <summary>Limiar de similaridade de cosseno acima do qual dois documentos são marcados como quase-duplicatas.</summary>
     public double SemanticDuplicateThreshold { get; set; } = 0.97;
 
+    // --- Agendamento local de indexação (Lote 4) ---
+
+    /// <summary>
+    /// Habilita o agendamento local de reindexações periódicas via
+    /// <see cref="QuestResume.Core.Indexing.IndexScheduler"/>, que dispara
+    /// <see cref="QuestResume.Core.Indexing.DocumentIndexer.IndexFolderAsync"/> a cada
+    /// <see cref="ScheduledIndexingIntervalMinutes"/> minutos. Independente de
+    /// <see cref="AutoReindexEnabled"/> (que reage a mudanças no sistema de arquivos); este é um
+    /// agendamento por tempo, útil quando o FileSystemWatcher não é confiável (ex.: unidades de
+    /// rede) ou como reforço periódico.
+    /// </summary>
+    public bool ScheduledIndexingEnabled { get; set; } = false;
+
+    /// <summary>Intervalo (em minutos) entre execuções agendadas quando <see cref="ScheduledIndexingEnabled"/> está ativo.</summary>
+    public int ScheduledIndexingIntervalMinutes { get; set; } = 60;
+
     // --- Verificação de fidelidade / anti-alucinação e guardrails ---
 
     /// <summary>
@@ -409,6 +482,37 @@ public sealed class AppOptions
     /// guardrail.
     /// </summary>
     public double MinRelevanceThreshold { get; set; } = 0;
+
+    // --- Extração de entidades (item 8) ---
+
+    /// <summary>
+    /// Quando habilitado, após a indexação de cada documento uma etapa pós-indexação (como a
+    /// sumarização) usa o LLM para extrair entidades nomeadas, gravadas no sidecar
+    /// <c>entities.json</c>. Custa uma chamada extra ao LLM por documento.
+    /// </summary>
+    public bool EntityExtractionEnabled { get; set; } = false;
+
+    // --- Backup agendado (item 14) ---
+
+    /// <summary>Quando habilitado, a API dispara backups do índice num intervalo fixo, com rotação.</summary>
+    public bool ScheduledBackupEnabled { get; set; } = false;
+
+    /// <summary>Intervalo (em horas) entre backups agendados quando <see cref="ScheduledBackupEnabled"/> está ativo.</summary>
+    public int ScheduledBackupIntervalHours { get; set; } = 24;
+
+    /// <summary>Quantidade de backups mais recentes a manter (os mais antigos são apagados).</summary>
+    public int BackupRetentionCount { get; set; } = 7;
+
+    // --- Versionamento de documentos (item 20) ---
+
+    /// <summary>
+    /// Quando habilitado, ao reindexar um documento com conteúdo diferente a versão anterior é
+    /// guardada no sidecar <c>document-versions.json</c> antes de sobrescrever. Cresce em disco.
+    /// </summary>
+    public bool DocumentVersioningEnabled { get; set; } = false;
+
+    /// <summary>Máximo de versões guardadas por documento (as mais antigas são descartadas).</summary>
+    public int MaxVersionsPerDocument { get; set; } = 5;
 
     /// <summary>
     /// Valida que os valores numéricos fazem sentido entre si (ex.: <see cref="ChunkOverlap"/>
@@ -535,6 +639,26 @@ public sealed class AppOptions
         if (MinRelevanceThreshold < 0 || MinRelevanceThreshold > 1)
         {
             throw new AppOptionsValidationException("MinRelevanceThreshold deve estar entre 0 e 1.");
+        }
+
+        if (ScheduledIndexingIntervalMinutes < 1)
+        {
+            throw new AppOptionsValidationException("ScheduledIndexingIntervalMinutes deve ser maior ou igual a 1.");
+        }
+
+        if (IndexingThrottleDelayMs < 0)
+        {
+            throw new AppOptionsValidationException("IndexingThrottleDelayMs não pode ser negativo.");
+        }
+
+        if (LlmTemperature < 0)
+        {
+            throw new AppOptionsValidationException("LlmTemperature não pode ser negativa.");
+        }
+
+        if (LlmTopP <= 0 || LlmTopP > 1)
+        {
+            throw new AppOptionsValidationException("LlmTopP deve estar entre 0 (exclusivo) e 1.");
         }
     }
 
