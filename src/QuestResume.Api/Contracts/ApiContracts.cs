@@ -22,11 +22,23 @@ public sealed record SearchRequest(
 
 public sealed record SetTagsRequest(string Path, List<string>? Tags);
 
-public sealed record AskRequest(string Question, int? TopK, IReadOnlyList<ChatTurn>? History = null);
+public sealed record AskRequest(string Question, int? TopK, IReadOnlyList<ChatTurn>? History = null, string? Persona = null);
 
 public sealed record BatchAskRequest(List<string> Questions, int? TopK);
 
-public sealed record CompareRequest(string PathA, string PathB, string? Question);
+public sealed record CompareRequest(string PathA, string PathB, string? Question, List<string>? Paths = null);
+
+public sealed record SummarizeMultiRequest(List<string> Paths);
+
+public sealed record ChatExportFormatRequest(List<ChatExportTurnRequest> Turns, string? Format);
+
+public sealed record ConfigImportRequest(string Json);
+
+public sealed record AnnotationRequest(string Path, int StartOffset, int EndOffset, string Text, string? Note);
+
+public sealed record SearchExportRequest(List<SearchResultItem>? Results, string? Format);
+
+public sealed record AnkiExportRequest(List<QuestResume.Core.Models.Flashcard> Flashcards);
 
 public sealed record ExtractTableRequest(string Path, string? Instruction, string? Format);
 
