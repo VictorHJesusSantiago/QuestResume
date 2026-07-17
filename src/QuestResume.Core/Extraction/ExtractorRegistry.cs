@@ -96,6 +96,18 @@ public sealed class ExtractorRegistry
         yield return new EmailExtractor();
         yield return new VideoMetadataExtractor();
         yield return new ExecutableMetadataExtractor();
+        yield return new LegacyOfficeExtractor();
+        yield return new SqliteExtractor();
+        yield return new ParquetExtractor();
+        yield return new Fb2Extractor();
+        yield return new MobiExtractor();
+        yield return new ChmDjvuMetadataExtractor();
+        yield return new LnkExtractor();
+        yield return new PsdExtractor();
+        yield return new ApkExtractor();
+        yield return new TorrentExtractor();
+        yield return new DwgDxfExtractor();
+        yield return new PstOstExtractor();
 
         if (options?.SttEnabled == true)
         {
@@ -105,6 +117,7 @@ public sealed class ExtractorRegistry
         if (includeArchives)
         {
             yield return new ZipArchiveExtractor(options);
+            yield return new ArchiveExtractor(options);
         }
     }
 
