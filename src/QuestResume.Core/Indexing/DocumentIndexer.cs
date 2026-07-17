@@ -73,7 +73,10 @@ public sealed class DocumentIndexer
         bool contextualRetrievalEnabled = false,
         bool semanticDeduplicationEnabled = false,
         double semanticDuplicateThreshold = 0.97,
-        IReadOnlyList<string>? additionalFolders = null)
+        IReadOnlyList<string>? additionalFolders = null,
+        int throttleDelayMs = 0,
+        bool prioritizeRecentFiles = false,
+        System.Threading.ManualResetEventSlim? pauseHandle = null)
     {
         parallelism = parallelism <= 0 ? Math.Max(1, Environment.ProcessorCount) : parallelism;
 
@@ -242,6 +245,18 @@ public sealed class DocumentIndexer
                     }
                 }
 
+                // Priorização por data (AppOptions.PrioritizeRecentFiles, item 19 do Lote 4):
+                // arquivos modificados mais recentemente são processados primeiro — útil quando a
+                // indexação é interrompida no meio (item 16/17), pois o conteúdo mais provável de
+                // interessar ao usuário já terá sido indexado. Opt-in: quando desabilitado, mantém
+                // a ordem de enumeração original (comportamento prévio).
+                if (prioritizeRecentFiles)
+                {
+                    allFileEntries = allFileEntries
+                        .OrderByDescending(e => File.GetLastWriteTimeUtc(e.Path))
+                        .ToList();
+                }
+
                 var allFiles = allFileEntries.Select(e => e.Path).ToList();
                 var rootByFile = allFileEntries.ToDictionary(e => e.Path, e => e.Root, StringComparer.OrdinalIgnoreCase);
                 var fileCounter = 0;
@@ -256,6 +271,22 @@ public sealed class DocumentIndexer
 
                 await Parallel.ForEachAsync(allFiles, parallelOptions, async (filePath, ct) =>
                 {
+                    // Pausar/retomar (item 16 do Lote 4): quando pauseHandle é fornecido e está
+                    // "não sinalizado" (pausado), cada worker bloqueia aqui antes de processar o
+                    // próximo arquivo, até ser sinalizado (retomado) ou cancelado. Arquivos já em
+                    // processamento terminam normalmente; nenhum novo arquivo começa enquanto
+                    // pausado. ManualResetEventSlim.Wait com CancellationToken lança
+                    // OperationCanceledException em cancelamento, propagada normalmente.
+                    pauseHandle?.Wait(ct);
+
+                    // Throttling (AppOptions.IndexingThrottleDelayMs, item 18): quando > 0, insere
+                    // um atraso antes de processar cada arquivo, reduzindo a taxa de I/O/CPU usada
+                    // pela indexação (útil em máquinas com poucos recursos). 0 (padrão) = sem atraso.
+                    if (throttleDelayMs > 0)
+                    {
+                        await Task.Delay(throttleDelayMs, ct).ConfigureAwait(false);
+                    }
+
                     var prefix = $"[{Interlocked.Increment(ref fileCounter)}/{allFiles.Count}]";
 
                     if (excludedFolders is not null && IsUnderExcludedFolder(filePath, excludedFolders))
