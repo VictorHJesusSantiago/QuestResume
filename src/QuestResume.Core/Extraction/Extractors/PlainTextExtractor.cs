@@ -15,7 +15,10 @@ public sealed class PlainTextExtractor : IFileExtractor
         // Source code / config formats: read as plain text and chunked function/class-aware
         // by TextChunker.ChunkCode (see TextChunker.CodeExtensions).
         ".cs", ".py", ".java", ".ts", ".tsx", ".jsx", ".go", ".rb", ".php", ".c", ".cpp",
-        ".h", ".hpp", ".rs", ".kt", ".swift", ".sh", ".ps1", ".sql", ".yaml", ".yml", ".md"
+        ".h", ".hpp", ".rs", ".kt", ".swift", ".sh", ".ps1", ".sql", ".yaml", ".yml", ".md",
+        // Arquivos de registro do Windows (.reg): texto UTF-16/ANSI, cobertos pela mesma detecção
+        // de encoding usada para os demais formatos de texto (item 8 do Lote 4).
+        ".reg"
     };
 
     public async Task<ExtractedDocument> ExtractAsync(string path, CancellationToken cancellationToken = default)
