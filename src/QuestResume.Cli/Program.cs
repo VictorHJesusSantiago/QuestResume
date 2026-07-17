@@ -79,6 +79,11 @@ try
         "restore" => await RunRestoreAsync(rest),
         "extract-table" => await RunExtractTableAsync(rest),
         "flashcards" => await RunFlashcardsAsync(rest),
+        "study-review" => RunStudyReview(rest),
+        "summarize-multi" => await RunSummarizeMultiAsync(rest),
+        "annotate" => RunAnnotate(rest),
+        "health-check" => RunHealthCheck(rest),
+        "versions" => RunVersions(rest),
         "quiz" => await RunQuizAsync(rest),
         "translate" => await RunTranslateAsync(rest),
         "plugins" => RunPlugins(rest),
@@ -89,6 +94,9 @@ try
         "webhook" => RunWebhook(rest),
         "cloud" => RunCloud(rest),
         "evaluate" => await RunEvaluateAsync(rest),
+        "persona" => RunPersona(rest),
+        "benchmark" => await RunBenchmarkAsync(rest),
+        "hardware" => RunHardware(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
     };
@@ -156,7 +164,9 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
         summarizationEngine = RagQueryEngineFactory.Create(options);
         try
         {
-            summarizationLlm = await summarizationEngine.GetLlmProviderAsync();
+            // Item 5: usa o modelo auxiliar (SummarizationModelPath) quando configurado; caso
+            // contrário reaproveita o modelo principal.
+            summarizationLlm = await summarizationEngine.GetAuxiliaryLlmProviderAsync();
         }
         catch (Exception ex)
         {
@@ -315,6 +325,7 @@ async Task<int> RunAskAsync(string[] cmdArgs)
     }
 
     var topK = GetIntFlagValue(cmdArgs, "--top-k") ?? options.TopK;
+    var persona = GetFlagValue(cmdArgs, "--persona");
     var askOptions = options.Clone();
     askOptions.IndexPath = ResolveCollectionIndexPath(options, cmdArgs);
     var search = new SearchService(askOptions.IndexPath);
@@ -330,7 +341,7 @@ async Task<int> RunAskAsync(string[] cmdArgs)
     try
     {
         Console.WriteLine("Pensando (isso pode demorar na primeira pergunta, enquanto o modelo carrega)...");
-        var result = await engine.AskAsync(question, topK);
+        var result = await engine.AskAsync(question, topK, personaName: persona);
 
         Console.WriteLine();
         Console.WriteLine("Resposta:");
@@ -368,6 +379,71 @@ async Task<int> RunAskAsync(string[] cmdArgs)
         return 1;
     }
 
+    return 0;
+}
+
+int RunPersona(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var store = new QuestResume.Core.Persistence.PromptPersonaStore(options.IndexPath);
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant() ?? "list";
+
+    switch (sub)
+    {
+        case "list":
+            Console.WriteLine("Personas disponíveis:");
+            foreach (var p in store.Load())
+            {
+                Console.WriteLine($"  - {p.Name}");
+                Console.WriteLine($"      {p.SystemPrompt}");
+            }
+            return 0;
+
+        default:
+            Console.Error.WriteLine("Uso: questresume persona list");
+            return 1;
+    }
+}
+
+async Task<int> RunBenchmarkAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    using var engine = RagQueryEngineFactory.Create(options);
+    try
+    {
+        Console.WriteLine("Executando benchmark (isso pode demorar enquanto o modelo carrega)...");
+        var provider = await engine.GetLlmProviderAsync();
+        var service = new QuestResume.Core.Rag.ModelBenchmarkService(provider);
+        var result = await service.RunAsync();
+        Console.WriteLine();
+        Console.WriteLine($"Prompts executados:   {result.PromptCount}");
+        Console.WriteLine($"Tokens (aprox.):      {result.TotalTokens}");
+        Console.WriteLine($"Tempo total:          {result.TotalTimeMs} ms");
+        Console.WriteLine($"Tokens por segundo:   {result.TokensPerSecond}");
+        return 0;
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+int RunHardware(string[] cmdArgs)
+{
+    var info = QuestResume.Core.Services.HardwareDetectionService.Detect();
+    Console.WriteLine($"RAM total (MB):            {info.TotalRamMb}");
+    Console.WriteLine($"RAM disponível (MB):       {info.AvailableRamMb}");
+    Console.WriteLine($"VRAM (MB):                 {(info.VramMb?.ToString() ?? "não detectável")}");
+    Console.WriteLine($"Processadores lógicos:     {info.ProcessorCount}");
+    Console.WriteLine($"GpuLayerCount sugerido:    {info.SuggestedGpuLayerCount}");
+    Console.WriteLine();
+    Console.WriteLine(info.Notes);
     return 0;
 }
 
@@ -539,15 +615,26 @@ async Task<int> RunCompareAsync(string[] cmdArgs)
 
     if (positional.Length < 2)
     {
-        Console.Error.WriteLine("Uso: questresume compare <arquivoA> <arquivoB> [\"<pergunta>\"]");
+        Console.Error.WriteLine("Uso: questresume compare <arquivo1> <arquivo2> [<arquivo3> ...] [--pergunta \"<pergunta>\"]");
         return 1;
     }
 
-    var pathA = positional[0];
-    var pathB = positional[1];
-    var question = positional.Length > 2
-        ? string.Join(' ', positional.Skip(2))
-        : "Compare estes dois documentos, destacando as principais diferenças e semelhanças.";
+    // Pergunta explícita via --pergunta; senão, se o último positional parecer uma pergunta
+    // (contém espaço), trata-o como pergunta. Caso contrário, todos os positionais são caminhos.
+    var question = GetFlagValue(cmdArgs, "--pergunta");
+    var paths = positional.ToList();
+    if (question is null && paths.Count > 2 && paths[^1].Contains(' '))
+    {
+        question = paths[^1];
+        paths.RemoveAt(paths.Count - 1);
+    }
+    question ??= "Compare estes documentos, destacando as principais diferenças e semelhanças.";
+
+    if (paths.Count < 2)
+    {
+        Console.Error.WriteLine("Informe ao menos dois arquivos a comparar.");
+        return 1;
+    }
 
     var search = new SearchService(options.IndexPath);
     if (!search.IndexExists())
@@ -561,7 +648,7 @@ async Task<int> RunCompareAsync(string[] cmdArgs)
     try
     {
         Console.WriteLine("Comparando documentos (isso pode demorar na primeira pergunta, enquanto o modelo carrega)...");
-        var result = await engine.CompareAsync(pathA, pathB, question);
+        var result = await engine.CompareAsync(paths, question);
 
         Console.WriteLine();
         Console.WriteLine("Resposta:");
@@ -983,6 +1070,13 @@ async Task<int> RunFlashcardsAsync(string[] cmdArgs)
             Console.WriteLine($"[{i + 1}] Pergunta: {cards[i].Question}");
             Console.WriteLine($"    Resposta: {cards[i].Answer}");
             Console.WriteLine();
+        }
+
+        var ankiPath = GetFlagValue(cmdArgs, "--export-anki");
+        if (!string.IsNullOrWhiteSpace(ankiPath))
+        {
+            QuestResume.Core.Models.AnkiExporter.ExportToFile(cards, ankiPath);
+            Console.WriteLine($"Flashcards exportados para Anki em: {ankiPath}");
         }
     }
     catch (ModelNotConfiguredException ex)
@@ -1517,6 +1611,55 @@ int RunConfig(string[] cmdArgs)
             options.GpuLayerCount = gpuLayerCount;
             configService.Save(options);
             Console.WriteLine($"GpuLayerCount definido para: {gpuLayerCount}");
+            return 0;
+
+        case "set-llm-temperature":
+            if (value is null || !double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var llmTemperature) || llmTemperature < 0)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-llm-temperature <valor >= 0> (padrão 0.8)");
+                return 1;
+            }
+            options.LlmTemperature = llmTemperature;
+            configService.Save(options);
+            Console.WriteLine($"LlmTemperature definido para: {llmTemperature.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            return 0;
+
+        case "set-llm-top-p":
+            if (value is null || !double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var llmTopP) || llmTopP <= 0 || llmTopP > 1)
+            {
+                Console.Error.WriteLine("Uso: questresume config set-llm-top-p <valor entre 0 (exclusivo) e 1> (padrão 0.9)");
+                return 1;
+            }
+            options.LlmTopP = llmTopP;
+            configService.Save(options);
+            Console.WriteLine($"LlmTopP definido para: {llmTopP.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            return 0;
+
+        case "set-llm-seed":
+            if (value is null || (!string.Equals(value, "aleatorio", StringComparison.OrdinalIgnoreCase) && !int.TryParse(value, out _)))
+            {
+                Console.Error.WriteLine("Uso: questresume config set-llm-seed <número inteiro | aleatorio>");
+                return 1;
+            }
+            options.LlmSeed = string.Equals(value, "aleatorio", StringComparison.OrdinalIgnoreCase) ? null : int.Parse(value);
+            configService.Save(options);
+            Console.WriteLine($"LlmSeed definido para: {(options.LlmSeed?.ToString() ?? "aleatório")}");
+            return 0;
+
+        case "set-system-prompt":
+            options.CustomSystemPrompt = value ?? string.Empty;
+            configService.Save(options);
+            Console.WriteLine(string.IsNullOrWhiteSpace(options.CustomSystemPrompt)
+                ? "CustomSystemPrompt limpo (usando o prompt padrão do projeto)."
+                : "CustomSystemPrompt definido.");
+            return 0;
+
+        case "set-summarization-model":
+            options.SummarizationModelPath = value ?? string.Empty;
+            configService.Save(options);
+            Console.WriteLine(string.IsNullOrWhiteSpace(options.SummarizationModelPath)
+                ? "SummarizationModelPath limpo (tarefas auxiliares usam o modelo principal)."
+                : $"SummarizationModelPath definido para: {options.SummarizationModelPath}");
             return 0;
 
         case "set-indexing-parallelism":
