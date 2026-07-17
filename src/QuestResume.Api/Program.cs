@@ -57,6 +57,8 @@ builder.Services.AddSingleton<RagEngineProvider>();
 builder.Services.AddSingleton<LuceneIndexManager>();
 builder.Services.AddHostedService<AuditLogRotationService>();
 builder.Services.AddHostedService<AutoReindexHostedService>();
+builder.Services.AddHostedService<ScheduledIndexingHostedService>();
+builder.Services.AddSingleton<QuestResume.Core.Indexing.IndexingStateService>();
 builder.Services.AddHttpClient();
 
 // OpenTelemetry tracing: records HTTP server spans for each incoming request.
@@ -448,6 +450,43 @@ app.MapPost("/api/search/image", async (HttpContext context, HttpRequest request
 }).RequireRateLimiting("inference");
 
 app.MapGet("/api/config", (ConfigService configService) => Results.Ok(configService.Load()));
+
+// Item 6: detecção de hardware e sugestão de GpuLayerCount.
+app.MapGet("/api/hardware/suggest-gpu-layers", () =>
+    Results.Ok(QuestResume.Core.Services.HardwareDetectionService.Detect()));
+
+// Item 3: lista de personas de prompt disponíveis.
+app.MapGet("/api/personas", (ConfigService configService) =>
+{
+    var options = configService.Load();
+    var store = new QuestResume.Core.Persistence.PromptPersonaStore(options.IndexPath);
+    return Results.Ok(store.Load());
+});
+
+// Item 7: benchmark local do modelo configurado.
+app.MapPost("/api/benchmark", async (
+    ConfigService configService,
+    RagEngineProvider engineProvider,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
+{
+    var options = configService.Load();
+    try
+    {
+        var provider = await engineProvider.GetLlmProviderAsync(options, cancellationToken);
+        var service = new QuestResume.Core.Rag.ModelBenchmarkService(provider);
+        var result = await service.RunAsync(cancellationToken: cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (ModelNotConfiguredException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (OllamaNotAvailableException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 
 app.MapPut("/api/config", (AppOptions options, ConfigService configService) =>
 {
@@ -902,7 +941,7 @@ app.MapPost("/api/ask", async (
     var askStopwatch = System.Diagnostics.Stopwatch.StartNew();
     try
     {
-        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, request.History, cancellationToken);
+        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, request.History, cancellationToken, request.Persona);
         askStopwatch.Stop();
         metrics.RecordQuestionAnswered(askStopwatch.Elapsed.TotalMilliseconds);
         logger.LogInformation("POST /api/ask concluído — sources={SourceCount}", result.Sources.Count);
@@ -1032,9 +1071,14 @@ app.MapPost("/api/compare", async (
     ILogger<Program> logger,
     CancellationToken cancellationToken) =>
 {
-    if (string.IsNullOrWhiteSpace(request.PathA) || string.IsNullOrWhiteSpace(request.PathB))
+    // Aceita tanto o formato antigo (PathA/PathB) quanto uma lista Paths com 2+ documentos.
+    var paths = (request.Paths is { Count: > 0 })
+        ? request.Paths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList()
+        : new List<string> { request.PathA, request.PathB }.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+
+    if (paths.Count < 2)
     {
-        return Results.BadRequest(new { error = "Informe os dois arquivos a comparar (pathA e pathB)." });
+        return Results.BadRequest(new { error = "Informe ao menos dois arquivos a comparar (pathA/pathB ou paths)." });
     }
 
     var options = ResolveForUser(configService.Load(), context);
@@ -1046,13 +1090,13 @@ app.MapPost("/api/compare", async (
     }
 
     var question = string.IsNullOrWhiteSpace(request.Question)
-        ? "Compare estes dois documentos, destacando as principais diferenças e semelhanças."
+        ? "Compare estes documentos, destacando as principais diferenças e semelhanças."
         : request.Question;
 
-    logger.LogInformation("POST /api/compare — pathA={PathA} pathB={PathB}", request.PathA, request.PathB);
+    logger.LogInformation("POST /api/compare — {Count} documento(s)", paths.Count);
     try
     {
-        var result = await engineProvider.CompareAsync(options, request.PathA, request.PathB, question, cancellationToken);
+        var result = await engineProvider.CompareAsync(options, paths, question, cancellationToken);
         return Results.Ok(result);
     }
     catch (ModelNotConfiguredException ex)
@@ -1641,6 +1685,215 @@ app.MapPost("/api/chat/export-pdf", (ChatExportRequest request, ILogger<Program>
     var pdfBytes = ChatPdfExporter.Export("Conversa - QuestResume", turns);
     var fileName = $"conversa-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.pdf";
     return Results.File(pdfBytes, "application/pdf", fileName);
+});
+
+// ---- Estudo: exportar flashcards para Anki (item 1) ----
+app.MapPost("/api/documents/flashcards/export-anki", (AnkiExportRequest request) =>
+{
+    if (request.Flashcards is null || request.Flashcards.Count == 0)
+        return Results.BadRequest(new { error = "Não há flashcards para exportar." });
+    var content = QuestResume.Core.Models.AnkiExporter.Export(request.Flashcards);
+    var bytes = Encoding.UTF8.GetBytes(content);
+    return Results.File(bytes, "text/tab-separated-values", $"flashcards-anki-{DateTime.Now:yyyy-MM-dd-HHmmss}.csv");
+});
+
+// ---- Estudo: estatísticas (item 3) ----
+app.MapGet("/api/study/stats", (HttpContext context, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.StudyProgressStore(options.IndexPath);
+    return Results.Ok(store.ComputeStats());
+});
+
+// ---- Análise: mapa mental (item 4) ----
+app.MapGet("/api/documents/mindmap", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    var options = ResolveForUser(configService.Load(), context);
+    try { return Results.Ok(await engineProvider.GenerateMindMapAsync(options, path, cancellationToken)); }
+    catch (ModelNotConfiguredException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (OllamaNotAvailableException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (LlmJsonParseException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireRateLimiting("inference");
+
+// ---- Análise: linha do tempo (item 5) ----
+app.MapGet("/api/documents/timeline", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    var options = ResolveForUser(configService.Load(), context);
+    try { return Results.Ok(await engineProvider.ExtractTimelineAsync(options, path, cancellationToken)); }
+    catch (ModelNotConfiguredException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (OllamaNotAvailableException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (LlmJsonParseException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireRateLimiting("inference");
+
+// ---- Análise: sumário/índice (item 10) ----
+app.MapGet("/api/documents/outline", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    var options = ResolveForUser(configService.Load(), context);
+    try { return Results.Ok(await engineProvider.GenerateOutlineAsync(options, path, cancellationToken)); }
+    catch (ModelNotConfiguredException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (OllamaNotAvailableException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireRateLimiting("inference");
+
+// ---- Análise: resumo executivo multi-documento (item 6) ----
+app.MapPost("/api/documents/summarize-multi", async (HttpContext context, SummarizeMultiRequest request, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
+{
+    var paths = request.Paths?.Where(p => !string.IsNullOrWhiteSpace(p)).ToList() ?? new();
+    if (paths.Count == 0) return Results.BadRequest(new { error = "Informe ao menos um documento (paths)." });
+    var options = ResolveForUser(configService.Load(), context);
+    try { return Results.Ok(await engineProvider.SummarizeMultipleAsync(options, paths, cancellationToken)); }
+    catch (ModelNotConfiguredException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (OllamaNotAvailableException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireRateLimiting("inference");
+
+// ---- Análise: entidades (item 8) ----
+app.MapGet("/api/documents/entities", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, LuceneIndexManager indexManager, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    var options = ResolveForUser(configService.Load(), context);
+    // Preferir o sidecar entities.json se já existir (extração na indexação).
+    var store = new QuestResume.Core.Persistence.EntityStore(options.IndexPath);
+    var cached = store.GetEntities(path);
+    if (cached.Count > 0) return Results.Ok(cached);
+    try
+    {
+        var entities = await engineProvider.ExtractEntitiesAsync(options, path, cancellationToken);
+        store.SetEntities(path, entities);
+        return Results.Ok(entities);
+    }
+    catch (ModelNotConfiguredException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (OllamaNotAvailableException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (LlmJsonParseException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireRateLimiting("inference");
+
+app.MapGet("/api/entities/{entidade}/documents", (HttpContext context, string entidade, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.EntityStore(options.IndexPath);
+    return Results.Ok(store.GetDocumentsMentioning(entidade));
+});
+
+// ---- Análise: grafo de conhecimento (item 9) ----
+app.MapGet("/api/knowledge-graph", (HttpContext context, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.EntityStore(options.IndexPath);
+    return Results.Ok(store.BuildKnowledgeGraph());
+});
+
+// ---- Anotações (item 11) ----
+app.MapGet("/api/documents/annotations", (HttpContext context, string path, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.AnnotationStore(options.IndexPath);
+    return Results.Ok(string.IsNullOrWhiteSpace(path) ? store.GetAll() : store.GetForDocument(path));
+});
+app.MapPost("/api/documents/annotations", (HttpContext context, AnnotationRequest request, ConfigService configService) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Path) || string.IsNullOrWhiteSpace(request.Text))
+        return Results.BadRequest(new { error = "Informe path e text." });
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.AnnotationStore(options.IndexPath);
+    var ann = store.Add(new QuestResume.Core.Models.Annotation
+    {
+        SourcePath = request.Path, Text = request.Text, Note = request.Note,
+        StartOffset = request.StartOffset, EndOffset = request.EndOffset
+    });
+    return Results.Ok(ann);
+});
+app.MapDelete("/api/documents/annotations", (HttpContext context, string id, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.AnnotationStore(options.IndexPath);
+    return store.Remove(id) ? Results.Ok(new { removed = true }) : Results.NotFound(new { error = "Anotação não encontrada." });
+});
+
+// ---- Exportar conversa em DOCX/HTML/TXT (item 12) ----
+app.MapPost("/api/chat/export-docx", (ChatExportRequest request) =>
+{
+    if (request.Turns is null || request.Turns.Count == 0) return Results.BadRequest(new { error = "Não há conversa para exportar." });
+    var turns = request.Turns.Select(t => new ChatExportTurn(t.Question, t.Answer, t.Sources)).ToList();
+    var bytes = QuestResume.Core.Models.ChatDocxExporter.Export("Conversa - QuestResume", turns);
+    return Results.File(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", $"conversa-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.docx");
+});
+app.MapPost("/api/chat/export-html", (ChatExportRequest request) =>
+{
+    if (request.Turns is null || request.Turns.Count == 0) return Results.BadRequest(new { error = "Não há conversa para exportar." });
+    var turns = request.Turns.Select(t => new ChatExportTurn(t.Question, t.Answer, t.Sources)).ToList();
+    var html = QuestResume.Core.Models.ChatHtmlExporter.Export("Conversa - QuestResume", turns);
+    return Results.File(Encoding.UTF8.GetBytes(html), "text/html", $"conversa-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.html");
+});
+app.MapPost("/api/chat/export-txt", (ChatExportRequest request) =>
+{
+    if (request.Turns is null || request.Turns.Count == 0) return Results.BadRequest(new { error = "Não há conversa para exportar." });
+    var turns = request.Turns.Select(t => new ChatExportTurn(t.Question, t.Answer, t.Sources)).ToList();
+    var txt = QuestResume.Core.Models.ChatTextExporter.ToPlainText("Conversa - QuestResume", turns);
+    return Results.File(Encoding.UTF8.GetBytes(txt), "text/plain", $"conversa-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.txt");
+});
+
+// ---- Exportar resultados de busca CSV/XLSX (item 13) ----
+app.MapPost("/api/search/export", (SearchExportRequest request) =>
+{
+    var results = request.Results ?? new List<SearchResultItem>();
+    if (results.Count == 0) return Results.BadRequest(new { error = "Não há resultados para exportar." });
+    var format = (request.Format ?? "csv").ToLowerInvariant();
+    if (format == "xlsx")
+    {
+        var xlsx = QuestResume.Core.Models.SearchResultExporter.ToXlsx(results);
+        return Results.File(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"resultados-{DateTime.Now:yyyy-MM-dd-HHmmss}.xlsx");
+    }
+    var csv = QuestResume.Core.Models.SearchResultExporter.ToCsv(results);
+    return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv", $"resultados-{DateTime.Now:yyyy-MM-dd-HHmmss}.csv");
+});
+
+// ---- Uso de disco por coleção (item 16) ----
+app.MapGet("/api/collections/disk-usage", (HttpContext context, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.CollectionStore(options.IndexPath);
+    return Results.Ok(new QuestResume.Core.Services.CollectionDiskUsageService(store).Compute());
+});
+
+// ---- Health check do índice (item 15) ----
+app.MapGet("/api/health/index", (HttpContext context, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    return Results.Ok(new QuestResume.Core.Indexing.IndexHealthCheckService().Check(options.IndexPath));
+});
+app.MapPost("/api/health/index/repair", (HttpContext context, ConfigService configService) =>
+{
+    var options = ResolveForUser(configService.Load(), context);
+    return Results.Ok(new QuestResume.Core.Indexing.IndexHealthCheckService().Repair(options.IndexPath));
+});
+
+// ---- Importar/exportar configuração (item 17) ----
+app.MapGet("/api/config/export", (ConfigService configService) =>
+    Results.Text(configService.ExportConfig(), "application/json"));
+app.MapPost("/api/config/import", (ConfigImportRequest request, ILogger<Program> logger) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Json)) return Results.BadRequest(new { error = "Informe o JSON de configuração." });
+    try
+    {
+        var svc = new ConfigService();
+        var applied = svc.ImportConfig(request.Json);
+        return Results.Ok(applied);
+    }
+    catch (Exception ex) { logger.LogWarning("POST /api/config/import falhou: {Message}", ex.Message); return Results.BadRequest(new { error = ex.Message }); }
+});
+
+// ---- Versões de documento (item 20) ----
+app.MapGet("/api/documents/versions", (HttpContext context, string path, ConfigService configService) =>
+{
+    if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
+    var options = ResolveForUser(configService.Load(), context);
+    var store = new QuestResume.Core.Persistence.DocumentVersionStore(options.IndexPath, options.MaxVersionsPerDocument);
+    return Results.Ok(store.GetVersions(path));
 });
 
 app.Run();
