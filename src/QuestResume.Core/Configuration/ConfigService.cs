@@ -113,4 +113,70 @@ public sealed class ConfigService
         // Invalidate cache so the next Load() re-reads the file we just wrote.
         lock (_cacheLock) { _cached = null; }
     }
+
+    /// <summary>Nomes (case-insensitive) de propriedades cujo valor é redigido na exportação (item 17).</summary>
+    private static readonly string[] SecretMarkers = { "password", "secret", "token", "apikey", "clientid", "credential" };
+
+    /// <summary>
+    /// Exporta o <see cref="AppOptions"/> atual como JSON, redigindo (substituindo por
+    /// <c>"***REDACTED***"</c>) quaisquer propriedades cujo nome sugira um segredo
+    /// (senha, secret, token, apikey, clientid, credential). Um campo <c>"_aviso"</c> documenta a
+    /// redação no próprio arquivo exportado. Use para compartilhar/mover configuração sem vazar
+    /// credenciais.
+    /// </summary>
+    public string ExportConfig()
+    {
+        var options = Load();
+        var json = JsonSerializer.Serialize(options, JsonOptions);
+        var node = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
+
+        var redacted = new Dictionary<string, object?>
+        {
+            ["_aviso"] = "Segredos (senhas, tokens, apikeys, clientids) foram redigidos como \"***REDACTED***\" e precisam ser reconfigurados após importar."
+        };
+
+        foreach (var (key, value) in node)
+        {
+            var isSecret = SecretMarkers.Any(m => key.Contains(m, StringComparison.OrdinalIgnoreCase))
+                           && value.ValueKind == JsonValueKind.String
+                           && !string.IsNullOrEmpty(value.GetString());
+            redacted[key] = isSecret ? "***REDACTED***" : (object?)value;
+        }
+
+        return JsonSerializer.Serialize(redacted, JsonOptions);
+    }
+
+    /// <summary>
+    /// Importa configuração de um JSON, validando via <see cref="AppOptions.Validate"/> antes de
+    /// aplicar (salvar). Campos redigidos (<c>"***REDACTED***"</c>) são ignorados, preservando o
+    /// valor atual do segredo em vez de sobrescrevê-lo com o placeholder.
+    /// </summary>
+    /// <exception cref="AppOptionsValidationException">Quando o JSON importado é inválido.</exception>
+    public AppOptions ImportConfig(string json)
+    {
+        var incoming = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)
+                       ?? throw new JsonException("JSON de configuração vazio ou inválido.");
+        incoming.Remove("_aviso");
+
+        var current = Load();
+        var currentDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            JsonSerializer.Serialize(current, JsonOptions))!;
+
+        // Mescla: valores importados sobrescrevem os atuais, exceto placeholders redigidos.
+        foreach (var (key, value) in incoming)
+        {
+            if (value.ValueKind == JsonValueKind.String && value.GetString() == "***REDACTED***")
+                continue;
+            currentDict[key] = value;
+        }
+
+        var merged = JsonSerializer.Deserialize<AppOptions>(JsonSerializer.Serialize(currentDict))
+                     ?? throw new JsonException("Não foi possível desserializar a configuração importada.");
+
+        if (string.IsNullOrWhiteSpace(merged.IndexPath))
+            merged.IndexPath = GetDefaultIndexPath();
+
+        Save(merged); // Save já chama Validate().
+        return merged;
+    }
 }
