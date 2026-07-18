@@ -213,6 +213,19 @@ async function loadConfig() {
   $('googleDriveClientIdInput').value = config.googleDriveClientId || '';
   $('oneDriveClientIdInput').value = config.oneDriveClientId || '';
   $('dropboxClientIdInput').value = config.dropboxClientId || '';
+  // Lote 8 — Sub-lote A: ajustes finos do LLM.
+  $('llmTemperatureInput').value = config.llmTemperature ?? 0.8;
+  $('llmTopPInput').value = config.llmTopP ?? 0.9;
+  $('llmSeedInput').value = config.llmSeed ?? '';
+  $('customSystemPromptInput').value = config.customSystemPrompt || '';
+  $('summarizationModelPathInput').value = config.summarizationModelPath || '';
+  // Lote 8 — Sub-lote B: expansão de consulta / HyDE / multi-query.
+  $('queryExpansionEnabledInput').checked = !!config.queryExpansionEnabled;
+  $('hydeEnabledInput').checked = !!config.hydeEnabled;
+  $('multiQueryEnabledInput').checked = !!config.multiQueryEnabled;
+  // Lote 8 — Sub-lote E1: hooks pós-indexação.
+  $('entityExtractionEnabledInput').checked = !!config.entityExtractionEnabled;
+  $('documentVersioningEnabledInput').checked = !!config.documentVersioningEnabled;
 }
 
 $('saveConfigButton').addEventListener('click', async () => {
@@ -250,8 +263,20 @@ $('saveConfigButton').addEventListener('click', async () => {
       llmFallbackEnabled: $('llmFallbackEnabledInput').checked,
       googleDriveClientId: $('googleDriveClientIdInput').value,
       oneDriveClientId: $('oneDriveClientIdInput').value,
-      dropboxClientId: $('dropboxClientIdInput').value
+      dropboxClientId: $('dropboxClientIdInput').value,
+      llmTemperature: parseFloat($('llmTemperatureInput').value),
+      llmTopP: parseFloat($('llmTopPInput').value),
+      llmSeed: $('llmSeedInput').value.trim() === '' ? null : parseInt($('llmSeedInput').value, 10),
+      customSystemPrompt: $('customSystemPromptInput').value,
+      summarizationModelPath: $('summarizationModelPathInput').value,
+      queryExpansionEnabled: $('queryExpansionEnabledInput').checked,
+      hydeEnabled: $('hydeEnabledInput').checked,
+      multiQueryEnabled: $('multiQueryEnabledInput').checked,
+      entityExtractionEnabled: $('entityExtractionEnabledInput').checked,
+      documentVersioningEnabled: $('documentVersioningEnabledInput').checked
     };
+    if (Number.isNaN(updated.llmTemperature)) updated.llmTemperature = current.llmTemperature ?? 0.8;
+    if (Number.isNaN(updated.llmTopP)) updated.llmTopP = current.llmTopP ?? 0.9;
     const res = await fetch('/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -969,6 +994,9 @@ function renderStoredMessage(msg, index) {
     favBtn.addEventListener('click', () => toggleFavorite(index));
 
     actionsRow.append(copyBtn, regenBtn, favBtn);
+    if (typeof window.appendLote8ListenButton === 'function') {
+      window.appendLote8ListenButton(actionsRow, () => msg.text || '');
+    }
     appendTranslateControls(div, () => msg.text || '');
   }
 
@@ -1003,7 +1031,7 @@ async function streamAsk(question, history, existingIndex) {
   const res = await fetch('/api/ask/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, history: history || [] }),
+    body: JSON.stringify({ question, history: history || [], persona: (document.getElementById('personaSelect') && document.getElementById('personaSelect').value) || null }),
     signal: currentAbortController.signal
   });
 
@@ -1417,6 +1445,10 @@ async function loadDocuments() {
         removeButton.addEventListener('click', () => removeDocument(doc.sourcePath));
 
         item.append(info, previewButton, extractTableButton, reindexButton, removeButton);
+        // Lote 8 — Sub-lotes B/C: botões de análise por documento (definidos em lote8.js).
+        if (typeof window.appendLote8DocButtons === 'function') {
+          window.appendLote8DocButtons(item, doc.sourcePath);
+        }
         listEl.appendChild(item);
       }
     }
@@ -1430,6 +1462,7 @@ async function loadDocuments() {
 
   await loadIndexReport();
   await loadAvailableTags();
+  if (typeof window.onLote8DocumentsLoaded === 'function') window.onLote8DocumentsLoaded();
 }
 
 async function saveTags(path, inputEl, statusEl) {
@@ -1755,6 +1788,9 @@ $('generateFlashcardsButton').addEventListener('click', async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao gerar flashcards.');
+
+    // Lote 8: guarda os últimos flashcards para exportação Anki (lote8.js).
+    window.lastFlashcards = data;
 
     for (const card of data) {
       const el = document.createElement('div');
@@ -2264,10 +2300,13 @@ $('loginButton').addEventListener('click', async () => {
   $('loginStatus').textContent = 'Entrando...';
   $('loginStatus').className = 'status-line';
   try {
+    // Campo opcional de 2FA (TOTP): enviado apenas quando o input existir e estiver preenchido.
+    const totpEl = document.getElementById('loginTotpInput');
+    const totpCode = totpEl ? totpEl.value.trim() : '';
     const res = await nativeFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, totpCode: totpCode || null })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Usuário ou senha inválidos.');
@@ -2297,6 +2336,49 @@ $('logoutButton').addEventListener('click', () => {
 });
 
 updateLoggedInUserBadge();
+
+// --- Bloqueio automático por inatividade (item 1) ---
+// Após N minutos sem interação (mouse/teclado/toque), esconde o conteúdo e reexibe o overlay de
+// login, exigindo a senha novamente antes de continuar. N é configurável em localStorage
+// ('autoLockMinutes', padrão 15). Reutiliza o overlay de login já existente; em modo single-user
+// (sem token) o overlay de login não valida credenciais, então só bloqueamos quando há um usuário
+// autenticado (authToken presente).
+const AUTO_LOCK_DEFAULT_MINUTES = 15;
+let autoLockTimer = null;
+
+function autoLockMinutes() {
+  const v = parseInt(localStorage.getItem('autoLockMinutes') || '', 10);
+  return Number.isFinite(v) && v > 0 ? v : AUTO_LOCK_DEFAULT_MINUTES;
+}
+
+function lockSession() {
+  // Só bloqueia quando há sessão autenticada para reexigir a senha; caso contrário, apenas rearma.
+  if (!localStorage.getItem('authToken')) {
+    return;
+  }
+  // Descarta o token: a próxima requisição dá 401 e o fluxo normal de re-login assume, e forçamos
+  // o overlay imediatamente para esconder o conteúdo sensível já.
+  localStorage.removeItem('authToken');
+  updateLoggedInUserBadge();
+  showLoginOverlay();
+  const status = $('loginStatus');
+  if (status) {
+    status.textContent = 'Sessão bloqueada por inatividade. Faça login novamente.';
+    status.className = 'status-line';
+  }
+}
+
+function resetAutoLockTimer() {
+  if (autoLockTimer) {
+    clearTimeout(autoLockTimer);
+  }
+  autoLockTimer = setTimeout(lockSession, autoLockMinutes() * 60 * 1000);
+}
+
+['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach((evt) => {
+  window.addEventListener(evt, resetAutoLockTimer, { passive: true });
+});
+resetAutoLockTimer();
 
 // Bootstrap: uma chamada leve decide se o overlay de login precisa aparecer antes de disparar
 // o carregamento normal do resto da interface (evita uma enxurrada de respostas 401 no console
