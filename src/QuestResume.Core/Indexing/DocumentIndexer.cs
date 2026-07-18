@@ -76,7 +76,9 @@ public sealed class DocumentIndexer
         IReadOnlyList<string>? additionalFolders = null,
         int throttleDelayMs = 0,
         bool prioritizeRecentFiles = false,
-        System.Threading.ManualResetEventSlim? pauseHandle = null)
+        System.Threading.ManualResetEventSlim? pauseHandle = null,
+        bool entityExtractionEnabled = false,
+        bool documentVersioningEnabled = false)
     {
         parallelism = parallelism <= 0 ? Math.Max(1, Environment.ProcessorCount) : parallelism;
 
@@ -507,7 +509,14 @@ public sealed class DocumentIndexer
                         // abaixo, usada por SearchFilters.Language para filtrar buscas.
                         var language = LanguageDetector.Detect(document.Text);
 
-                        if (autoSummarizationEnabled && llmProvider is not null && !string.IsNullOrWhiteSpace(document.Text))
+                        // Coletamos o texto completo de cada documento novo/alterado quando qualquer
+                        // etapa de pós-processamento (resumo automático, extração de entidades ou
+                        // versionamento) precisar dele. A extração de entidades depende de um LLM;
+                        // o versionamento não.
+                        var needsDocText = (autoSummarizationEnabled && llmProvider is not null)
+                            || (entityExtractionEnabled && llmProvider is not null)
+                            || documentVersioningEnabled;
+                        if (needsDocText && !string.IsNullOrWhiteSpace(document.Text))
                         {
                             newOrChangedDocs.Add((filePath, document.FileName, document.Text));
                         }
@@ -764,6 +773,21 @@ public sealed class DocumentIndexer
             await GenerateSummariesAsync(indexPath, llmProvider, progress, cancellationToken).ConfigureAwait(false);
         }
 
+        // Extração de entidades (opt-in via AppOptions.EntityExtractionEnabled): mesma abordagem do
+        // resumo automático — etapa separada, pós-commit, tolerante a falhas do LLM, alimentando o
+        // EntityStore usado por /api/documents/entities e pelo grafo de conhecimento.
+        if (entityExtractionEnabled && llmProvider is not null)
+        {
+            await ExtractEntitiesAsync(indexPath, llmProvider, progress, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Versionamento de documentos (opt-in via AppOptions.DocumentVersioningEnabled): grava uma
+        // nova versão (com hash) do texto de cada documento novo/alterado, sem depender de LLM.
+        if (documentVersioningEnabled)
+        {
+            SaveDocumentVersions(indexPath, progress);
+        }
+
         webhookNotifier?.Notify("indexing.completed", new
         {
             filesProcessed = stats.FilesProcessed,
@@ -815,6 +839,81 @@ public sealed class DocumentIndexer
             catch (Exception ex)
             {
                 prog?.Report($"Falha ao gerar resumos automáticos: {ex.Message}");
+            }
+        }
+
+        async Task ExtractEntitiesAsync(string idxPath, Rag.ILlmProvider provider, IProgress<string>? prog, CancellationToken ct)
+        {
+            if (newOrChangedDocs.IsEmpty) return;
+
+            try
+            {
+                var store = new Persistence.EntityStore(idxPath);
+                var extractor = new Rag.EntityExtractionService(provider);
+
+                foreach (var (path, fileName, text) in newOrChangedDocs)
+                {
+                    try
+                    {
+                        var entities = await extractor.ExtractAsync(text, ct).ConfigureAwait(false);
+                        if (entities.Count > 0)
+                        {
+                            store.SetEntities(path, entities);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        prog?.Report($"Falha ao extrair entidades de {fileName}: {ex.Message}");
+                    }
+                }
+
+                store.Save();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                prog?.Report($"Falha ao extrair entidades: {ex.Message}");
+            }
+        }
+
+        void SaveDocumentVersions(string idxPath, IProgress<string>? prog)
+        {
+            if (newOrChangedDocs.IsEmpty) return;
+
+            try
+            {
+                var store = new Persistence.DocumentVersionStore(idxPath);
+                var anyChanged = false;
+                foreach (var (path, fileName, text) in newOrChangedDocs)
+                {
+                    try
+                    {
+                        if (store.SaveVersion(path, text))
+                        {
+                            anyChanged = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        prog?.Report($"Falha ao versionar {fileName}: {ex.Message}");
+                    }
+                }
+
+                if (anyChanged)
+                {
+                    store.Save();
+                }
+            }
+            catch (Exception ex)
+            {
+                prog?.Report($"Falha ao versionar documentos: {ex.Message}");
             }
         }
     }
