@@ -662,3 +662,15 @@ kbd {
   color: var(--text);
   font-size: 0.85rem;
 }
+
+/* Lote 8 — estilos das novas seções */
+.knowledge-graph-canvas { width: 100%; max-width: 600px; border: 1px solid var(--panel-light); border-radius: 6px; background: #0b1220; margin-top: 0.5rem; }
+.analysis-modal-body { max-height: 60vh; overflow-y: auto; }
+.analysis-modal-body ul { padding-left: 1.2rem; }
+.analysis-timeline li { margin-bottom: 0.4rem; }
+.compare-doc-item { display: block; margin: 0.2rem 0; }
+.annotation-item { border: 1px solid var(--panel-light); border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; }
+.chat-persona-field { max-width: 320px; margin-bottom: 0.5rem; }
+#micButton.recording { background: #c0392b; color: #fff; }
+.search-pagination { align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+#diagnosticsLogs { max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
