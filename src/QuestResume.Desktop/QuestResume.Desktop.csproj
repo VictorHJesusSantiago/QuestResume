@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- TTS nativo do Windows (Lote 8 — Sub-lote E4): System.Speech.Synthesis. -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
