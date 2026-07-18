@@ -263,6 +263,53 @@ public sealed class AppOptions
     /// </summary>
     public string MasterKeyVerifier { get; set; } = string.Empty;
 
+    // --- Autenticação / JWT ---
+
+    /// <summary>
+    /// Tempo de expiração (em minutos) do token JWT emitido por <c>POST /api/auth/login</c>.
+    /// Padrão: 720 minutos (12 horas — mesmo valor antes fixo no código).
+    /// </summary>
+    public int JwtExpirationMinutes { get; set; } = 720;
+
+    // --- Anonimização de PII ---
+
+    /// <summary>
+    /// Modo de tratamento de PII quando <see cref="PiiRedactionEnabled"/> está ativo: "Redact"
+    /// (padrão, mascara de forma irreversível via <see cref="Models.PiiRedactor"/>) ou
+    /// "ReversibleTokenize" (substitui por tokens reversíveis mantendo um mapa criptografado,
+    /// via <see cref="Models.ReversibleAnonymizer"/>).
+    /// </summary>
+    public string AnonymizationMode { get; set; } = "Redact";
+
+    // --- Performance / busca vetorial ---
+
+    /// <summary>
+    /// Quando habilitado (opt-in), o <see cref="QuestResume.Core.Embeddings.VectorStore"/>
+    /// constrói e usa um índice ANN (HNSW) para busca vetorial aproximada, sub-linear em coleções
+    /// grandes. Desabilitado = varredura linear exata (comportamento padrão). Reindexar constrói o
+    /// índice, por isso é opt-in.
+    /// </summary>
+    public bool AnnSearchEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Quando habilitado, os embeddings são armazenados quantizados em int8 (sbyte) com um fator
+    /// de escala por vetor, reduzindo memória/disco a ~25% do float32, com pequena perda de
+    /// precisão na similaridade de cosseno. Padrão: desabilitado (float32).
+    /// </summary>
+    public bool VectorQuantizationEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Grau de paralelismo do OCR em lote (múltiplas páginas/imagens); mínimo 1. Padrão: metade
+    /// dos processadores (OCR é intensivo em CPU). Ver <see cref="QuestResume.Core.Extraction.Extractors.ImageOcrExtractor"/>.
+    /// </summary>
+    public int OcrParallelism { get; set; } = Math.Max(1, Environment.ProcessorCount / 2);
+
+    /// <summary>
+    /// Limiar (em bytes) acima do qual extratores de texto puro leem o arquivo em stream/chunks em
+    /// vez de carregar tudo na memória, evitando picos de memória em arquivos gigantes. Padrão: 50 MB.
+    /// </summary>
+    public long LargeFileStreamingThresholdBytes { get; set; } = 50L * 1024 * 1024;
+
     // --- Busca por similaridade de imagem (CLIP) ---
 
     /// <summary>
@@ -659,6 +706,27 @@ public sealed class AppOptions
         if (LlmTopP <= 0 || LlmTopP > 1)
         {
             throw new AppOptionsValidationException("LlmTopP deve estar entre 0 (exclusivo) e 1.");
+        }
+
+        if (JwtExpirationMinutes < 1)
+        {
+            throw new AppOptionsValidationException("JwtExpirationMinutes deve ser maior ou igual a 1.");
+        }
+
+        if (AnonymizationMode != "Redact" && AnonymizationMode != "ReversibleTokenize")
+        {
+            throw new AppOptionsValidationException(
+                $"AnonymizationMode '{AnonymizationMode}' é inválido. Valores aceitos: Redact, ReversibleTokenize.");
+        }
+
+        if (OcrParallelism < 1)
+        {
+            throw new AppOptionsValidationException("OcrParallelism deve ser maior ou igual a 1.");
+        }
+
+        if (LargeFileStreamingThresholdBytes < 0)
+        {
+            throw new AppOptionsValidationException("LargeFileStreamingThresholdBytes não pode ser negativo.");
         }
     }
 
