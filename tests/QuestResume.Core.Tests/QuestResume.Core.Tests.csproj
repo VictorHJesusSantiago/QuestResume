@@ -9,6 +9,13 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
+  <!--
+    Cobertura de código (item 18): coverlet.collector já está referenciado abaixo. Para gerar um
+    relatório de cobertura rode, na raiz do repositório:
+        dotnet test tests/QuestResume.Core.Tests (dois hifens)collect:"XPlat Code Coverage"
+    O arquivo coverage.cobertura.xml é gravado em TestResults/<guid>/. Opcionalmente, converta para
+    HTML com a ferramenta 'dotnet reportgenerator'.
+  -->
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
