@@ -51,14 +51,14 @@ public sealed class RagEngineProvider : IDisposable
         return engine.GetLlmProviderAsync(cancellationToken);
     }
 
-    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken, string? persona = null)
+    public async Task<AskResult> AskAsync(AppOptions options, string question, int? topK, IReadOnlyList<ChatTurn>? history, CancellationToken cancellationToken, string? persona = null, string? userId = null, string? username = null)
     {
         var engine = GetEngine(options);
 
         await AcquireSemaphoreAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await engine.AskAsync(question, topK, history, cancellationToken, persona).ConfigureAwait(false);
+            return await engine.AskAsync(question, topK, history, cancellationToken, persona, userId, username).ConfigureAwait(false);
         }
         finally
         {
