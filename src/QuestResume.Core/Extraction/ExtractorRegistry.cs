@@ -137,7 +137,33 @@ public sealed class ExtractorRegistry
 
         if (_extractorsByExtension.TryGetValue(extension, out var extractor))
         {
-            return await extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // cancelamento explícito deve propagar
+            }
+            catch (Exception ex)
+            {
+                // Degradação graciosa (item 19): um arquivo corrompido/malformado não pode derrubar
+                // toda a indexação. Qualquer falha de parsing de um extrator vira um documento com
+                // texto vazio e o erro registrado em Metadata["error"], para que o indexador siga
+                // adiante com os demais arquivos.
+                return new ExtractedDocument
+                {
+                    Path = path,
+                    FileName = info.Name,
+                    Extension = extension,
+                    Text = string.Empty,
+                    ModifiedUtc = info.LastWriteTimeUtc,
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["error"] = $"Falha ao extrair '{info.Name}': {ex.GetType().Name}: {ex.Message}"
+                    }
+                };
+            }
         }
 
         return new ExtractedDocument
