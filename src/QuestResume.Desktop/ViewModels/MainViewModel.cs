@@ -97,6 +97,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int gpuLayerCount;
 
+    // Lote 8 — Sub-lote A: ajustes finos do LLM no Desktop.
+    [ObservableProperty]
+    private double llmTemperature = 0.8;
+
+    [ObservableProperty]
+    private double llmTopP = 0.9;
+
+    [ObservableProperty]
+    private int? llmSeed;
+
+    [ObservableProperty]
+    private string customSystemPrompt = string.Empty;
+
+    [ObservableProperty]
+    private string summarizationModelPath = string.Empty;
+
     [ObservableProperty]
     private int indexingParallelism = Math.Max(1, Environment.ProcessorCount);
 
@@ -270,6 +286,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         rerankingTokenizerPath = _options.RerankingTokenizerPath;
         piiRedactionEnabled = _options.PiiRedactionEnabled;
         gpuLayerCount = _options.GpuLayerCount;
+        llmTemperature = _options.LlmTemperature;
+        llmTopP = _options.LlmTopP;
+        llmSeed = _options.LlmSeed;
+        customSystemPrompt = _options.CustomSystemPrompt;
+        summarizationModelPath = _options.SummarizationModelPath;
         indexingParallelism = _options.IndexingParallelism;
         incrementalIndexingEnabled = _options.IncrementalIndexingEnabled;
         autoReindexEnabled = _options.AutoReindexEnabled;
@@ -1152,6 +1173,48 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    // TTS nativo do Windows (Lote 8 — Sub-lote E4): lê a resposta em voz alta usando
+    // System.Speech.Synthesis, sem depender de rede. Um segundo clique interrompe a leitura.
+    private System.Speech.Synthesis.SpeechSynthesizer? _synthesizer;
+    private bool _isSpeaking;
+
+    [RelayCommand]
+    private void Listen(ChatEntry entry)
+    {
+        if (entry is null || string.IsNullOrWhiteSpace(entry.Text))
+        {
+            return;
+        }
+
+        try
+        {
+            if (_isSpeaking && _synthesizer is not null)
+            {
+                _synthesizer.SpeakAsyncCancelAll();
+                _isSpeaking = false;
+                StatusMessage = "Leitura interrompida.";
+                return;
+            }
+
+            _synthesizer ??= new System.Speech.Synthesis.SpeechSynthesizer();
+            _synthesizer.SpeakCompleted -= OnSpeakCompleted;
+            _synthesizer.SpeakCompleted += OnSpeakCompleted;
+            _isSpeaking = true;
+            StatusMessage = "Lendo resposta...";
+            _synthesizer.SpeakAsync(entry.Text);
+        }
+        catch (Exception ex)
+        {
+            _isSpeaking = false;
+            StatusMessage = $"Erro ao ler resposta: {ex.Message}";
+        }
+    }
+
+    private void OnSpeakCompleted(object? sender, System.Speech.Synthesis.SpeakCompletedEventArgs e)
+    {
+        _isSpeaking = false;
+    }
+
     private RagQueryEngine GetEngine()
     {
         var effectiveOptions = _options.Clone();
@@ -1192,6 +1255,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _options.RerankingTokenizerPath = RerankingTokenizerPath;
         _options.PiiRedactionEnabled = PiiRedactionEnabled;
         _options.GpuLayerCount = GpuLayerCount;
+        _options.LlmTemperature = LlmTemperature;
+        _options.LlmTopP = LlmTopP;
+        _options.LlmSeed = LlmSeed;
+        _options.CustomSystemPrompt = CustomSystemPrompt;
+        _options.SummarizationModelPath = SummarizationModelPath;
         _options.IndexingParallelism = IndexingParallelism;
         _options.IncrementalIndexingEnabled = IncrementalIndexingEnabled;
         _options.AutoReindexEnabled = AutoReindexEnabled;
