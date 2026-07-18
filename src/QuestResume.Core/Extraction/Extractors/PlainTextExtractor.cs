@@ -9,6 +9,18 @@ namespace QuestResume.Core.Extraction.Extractors;
 /// </summary>
 public sealed class PlainTextExtractor : IFileExtractor
 {
+    private readonly long _streamingThresholdBytes;
+
+    /// <param name="streamingThresholdBytes">
+    /// Acima deste tamanho, o arquivo é lido em stream/chunks (<see cref="StreamReader"/> com
+    /// buffer) em vez de carregar todos os bytes de uma vez, evitando o pico de memória de
+    /// alocar simultaneamente o <c>byte[]</c> completo e a <c>string</c> resultante. Padrão: 50 MB.
+    /// </param>
+    public PlainTextExtractor(long streamingThresholdBytes = 50L * 1024 * 1024)
+    {
+        _streamingThresholdBytes = streamingThresholdBytes;
+    }
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[]
     {
         ".txt", ".csv", ".css", ".js", ".json", ".xml", ".bib", ".tex", ".ics", ".vcf",
@@ -28,7 +40,19 @@ public sealed class PlainTextExtractor : IFileExtractor
         // Encoding detection (item 9, ver EncodingDetector): checa BOM primeiro; sem BOM, tenta
         // UTF-8 estrito e cai para Windows-1252/Latin-1 quando os bytes não são UTF-8 válido —
         // evita corromper arquivos legados/exportados em CP1252 (comuns no Windows).
-        var text = await EncodingDetector.ReadAllTextDetectedAsync(path, cancellationToken).ConfigureAwait(false);
+        // Arquivos grandes: lê em stream/chunks para evitar o pico de memória de File.ReadAllBytes
+        // + string completa. StreamReader detecta o BOM (UTF-8/UTF-16); sem BOM cai para UTF-8.
+        // O texto resultante ainda é materializado como string (ExtractedDocument.Text), então isto
+        // é uma mitigação do pico de alocação, não leitura sem carregar tudo na memória.
+        string text;
+        if (info.Length > _streamingThresholdBytes)
+        {
+            text = await ReadLargeFileStreamedAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            text = await EncodingDetector.ReadAllTextDetectedAsync(path, cancellationToken).ConfigureAwait(false);
+        }
 
         return new ExtractedDocument
         {
@@ -38,5 +62,24 @@ public sealed class PlainTextExtractor : IFileExtractor
             Text = text,
             ModifiedUtc = info.LastWriteTimeUtc
         };
+    }
+
+    private static async Task<string> ReadLargeFileStreamedAsync(string path, CancellationToken cancellationToken)
+    {
+        const int bufferSize = 128 * 1024;
+        await using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, useAsync: true);
+        using var reader = new StreamReader(
+            stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize);
+
+        var sb = new System.Text.StringBuilder();
+        var buffer = new char[bufferSize];
+        int read;
+        while ((read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            sb.Append(buffer, 0, read);
+        }
+
+        return sb.ToString();
     }
 }
