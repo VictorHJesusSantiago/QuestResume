@@ -58,6 +58,7 @@ builder.Services.AddSingleton<LuceneIndexManager>();
 builder.Services.AddHostedService<AuditLogRotationService>();
 builder.Services.AddHostedService<AutoReindexHostedService>();
 builder.Services.AddHostedService<ScheduledIndexingHostedService>();
+builder.Services.AddHostedService<ScheduledBackupHostedService>();
 builder.Services.AddSingleton<QuestResume.Core.Indexing.IndexingStateService>();
 builder.Services.AddHttpClient();
 
@@ -101,6 +102,21 @@ builder.Services.AddRateLimiter(rl =>
         o.SegmentsPerWindow = 6;
         o.QueueLimit = 0;
     });
+    // Rate limit global particionado POR USUÁRIO autenticado (item 6): em vez de um único balde
+    // compartilhado por todos, cada usuário (ou IP, quando anônimo) tem sua própria janela fixa,
+    // de modo que um usuário abusivo não consome a cota dos demais.
+    rl.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var partitionKey = context.User.Identity?.Name
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
     rl.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     rl.OnRejected = async (ctx, _) =>
     {
@@ -141,6 +157,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+
+    // "Writer" (item 5 — perfil somente-leitura): endpoints de escrita (indexar, remover
+    // documento, tags, backup/restore, config) exigem Admin ou User, excluindo o papel ReadOnly.
+    // Endpoints de leitura (busca, perguntar, listar) permanecem abertos a qualquer papel autenticado.
+    // Nota: em modo single-user (nenhum usuário cadastrado) não há JWT/claims; o middleware de auth
+    // já libera as rotas nesse cenário, então esta política só passa a valer com multiusuário ativo.
+    options.AddPolicy("Writer", policy => policy.RequireAssertion(ctx =>
+        !ctx.User.Identity!.IsAuthenticated || ctx.User.IsInRole("Admin") || ctx.User.IsInRole("User")));
 });
 
 var app = builder.Build();
@@ -251,7 +275,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.MapPost("/api/auth/login", (LoginRequest request, UserStore userStore) =>
+app.MapPost("/api/auth/login", (LoginRequest request, UserStore userStore, ConfigService configService) =>
 {
     var user = userStore.ValidateCredentials(request.Username, request.Password);
     if (user is null)
@@ -259,6 +283,19 @@ app.MapPost("/api/auth/login", (LoginRequest request, UserStore userStore) =>
         return Results.Unauthorized();
     }
 
+    // 2FA (TOTP): quando habilitado para o usuário, exige um segundo fator válido.
+    if (user.TotpEnabled && !string.IsNullOrEmpty(user.TotpSecret))
+    {
+        if (string.IsNullOrWhiteSpace(request.TotpCode)
+            || !QuestResume.Core.Auth.TotpService.ValidateCode(user.TotpSecret, request.TotpCode))
+        {
+            return Results.Json(
+                new { error = "Código de verificação (2FA) ausente ou inválido." },
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+    }
+
+    var options = configService.Load();
     var claims = new[]
     {
         new Claim(ClaimTypes.NameIdentifier, user.Id),
@@ -269,7 +306,7 @@ app.MapPost("/api/auth/login", (LoginRequest request, UserStore userStore) =>
     var token = new JwtSecurityToken(
         issuer: JwtIssuer,
         claims: claims,
-        expires: DateTime.UtcNow.AddHours(12),
+        expires: DateTime.UtcNow.AddMinutes(options.JwtExpirationMinutes),
         signingCredentials: creds);
 
     return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), userId = user.Id, username = user.Username, role = user.Role.ToString() });
@@ -361,18 +398,49 @@ app.MapGet("/api/status", async (HttpContext context, ConfigService configServic
 });
 
 // --- Múltiplas coleções ---
-app.MapGet("/api/collections", (HttpContext context, ConfigService configService) =>
+// Permissões por coleção (item 4): quando o usuário autenticado tem AllowedCollections preenchida
+// (não-nula/não-vazia), ele só pode listar/acessar/alterar as coleções nessa lista. Nulo/vazio =
+// acesso a todas (comportamento padrão). Em modo single-user (sem usuário) o acesso é irrestrito.
+static List<string>? AllowedCollectionsFor(HttpContext context, UserStore userStore)
+{
+    var username = context.User.Identity?.Name;
+    if (string.IsNullOrEmpty(username))
+    {
+        return null; // single-user / não autenticado -> sem restrição
+    }
+
+    var user = userStore.FindByUsername(username);
+    return user?.AllowedCollections is { Count: > 0 } list ? list : null;
+}
+
+static bool IsCollectionAllowed(string name, List<string>? allowed)
+    => allowed is null || allowed.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+app.MapGet("/api/collections", (HttpContext context, ConfigService configService, UserStore userStore) =>
 {
     var options = ResolveBaseIndexPathForUser(configService.Load(), context);
     var store = new QuestResume.Core.Persistence.CollectionStore(options.IndexPath);
-    return Results.Ok(store.List());
+    var allowed = AllowedCollectionsFor(context, userStore);
+    var list = store.List();
+    if (allowed is not null)
+    {
+        list = list.Where(c => IsCollectionAllowed(c.Nome, allowed)).ToList();
+    }
+
+    return Results.Ok(list);
 });
 
-app.MapPost("/api/collections", (HttpContext context, CreateCollectionRequest request, ConfigService configService) =>
+app.MapPost("/api/collections", (HttpContext context, CreateCollectionRequest request, ConfigService configService, UserStore userStore) =>
 {
     if (string.IsNullOrWhiteSpace(request.Name))
     {
         return Results.BadRequest(new { error = "Informe o nome da coleção (name)." });
+    }
+
+    var allowed = AllowedCollectionsFor(context, userStore);
+    if (!IsCollectionAllowed(request.Name, allowed))
+    {
+        return Results.Json(new { error = "Acesso negado a esta coleção." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     var options = ResolveBaseIndexPathForUser(configService.Load(), context);
@@ -386,10 +454,16 @@ app.MapPost("/api/collections", (HttpContext context, CreateCollectionRequest re
     {
         return Results.BadRequest(new { error = ex.Message });
     }
-});
+}).RequireAuthorization("Writer");
 
-app.MapDelete("/api/collections/{name}", (HttpContext context, string name, ConfigService configService) =>
+app.MapDelete("/api/collections/{name}", (HttpContext context, string name, ConfigService configService, UserStore userStore) =>
 {
+    var allowed = AllowedCollectionsFor(context, userStore);
+    if (!IsCollectionAllowed(name, allowed))
+    {
+        return Results.Json(new { error = "Acesso negado a esta coleção." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     var options = ResolveBaseIndexPathForUser(configService.Load(), context);
     var store = new QuestResume.Core.Persistence.CollectionStore(options.IndexPath);
     try
@@ -400,7 +474,7 @@ app.MapDelete("/api/collections/{name}", (HttpContext context, string name, Conf
     {
         return Results.BadRequest(new { error = ex.Message });
     }
-});
+}).RequireAuthorization("Writer");
 
 // --- Busca por similaridade de imagem (CLIP) ---
 app.MapPost("/api/search/image", async (HttpContext context, HttpRequest request, ConfigService configService, ILogger<Program> logger, CancellationToken cancellationToken) =>
@@ -523,7 +597,7 @@ app.MapPut("/api/config", (AppOptions options, ConfigService configService) =>
 
     configService.Save(options);
     return Results.Ok(options);
-});
+}).RequireAuthorization("Writer");
 
 app.MapGet("/api/webhooks", (HttpContext context, ConfigService configService) =>
 {
@@ -699,11 +773,13 @@ app.MapPost("/api/index", async (
     if (options.EmbeddingsEnabled)
     {
         embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
-        vectorStore = new VectorStore(options.IndexPath);
+        vectorStore = new VectorStore(options.IndexPath, quantize: options.VectorQuantizationEnabled);
     }
 
     ILlmProvider? summarizationLlm = null;
-    if (options.AutoSummarizationEnabled)
+    // O mesmo provider de LLM alimenta o resumo automático e a extração de entidades (ambas etapas
+    // pós-indexação opt-in). Carregamos o LLM se qualquer uma delas estiver habilitada.
+    if (options.AutoSummarizationEnabled || options.EntityExtractionEnabled)
     {
         try
         {
@@ -712,7 +788,7 @@ app.MapPost("/api/index", async (
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Resumo automático desabilitado nesta indexação: falha ao carregar o LLM");
+            logger.LogWarning(ex, "Resumo automático/extração de entidades desabilitados nesta indexação: falha ao carregar o LLM");
         }
     }
 
@@ -745,7 +821,9 @@ app.MapPost("/api/index", async (
                 contextualRetrievalEnabled: options.ContextualRetrievalEnabled,
                 semanticDeduplicationEnabled: options.SemanticDeduplicationEnabled,
                 semanticDuplicateThreshold: options.SemanticDuplicateThreshold,
-                additionalFolders: options.AdditionalWatchedFolders);
+                additionalFolders: options.AdditionalWatchedFolders,
+                entityExtractionEnabled: options.EntityExtractionEnabled,
+                documentVersioningEnabled: options.DocumentVersioningEnabled);
         }
         finally
         {
@@ -778,7 +856,7 @@ app.MapPost("/api/index", async (
 
         return Results.Ok(stats);
     }
-}).RequireRateLimiting("indexing");
+}).RequireRateLimiting("indexing").RequireAuthorization("Writer");
 
 app.MapGet("/api/index/progress", (QuestResume.Api.Services.IndexingProgressStore progressStore) =>
 {
@@ -941,7 +1019,9 @@ app.MapPost("/api/ask", async (
     var askStopwatch = System.Diagnostics.Stopwatch.StartNew();
     try
     {
-        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, request.History, cancellationToken, request.Persona);
+        var result = await engineProvider.AskAsync(options, request.Question, request.TopK ?? options.TopK, request.History, cancellationToken, request.Persona,
+            context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+            context.User.Identity?.Name);
         askStopwatch.Stop();
         metrics.RecordQuestionAnswered(askStopwatch.Elapsed.TotalMilliseconds);
         logger.LogInformation("POST /api/ask concluído — sources={SourceCount}", result.Sources.Count);
@@ -1143,7 +1223,7 @@ app.MapDelete("/api/documents", (HttpContext context, string path, ConfigService
     engineProvider.InvalidateVectorCache();
     logger.LogInformation("DELETE /api/documents — path={Path} chunks={Chunks}", path, removedChunks);
     return Results.Ok(new { removedChunks });
-});
+}).RequireAuthorization("Writer");
 
 app.MapPost("/api/documents/reindex", async (
     HttpContext context,
@@ -1172,7 +1252,7 @@ app.MapPost("/api/documents/reindex", async (
     if (options.EmbeddingsEnabled)
     {
         embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
-        vectorStore = new VectorStore(options.IndexPath);
+        vectorStore = new VectorStore(options.IndexPath, quantize: options.VectorQuantizationEnabled);
     }
 
     using (embeddingService)
@@ -1205,7 +1285,7 @@ app.MapPost("/api/documents/reindex", async (
             return Results.BadRequest(new { error = ex.Message });
         }
     }
-});
+}).RequireAuthorization("Writer");
 
 app.MapGet("/api/index-report", (HttpContext context, ConfigService configService, ILogger<Program> logger) =>
 {
@@ -1450,7 +1530,7 @@ app.MapPut("/api/documents/tags", (HttpContext context, SetTagsRequest request, 
     search.SetTags(request.Path, request.Tags ?? new List<string>());
     logger.LogInformation("PUT /api/documents/tags — path={Path} tags={Tags}", request.Path, string.Join(",", request.Tags ?? new List<string>()));
     return Results.Ok(new { path = request.Path, tags = search.GetTags(request.Path) });
-});
+}).RequireAuthorization("Writer");
 
 // Liveness + readiness probe for Docker HEALTHCHECK, Kubernetes probes and reverse proxies.
 // Returns "degraded" (still 200) when the index or model isn't configured yet — the process
@@ -1494,7 +1574,7 @@ app.MapPost("/api/backup", async (HttpContext context, ConfigService configServi
     File.Delete(tempZipPath);
 
     return Results.File(bytes, "application/zip", fileName);
-}).RequireRateLimiting("indexing");
+}).RequireRateLimiting("indexing").RequireAuthorization("Writer");
 
 app.MapPost("/api/restore", async (HttpContext context, HttpRequest request, ConfigService configService, RagEngineProvider engineProvider, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
@@ -1539,7 +1619,7 @@ app.MapPost("/api/restore", async (HttpContext context, HttpRequest request, Con
 
     engineProvider.InvalidateVectorCache();
     return Results.Ok(new { message = "Restauração concluída." });
-}).RequireRateLimiting("indexing");
+}).RequireRateLimiting("indexing").RequireAuthorization("Writer");
 
 // Uploads one or more files dropped in the Web UI (browsers do not expose the absolute path of
 // dragged files, so drag-and-drop is implemented as an upload into a dedicated subfolder of the
@@ -1885,7 +1965,7 @@ app.MapPost("/api/config/import", (ConfigImportRequest request, ILogger<Program>
         return Results.Ok(applied);
     }
     catch (Exception ex) { logger.LogWarning("POST /api/config/import falhou: {Message}", ex.Message); return Results.BadRequest(new { error = ex.Message }); }
-});
+}).RequireAuthorization("Writer");
 
 // ---- Versões de documento (item 20) ----
 app.MapGet("/api/documents/versions", (HttpContext context, string path, ConfigService configService) =>
@@ -1894,6 +1974,19 @@ app.MapGet("/api/documents/versions", (HttpContext context, string path, ConfigS
     var options = ResolveForUser(configService.Load(), context);
     var store = new QuestResume.Core.Persistence.DocumentVersionStore(options.IndexPath, options.MaxVersionsPerDocument);
     return Results.Ok(store.GetVersions(path));
+});
+
+// ---- Diagnóstico (item 19) ----
+app.MapGet("/api/diagnostics/export", (ConfigService configService) =>
+{
+    var svc = new QuestResume.Core.Services.DiagnosticsService(configService);
+    var zip = svc.BuildDiagnosticsZip();
+    return Results.File(zip, "application/zip", $"diagnostico-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.zip");
+});
+app.MapGet("/api/diagnostics/logs", (ConfigService configService, int? lines) =>
+{
+    var svc = new QuestResume.Core.Services.DiagnosticsService(configService);
+    return Results.Ok(svc.GetRecentLogLines(lines ?? 200));
 });
 
 app.Run();
