@@ -55,7 +55,7 @@ public sealed record ChatExportTurnRequest(string Question, string Answer, List<
 
 public sealed record ChatExportRequest(List<ChatExportTurnRequest> Turns);
 
-public sealed record LoginRequest(string Username, string Password);
+public sealed record LoginRequest(string Username, string Password, string? TotpCode = null);
 
 public sealed record CreateUserRequest(string Username, string Password, string Role);
 
