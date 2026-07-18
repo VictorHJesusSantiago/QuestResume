@@ -24,6 +24,10 @@ public sealed class VectorStore : IVectorStore
     private readonly object _lock = new();
     private readonly SqliteConnection _connection;
     private readonly int _maxCacheSize;
+    private readonly bool _quantize;
+    private readonly bool _annEnabled;
+    private HnswIndex? _annIndex;
+    private List<(SearchResultItem Item, float[] Embedding)>? _annEntries;
     private List<(SearchResultItem Item, float[] Embedding)>? _cache;
     private SqliteTransaction? _activeTransaction;
 
@@ -32,9 +36,21 @@ public sealed class VectorStore : IVectorStore
     /// When the stored count exceeds this value the cache is skipped and every
     /// <see cref="Search"/> call re-reads from SQLite — prevents OOM for very large collections.
     /// </param>
-    public VectorStore(string indexPath, int maxCacheSize = 0)
+    /// <param name="quantize">
+    /// Quando true, novos embeddings são armazenados quantizados em int8 (~25% do tamanho),
+    /// via <see cref="VectorQuantizer"/>. Blobs float32 legados continuam legíveis (detecção por
+    /// cabeçalho mágico), então habilitar não corrompe um índice existente — só afeta gravações novas.
+    /// </param>
+    /// <param name="annEnabled">
+    /// Quando true, <see cref="Search"/> usa um índice ANN (HNSW) aproximado e sub-linear
+    /// (<see cref="HnswIndex"/>), construído sob demanda a partir dos embeddings carregados, em vez
+    /// da varredura linear exata. Trade-off: mais rápido em coleções grandes, mas recall &lt; 100%.
+    /// </param>
+    public VectorStore(string indexPath, int maxCacheSize = 0, bool quantize = false, bool annEnabled = false)
     {
         _maxCacheSize = maxCacheSize;
+        _quantize = quantize;
+        _annEnabled = annEnabled;
         IODirectory.CreateDirectory(indexPath);
         var dbPath = Path.Combine(indexPath, DatabaseFileName);
 
@@ -226,6 +242,29 @@ public sealed class VectorStore : IVectorStore
         lock (_lock)
         {
             var entries = LoadCache();
+
+            // Busca ANN aproximada (item 12): navega o grafo HNSW em vez de comparar contra todos.
+            if (_annEnabled && entries.Count > 0)
+            {
+                var index = GetOrBuildAnnIndex(entries);
+                var ids = index.Search(queryEmbedding, topK);
+                var annResults = new List<SearchResultItem>(ids.Count);
+                foreach (var id in ids)
+                {
+                    var (item, embedding) = entries[id];
+                    annResults.Add(new SearchResultItem
+                    {
+                        SourcePath = item.SourcePath,
+                        FileName = item.FileName,
+                        ChunkIndex = item.ChunkIndex,
+                        ChunkText = item.ChunkText,
+                        Score = CosineSimilarity(queryEmbedding, embedding)
+                    });
+                }
+
+                return annResults.OrderByDescending(r => r.Score).ToList();
+            }
+
             var scored = new List<SearchResultItem>(entries.Count);
 
             foreach (var (item, embedding) in entries)
@@ -297,8 +336,37 @@ public sealed class VectorStore : IVectorStore
         return entries;
     }
 
-    private static byte[] ToBytes(float[] embedding)
+    /// <summary>
+    /// Constrói (ou reaproveita) o índice HNSW para o conjunto de entradas atual. Como
+    /// <see cref="LoadCache"/> devolve a MESMA lista enquanto o cache é válido, comparamos por
+    /// referência: se as entradas mudaram (reindexação → cache invalidado → nova lista), o índice é
+    /// reconstruído. Deve ser chamado com <see cref="_lock"/> segurado.
+    /// </summary>
+    private HnswIndex GetOrBuildAnnIndex(List<(SearchResultItem Item, float[] Embedding)> entries)
     {
+        if (_annIndex is not null && ReferenceEquals(_annEntries, entries))
+        {
+            return _annIndex;
+        }
+
+        var index = new HnswIndex(seed: 42);
+        for (var i = 0; i < entries.Count; i++)
+        {
+            index.Add(i, entries[i].Embedding);
+        }
+
+        _annIndex = index;
+        _annEntries = entries;
+        return index;
+    }
+
+    private byte[] ToBytes(float[] embedding)
+    {
+        if (_quantize)
+        {
+            return VectorQuantizer.ToQuantizedBytes(embedding);
+        }
+
         var bytes = new byte[embedding.Length * sizeof(float)];
         Buffer.BlockCopy(embedding, 0, bytes, 0, bytes.Length);
         return bytes;
@@ -306,6 +374,11 @@ public sealed class VectorStore : IVectorStore
 
     private static float[] FromBytes(byte[] bytes)
     {
+        if (VectorQuantizer.IsQuantized(bytes))
+        {
+            return VectorQuantizer.FromQuantizedBytes(bytes);
+        }
+
         var embedding = new float[bytes.Length / sizeof(float)];
         Buffer.BlockCopy(bytes, 0, embedding, 0, bytes.Length);
         return embedding;
