@@ -138,6 +138,12 @@ public sealed class LuceneIndexManager : IDisposable
 
         try
         {
+            // Item 14 (memory-mapped): FSDirectory.Open já escolhe automaticamente a melhor
+            // implementação por SO/arquitetura — em processos 64-bit isso é MMapDirectory (índice
+            // mapeado em memória), que é o comportamento desejado. Não forçamos MMapDirectory
+            // explicitamente de propósito: no Windows ele mantém os arquivos mapeados travados até
+            // o GC liberar, o que impediria apagar/recriar o índice (quebrando reindexação e os
+            // testes de ciclo de vida). Deixar o Lucene decidir dá o mmap sem esse efeito colateral.
             var dir = FSDirectory.Open(indexPath);
             if (!DirectoryReader.IndexExists(dir))
             {
