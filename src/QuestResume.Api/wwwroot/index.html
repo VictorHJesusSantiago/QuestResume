@@ -20,6 +20,10 @@
       <label for="loginPasswordInput" data-i18n="login.password">Senha</label>
       <input type="password" id="loginPasswordInput" autocomplete="current-password" />
     </div>
+    <div class="field hidden" id="loginTotpField">
+      <label for="loginTotpInput" data-i18n="login.totp">Código de verificação (2FA)</label>
+      <input type="text" id="loginTotpInput" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" />
+    </div>
     <button class="primary" id="loginButton" data-i18n="login.submit">Entrar</button>
     <div id="loginStatus" class="status-line"></div>
   </div>
@@ -75,13 +79,21 @@
       </aside>
       <div class="panel chat-main-panel">
         <h2 data-i18n="chat.title">Perguntas (RAG com IA local)</h2>
+        <div class="field chat-persona-field">
+          <label for="personaSelect" data-i18n="chat.persona">Persona do assistente</label>
+          <select id="personaSelect"></select>
+        </div>
         <div id="chatLog" class="chat-log"></div>
         <div class="ask-row">
           <input type="text" id="questionInput" data-i18n-placeholder="chat.inputPlaceholder" placeholder="Digite sua pergunta..." />
+          <button id="micButton" title="Falar a pergunta (reconhecimento de voz do navegador)">🎤</button>
           <button class="primary" id="askButton" data-i18n="chat.ask">Perguntar</button>
           <button id="stopGenerationButton" class="danger hidden" data-i18n="chat.stop" title="Parar a geração da resposta">Parar</button>
           <button id="exportChatButton" data-i18n="chat.exportMarkdown" title="Exportar conversa para Markdown">Exportar conversa</button>
           <button id="exportChatPdfButton" data-i18n="chat.exportPdf" title="Exportar conversa para PDF">Exportar PDF</button>
+          <button id="exportChatDocxButton" data-i18n="chat.exportDocx" title="Exportar conversa para DOCX">Exportar DOCX</button>
+          <button id="exportChatHtmlButton" data-i18n="chat.exportHtml" title="Exportar conversa para HTML">Exportar HTML</button>
+          <button id="exportChatTxtButton" data-i18n="chat.exportTxt" title="Exportar conversa para TXT">Exportar TXT</button>
         </div>
         <div id="askStatus" class="status-line"></div>
         <p class="hint-line" data-i18n="chat.shortcutsHint">Atalhos: Ctrl+Enter envia a pergunta · pressione "?" para ver todos os atalhos.</p>
@@ -93,9 +105,46 @@
     <div class="panel">
       <h2 data-i18n="search.title">Busca por palavras-chave (sem IA)</h2>
       <div class="ask-row">
-        <input type="text" id="searchInput" data-i18n-placeholder="search.inputPlaceholder" placeholder="Termo de busca..." />
+        <input type="text" id="searchInput" list="searchSuggestList" data-i18n-placeholder="search.inputPlaceholder" placeholder="Termo de busca..." />
+        <datalist id="searchSuggestList"></datalist>
         <button class="primary" id="searchButton" data-i18n="search.search">Buscar</button>
+        <button id="exportSearchButton" data-i18n="search.export" title="Exportar resultados">Exportar resultados</button>
       </div>
+      <div class="row search-filters">
+        <div class="field">
+          <label for="searchSortInput" data-i18n="search.sort">Ordenar por</label>
+          <select id="searchSortInput">
+            <option value="relevance" data-i18n="search.sortRelevance">Relevância</option>
+            <option value="date" data-i18n="search.sortDate">Data</option>
+            <option value="name" data-i18n="search.sortName">Nome</option>
+          </select>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="searchDescendingInput" /> <span data-i18n="search.descending">Ordem decrescente</span></label>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="searchFuzzyInput" /> <span data-i18n="search.fuzzy">Busca aproximada (fuzzy)</span></label>
+        </div>
+      </div>
+      <div class="row search-filters">
+        <div class="field">
+          <label for="searchDateFromInput" data-i18n="search.dateFrom">Data de (De)</label>
+          <input type="date" id="searchDateFromInput" />
+        </div>
+        <div class="field">
+          <label for="searchDateToInput" data-i18n="search.dateTo">Data até (Até)</label>
+          <input type="date" id="searchDateToInput" />
+        </div>
+        <div class="field">
+          <label for="searchMinSizeInput" data-i18n="search.minSize">Tamanho mín. (KB)</label>
+          <input type="number" id="searchMinSizeInput" min="0" step="1" />
+        </div>
+        <div class="field">
+          <label for="searchMaxSizeInput" data-i18n="search.maxSize">Tamanho máx. (KB)</label>
+          <input type="number" id="searchMaxSizeInput" min="0" step="1" />
+        </div>
+      </div>
+      <div id="searchDidYouMean" class="status-line"></div>
       <div class="row search-filters">
         <div class="field">
           <label for="searchExtInput" data-i18n="search.filterExtension">Filtrar por extensão (opcional)</label>
@@ -112,6 +161,11 @@
         </div>
       </div>
       <div id="searchResults"></div>
+      <div class="row search-pagination hidden" id="searchPaginationRow">
+        <button id="searchPrevButton" data-i18n="search.prev">Anterior</button>
+        <span id="searchPageIndicator"></span>
+        <button id="searchNextButton" data-i18n="search.next">Próxima</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -130,6 +184,41 @@
       <h2 data-i18n="documents.title">Documentos indexados</h2>
       <button class="primary" id="refreshDocumentsButton" data-i18n="documents.refresh">Atualizar lista</button>
       <div id="documentsList"></div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="compare.title">Comparar documentos</h2>
+      <p class="hint-line" data-i18n="compare.hint">Marque dois ou mais documentos e gere um resumo/comparação com IA.</p>
+      <div id="compareDocsList" class="report-list"></div>
+      <div class="field">
+        <label for="compareQuestionInput" data-i18n="compare.question">Pergunta/foco da comparação (opcional)</label>
+        <input type="text" id="compareQuestionInput" placeholder="ex.: quais as diferenças principais?" />
+      </div>
+      <button class="primary" id="compareDocsButton" data-i18n="compare.run">Comparar selecionados</button>
+      <div id="compareStatus" class="status-line"></div>
+      <pre id="compareResult"></pre>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="annotations.title">Anotações</h2>
+      <div class="row">
+        <div class="field">
+          <label for="annotationDocInput" data-i18n="annotations.doc">Documento</label>
+          <input type="text" id="annotationDocInput" placeholder="cole o caminho de um documento" />
+        </div>
+        <button id="loadAnnotationsButton" data-i18n="annotations.load">Carregar anotações</button>
+      </div>
+      <div class="field">
+        <label for="annotationTextInput" data-i18n="annotations.text">Trecho</label>
+        <textarea id="annotationTextInput" rows="2" placeholder="trecho selecionado do documento"></textarea>
+      </div>
+      <div class="field">
+        <label for="annotationNoteInput" data-i18n="annotations.note">Nota</label>
+        <input type="text" id="annotationNoteInput" placeholder="sua observação" />
+      </div>
+      <button class="primary" id="addAnnotationButton" data-i18n="annotations.add">Adicionar anotação</button>
+      <div id="annotationsStatus" class="status-line"></div>
+      <div id="annotationsList" class="report-list"></div>
     </div>
 
     <div class="panel">
@@ -152,6 +241,7 @@
         </div>
       </div>
       <button class="primary" id="generateFlashcardsButton" data-i18n="study.generateFlashcards">Gerar flashcards</button>
+      <button id="exportAnkiButton" data-i18n="study.exportAnki" title="Exportar flashcards para Anki (.apkg/.txt)">Exportar para Anki</button>
       <button id="generateQuizButton" data-i18n="study.generateQuiz">Gerar quiz</button>
       <div id="studyStatus" class="status-line"></div>
 
@@ -172,6 +262,15 @@
       <div id="extensionChart"></div>
       <h3 class="chart-section-title" data-i18n="dashboard.overTime">Perguntas ao longo do tempo</h3>
       <div id="questionsChart"></div>
+      <h3 class="chart-section-title" data-i18n="dashboard.diskUsage">Uso de disco por coleção</h3>
+      <div id="diskUsageList"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="graph.title">Grafo de conhecimento</h2>
+      <p class="hint-line" data-i18n="graph.hint">Construído a partir das entidades extraídas dos documentos (requer "Extrair entidades" habilitado).</p>
+      <button class="primary" id="loadKnowledgeGraphButton" data-i18n="graph.load">Carregar grafo</button>
+      <div id="knowledgeGraphStatus" class="status-line"></div>
+      <canvas id="knowledgeGraphCanvas" width="600" height="400" class="knowledge-graph-canvas"></canvas>
     </div>
   </section>
 
@@ -416,6 +515,91 @@
     </div>
 
     <div class="panel">
+      <h2 data-i18n="llm.tuningTitle">Ajustes do modelo de IA</h2>
+      <div class="row">
+        <div class="field">
+          <label for="llmTemperatureInput" data-i18n="llm.temperature">Temperatura (criatividade, 0-2)</label>
+          <input type="number" id="llmTemperatureInput" min="0" max="2" step="0.1" />
+        </div>
+        <div class="field">
+          <label for="llmTopPInput" data-i18n="llm.topP">Top-P (0-1)</label>
+          <input type="number" id="llmTopPInput" min="0" max="1" step="0.05" />
+        </div>
+        <div class="field">
+          <label for="llmSeedInput" data-i18n="llm.seed">Seed (vazio = aleatório)</label>
+          <input type="number" id="llmSeedInput" step="1" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="customSystemPromptInput" data-i18n="llm.systemPrompt">Prompt de sistema personalizado (opcional)</label>
+        <textarea id="customSystemPromptInput" rows="3" placeholder="Você é um assistente..."></textarea>
+      </div>
+      <div class="field">
+        <label for="summarizationModelPathInput" data-i18n="llm.summarizationModel">Modelo auxiliar para resumos (.gguf, opcional)</label>
+        <input type="text" id="summarizationModelPathInput" placeholder="C:\Modelos\modelo-pequeno.gguf" />
+      </div>
+      <div class="row">
+        <button id="suggestGpuLayersButton" data-i18n="llm.suggestGpu" title="Sugerir automaticamente o número de camadas na GPU">Sugerir camadas de GPU</button>
+        <span id="suggestGpuLayersStatus" class="status-line"></span>
+      </div>
+      <div class="row">
+        <button id="runBenchmarkButton" data-i18n="llm.benchmark" title="Medir velocidade do modelo (tokens/s)">Benchmark do modelo</button>
+        <span id="benchmarkStatus" class="status-line"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="retrieval.title">Recuperação avançada (aumenta o tempo de resposta)</h2>
+      <p class="hint-line warning-text" data-i18n="retrieval.warning">Estas opções melhoram a qualidade da busca gerando consultas extras com o LLM, mas deixam cada resposta mais lenta.</p>
+      <div class="field">
+        <label><input type="checkbox" id="queryExpansionEnabledInput" /> <span data-i18n="retrieval.queryExpansion">Expansão de consulta (sinônimos e termos relacionados)</span></label>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="hydeEnabledInput" /> <span data-i18n="retrieval.hyde">HyDE (documento hipotético)</span></label>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="multiQueryEnabledInput" /> <span data-i18n="retrieval.multiQuery">Multi-consulta (várias reformulações da pergunta)</span></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="postindex.title">Enriquecimento pós-indexação</h2>
+      <p class="hint-line" data-i18n="postindex.hint">Executados automaticamente a cada indexação quando ativos (a extração de entidades usa o LLM configurado).</p>
+      <div class="field">
+        <label><input type="checkbox" id="entityExtractionEnabledInput" /> <span data-i18n="postindex.entities">Extrair entidades (pessoas, lugares, organizações) para o grafo de conhecimento</span></label>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="documentVersioningEnabledInput" /> <span data-i18n="postindex.versioning">Versionar documentos (guardar histórico de alterações)</span></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="diagnostics.title">Diagnóstico e saúde</h2>
+      <div class="row">
+        <button id="exportDiagnosticsButton" data-i18n="diagnostics.export">Exportar pacote de diagnóstico</button>
+        <button id="viewLogsButton" data-i18n="diagnostics.viewLogs">Ver últimas linhas de log</button>
+      </div>
+      <pre id="diagnosticsLogs" class="hidden"></pre>
+      <div class="row">
+        <button id="checkIndexHealthButton" data-i18n="health.check">Verificar saúde do índice</button>
+        <button id="repairIndexButton" class="hidden" data-i18n="health.repair">Reparar índice</button>
+      </div>
+      <div id="indexHealthReport" class="status-line"></div>
+    </div>
+
+    <div class="panel">
+      <h2 data-i18n="configio.title">Importar / exportar configuração</h2>
+      <div class="row">
+        <button id="exportConfigButton" data-i18n="configio.export">Exportar configuração</button>
+        <div class="field">
+          <label for="importConfigInput" data-i18n="configio.import">Importar configuração (.json)</label>
+          <input type="file" id="importConfigInput" accept=".json,application/json" />
+        </div>
+      </div>
+      <div id="configIoStatus" class="status-line"></div>
+    </div>
+
+    <div class="panel">
       <h2 data-i18n="agent.title">Agente com ferramentas (busca web e calculadora)</h2>
       <p class="hint-line warning-text" data-i18n="agent.warning">
         ATENÇÃO: habilitar esta opção permite que o assistente decida sozinho fazer chamadas de
@@ -564,9 +748,19 @@
     </div>
   </div>
 </div>
+<div id="analysisModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3 id="analysisModalTitle"></h3>
+    <div id="analysisModalBody" class="analysis-modal-body"></div>
+    <div class="close-row">
+      <button class="primary" id="closeAnalysisModalButton" data-i18n="common.close">Fechar</button>
+    </div>
+  </div>
+</div>
 <script src="i18n/i18n.js"></script>
 <script src="charts.js"></script>
 <script src="markdown.js"></script>
 <script src="app.js"></script>
+<script src="lote8.js"></script>
 </body>
 </html>
