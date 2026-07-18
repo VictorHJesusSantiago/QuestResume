@@ -17,10 +17,10 @@ public class UserStoreTests
 
         try
         {
-            var user = store.CreateUser("alice", "senha-secreta-123", UserRole.Admin);
+            var user = store.CreateUser("alice", "Senha-secreta-123", UserRole.Admin);
 
-            Assert.NotEqual("senha-secreta-123", user.PasswordHash);
-            Assert.DoesNotContain("senha-secreta-123", File.ReadAllText(filePath));
+            Assert.NotEqual("Senha-secreta-123", user.PasswordHash);
+            Assert.DoesNotContain("Senha-secreta-123", File.ReadAllText(filePath));
         }
         finally
         {
@@ -35,8 +35,8 @@ public class UserStoreTests
 
         try
         {
-            store.CreateUser("bob", "senha123", UserRole.User);
-            Assert.Throws<InvalidOperationException>(() => store.CreateUser("bob", "outrasenha", UserRole.User));
+            store.CreateUser("bob", "Senha123", UserRole.User);
+            Assert.Throws<InvalidOperationException>(() => store.CreateUser("bob", "Outrasenha1", UserRole.User));
         }
         finally
         {
@@ -51,9 +51,9 @@ public class UserStoreTests
 
         try
         {
-            store.CreateUser("carol", "correcthorse", UserRole.User);
+            store.CreateUser("carol", "Correcthorse1", UserRole.User);
 
-            var result = store.ValidateCredentials("carol", "correcthorse");
+            var result = store.ValidateCredentials("carol", "Correcthorse1");
 
             Assert.NotNull(result);
             Assert.Equal("carol", result!.Username);
@@ -71,7 +71,7 @@ public class UserStoreTests
 
         try
         {
-            store.CreateUser("dave", "correctpassword", UserRole.User);
+            store.CreateUser("dave", "Correctpassword1", UserRole.User);
 
             var result = store.ValidateCredentials("dave", "wrongpassword");
 
@@ -105,7 +105,7 @@ public class UserStoreTests
 
         try
         {
-            store.CreateUser("erin", "senha123", UserRole.User);
+            store.CreateUser("erin", "Senha123", UserRole.User);
 
             var removed = store.DeleteUser("erin");
 
@@ -126,7 +126,7 @@ public class UserStoreTests
         try
         {
             Assert.False(store.HasAnyUser());
-            store.CreateUser("frank", "senha123", UserRole.User);
+            store.CreateUser("frank", "Senha123", UserRole.User);
             Assert.True(store.HasAnyUser());
         }
         finally
