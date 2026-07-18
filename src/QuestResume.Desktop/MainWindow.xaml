@@ -80,6 +80,10 @@
                                             <Button Content="Traduzir" Padding="8,3" FontSize="11" Margin="5,0,0,0"
                                                     Command="{Binding DataContext.TranslateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                     CommandParameter="{Binding}"/>
+                                            <Button Content="🔊 Ouvir" Padding="8,3" FontSize="11" Margin="5,0,0,0"
+                                                    ToolTip="Ler a resposta em voz alta"
+                                                    Command="{Binding DataContext.ListenCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
                                         </StackPanel>
                                         <ItemsControl ItemsSource="{Binding RelatedQuestions}" Margin="0,4,0,0">
                                             <ItemsControl.ItemsPanel>
@@ -492,6 +496,24 @@
                 <TextBlock Text="{DynamicResource Config_ContextSize}" FontWeight="Bold" Margin="0,0,0,5"/>
                 <TextBox Padding="5" Margin="0,0,0,15" Width="100" HorizontalAlignment="Left"
                          Text="{Binding ContextSize, UpdateSourceTrigger=PropertyChanged}"/>
+
+                <TextBlock Text="Ajustes do modelo de IA" FontWeight="Bold" Margin="0,0,0,5"/>
+                <TextBlock Text="Temperatura (criatividade, 0-2)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                <TextBox Padding="5" Margin="0,0,0,8" Width="100" HorizontalAlignment="Left"
+                         Text="{Binding LlmTemperature, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="Top-P (0-1)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                <TextBox Padding="5" Margin="0,0,0,8" Width="100" HorizontalAlignment="Left"
+                         Text="{Binding LlmTopP, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="Seed (vazio = aleatório)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                <TextBox Padding="5" Margin="0,0,0,8" Width="100" HorizontalAlignment="Left"
+                         Text="{Binding LlmSeed, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"/>
+                <TextBlock Text="Prompt de sistema personalizado (opcional)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                <TextBox Padding="5" Margin="0,0,0,8" Height="60" AcceptsReturn="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         Text="{Binding CustomSystemPrompt, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="Modelo auxiliar para resumos (.gguf, opcional)" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
+                <TextBox Padding="5" Margin="0,0,0,15"
+                         Text="{Binding SummarizationModelPath, UpdateSourceTrigger=PropertyChanged}"/>
 
                 <TextBlock Text="Indexação paralela / incremental / automática" FontWeight="Bold" Margin="0,0,0,5"/>
                 <TextBlock Text="Arquivos processados em paralelo na indexação" Foreground="Gray" FontSize="11" Margin="0,0,0,3"/>
