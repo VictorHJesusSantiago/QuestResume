@@ -23,17 +23,36 @@ public sealed class ConfigService
         ConfigPath = configPath ?? GetDefaultConfigPath();
     }
 
-    public static string GetDefaultConfigPath()
+    /// <summary>
+    /// Nome do arquivo marcador do modo portátil (item 18). Se existir ao lado do executável,
+    /// todos os caminhos padrão (config, índice, plugins, logs) ficam relativos à pasta do
+    /// executável em vez de <c>%LOCALAPPDATA%\QuestResume</c>. Para ativar, crie um arquivo vazio
+    /// chamado <c>portable.marker</c> na mesma pasta do executável.
+    /// </summary>
+    public const string PortableMarkerFileName = "portable.marker";
+
+    /// <summary>Pasta base para todos os dados: a pasta do executável (modo portátil) ou %LOCALAPPDATA%\QuestResume.</summary>
+    public static string GetBaseDataDirectory()
     {
-        var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(baseDir, "QuestResume", "config.json");
+        var exeDir = AppContext.BaseDirectory;
+        if (File.Exists(Path.Combine(exeDir, PortableMarkerFileName)))
+        {
+            return Path.Combine(exeDir, "QuestResumeData");
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(localAppData, "QuestResume");
     }
 
-    public static string GetDefaultIndexPath()
-    {
-        var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(baseDir, "QuestResume", "index");
-    }
+    /// <summary>Indica se o modo portátil está ativo (existe <c>portable.marker</c> ao lado do executável).</summary>
+    public static bool IsPortableMode() =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, PortableMarkerFileName));
+
+    public static string GetDefaultConfigPath() => Path.Combine(GetBaseDataDirectory(), "config.json");
+
+    public static string GetDefaultIndexPath() => Path.Combine(GetBaseDataDirectory(), "index");
+
+    public static string GetDefaultLogsPath() => Path.Combine(GetBaseDataDirectory(), "logs");
 
     /// <summary>
     /// Loads <see cref="AppOptions"/> from <see cref="ConfigPath"/>. If the file is missing,
