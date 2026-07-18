@@ -147,7 +147,7 @@ public sealed class RagQueryEngine : IDisposable
     /// <remarks>
     /// Use <see cref="SearchService"/> directly for keyword search without an LLM.
     /// </remarks>
-    public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null)
+    public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null, string? userId = null, string? username = null)
     {
         var systemPromptOverride = ResolveSystemPrompt(personaName);
 
@@ -228,7 +228,9 @@ public sealed class RagQueryEngine : IDisposable
                 TimestampUtc = DateTime.UtcNow,
                 Question = question,
                 Sources = sources.Select(s => s.FileName).Distinct().ToList(),
-                ElapsedMs = stopwatch.Elapsed.TotalMilliseconds
+                ElapsedMs = stopwatch.Elapsed.TotalMilliseconds,
+                UserId = userId,
+                Username = username
             });
             _auditLog.Rotate(_maxAuditLogLines);
         }
@@ -291,7 +293,7 @@ public sealed class RagQueryEngine : IDisposable
     /// and audit-logged once the returned <see cref="StreamingAskResult.Tokens"/> stream is
     /// fully enumerated.
     /// </summary>
-    public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null)
+    public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null, string? userId = null, string? username = null)
     {
         var systemPromptOverride = ResolveSystemPrompt(personaName);
         var useCache = history is null || history.Count == 0;
@@ -330,7 +332,7 @@ public sealed class RagQueryEngine : IDisposable
         return new StreamingAskResult
         {
             Sources = sources,
-            Tokens = StreamAndRecordAsync(llm, prompt, question, sources, cacheKey, cancellationToken)
+            Tokens = StreamAndRecordAsync(llm, prompt, question, sources, cacheKey, cancellationToken, userId, username)
         };
     }
 
@@ -351,7 +353,9 @@ public sealed class RagQueryEngine : IDisposable
         string question,
         IReadOnlyList<SearchResultItem> sources,
         string? cacheKey,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+        string? userId = null,
+        string? username = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var builder = new StringBuilder();
@@ -397,7 +401,9 @@ public sealed class RagQueryEngine : IDisposable
                 TimestampUtc = DateTime.UtcNow,
                 Question = question,
                 Sources = sources.Select(s => s.FileName).Distinct().ToList(),
-                ElapsedMs = stopwatch.Elapsed.TotalMilliseconds
+                ElapsedMs = stopwatch.Elapsed.TotalMilliseconds,
+                UserId = userId,
+                Username = username
             });
             _auditLog.Rotate(_maxAuditLogLines);
         }

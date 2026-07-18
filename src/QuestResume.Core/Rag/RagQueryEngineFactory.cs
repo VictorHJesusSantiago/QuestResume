@@ -92,8 +92,10 @@ public static class RagQueryEngineFactory
         IEmbeddingService? embeddingService = null;
         if (options.EmbeddingsEnabled)
         {
-            vectorStore = new VectorStore(options.IndexPath, options.MaxVectorCacheSize);
-            embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
+            vectorStore = new VectorStore(options.IndexPath, options.MaxVectorCacheSize, options.VectorQuantizationEnabled, options.AnnSearchEnabled);
+            // Cache de embeddings de consultas repetidas (item 15): decora o serviço de embeddings.
+            embeddingService = new CachingEmbeddingService(
+                new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath));
         }
 
         ICrossEncoderService? crossEncoderService = null;
