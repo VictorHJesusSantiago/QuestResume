@@ -84,6 +84,7 @@ try
         "annotate" => RunAnnotate(rest),
         "health-check" => RunHealthCheck(rest),
         "versions" => RunVersions(rest),
+        "diagnostics" => RunDiagnostics(rest),
         "quiz" => await RunQuizAsync(rest),
         "translate" => await RunTranslateAsync(rest),
         "plugins" => RunPlugins(rest),
@@ -97,6 +98,7 @@ try
         "persona" => RunPersona(rest),
         "benchmark" => await RunBenchmarkAsync(rest),
         "hardware" => RunHardware(rest),
+        "wipe" => RunWipe(rest),
         "help" or "-h" or "--help" => PrintUsage(),
         _ => UnknownCommand(command)
     };
@@ -152,15 +154,15 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
     if (options.EmbeddingsEnabled)
     {
         embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
-        vectorStore = new VectorStore(indexPath);
+        vectorStore = new VectorStore(indexPath, quantize: options.VectorQuantizationEnabled);
     }
 
     ILlmProvider? summarizationLlm = null;
     RagQueryEngine? summarizationEngine = null;
-    if (options.AutoSummarizationEnabled)
+    if (options.AutoSummarizationEnabled || options.EntityExtractionEnabled)
     {
-        // Resumo automático precisa de um LLM já configurado; reaproveita o mesmo provedor usado
-        // por ask/chat em vez de duplicar a lógica de criação (LlamaSharp vs Ollama vs fallback).
+        // Resumo automático/extração de entidades precisam de um LLM já configurado; reaproveita o
+        // mesmo provedor usado por ask/chat em vez de duplicar a lógica de criação.
         summarizationEngine = RagQueryEngineFactory.Create(options);
         try
         {
@@ -198,7 +200,9 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
             contextualRetrievalEnabled: options.ContextualRetrievalEnabled,
             semanticDeduplicationEnabled: options.SemanticDeduplicationEnabled,
             semanticDuplicateThreshold: options.SemanticDuplicateThreshold,
-            additionalFolders: options.AdditionalWatchedFolders);
+            additionalFolders: options.AdditionalWatchedFolders,
+            entityExtractionEnabled: options.EntityExtractionEnabled,
+            documentVersioningEnabled: options.DocumentVersioningEnabled);
 
         Console.WriteLine();
         Console.WriteLine($"Arquivos processados: {stats.FilesProcessed}");
@@ -890,7 +894,7 @@ async Task<int> RunReindexFileAsync(string[] cmdArgs)
     if (options.EmbeddingsEnabled)
     {
         embeddingService = new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath);
-        vectorStore = new VectorStore(indexPath);
+        vectorStore = new VectorStore(indexPath, quantize: options.VectorQuantizationEnabled);
     }
 
     using (embeddingService)
@@ -1095,6 +1099,181 @@ async Task<int> RunFlashcardsAsync(string[] cmdArgs)
         return 1;
     }
 
+    return 0;
+}
+
+int RunStudyReview(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var store = new QuestResume.Core.Persistence.StudyProgressStore(options.IndexPath);
+    var due = store.GetDueCards();
+
+    if (due.Count == 0)
+    {
+        Console.WriteLine("Nenhum flashcard vencido para revisar hoje.");
+        var stats = store.ComputeStats();
+        Console.WriteLine($"Total de cards: {stats.TotalCards} | Taxa de acerto: {stats.OverallAccuracy:P0}");
+        return 0;
+    }
+
+    Console.WriteLine($"{due.Count} flashcard(s) vencido(s). Avalie sua resposta de 0 (esqueci) a 5 (perfeito).");
+    foreach (var card in due)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Documento: {card.SourcePath}");
+        Console.WriteLine($"Pergunta: {card.Question}");
+        Console.Write("Qualidade da resposta (0-5, ou 'q' para sair): ");
+        var input = Console.ReadLine();
+        if (string.Equals(input?.Trim(), "q", StringComparison.OrdinalIgnoreCase)) break;
+        if (!int.TryParse(input, out var quality) || quality < 0 || quality > 5)
+        {
+            Console.WriteLine("Valor inválido, pulando este card.");
+            continue;
+        }
+        store.RecordReview(card.CardId, quality);
+        Console.WriteLine($"Agendado para: {card.NextReviewDate:yyyy-MM-dd} (intervalo {card.Interval} dia(s)).");
+    }
+
+    return 0;
+}
+
+async Task<int> RunSummarizeMultiAsync(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var paths = cmdArgs.Where(a => !a.StartsWith("--")).ToList();
+
+    if (paths.Count == 0)
+    {
+        Console.Error.WriteLine("Uso: questresume summarize-multi <caminho1> <caminho2> ...");
+        return 1;
+    }
+
+    var search = new SearchService(options.IndexPath);
+    if (!search.IndexExists())
+    {
+        Console.Error.WriteLine("Nenhum índice encontrado. Rode 'questresume index <pasta>' primeiro.");
+        return 1;
+    }
+
+    using var engine = RagQueryEngineFactory.Create(options);
+    try
+    {
+        Console.WriteLine("Gerando resumo executivo consolidado...");
+        var result = await engine.SummarizeMultipleAsync(paths);
+        Console.WriteLine();
+        Console.WriteLine(result.Answer);
+    }
+    catch (ModelNotConfiguredException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+    catch (OllamaNotAvailableException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+
+    return 0;
+}
+
+int RunAnnotate(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+
+    if (positional.Length < 2)
+    {
+        Console.Error.WriteLine("Uso: questresume annotate <caminho> <texto> [--note \"...\"]");
+        return 1;
+    }
+
+    var path = positional[0];
+    var text = string.Join(' ', positional.Skip(1));
+    var note = GetFlagValue(cmdArgs, "--note");
+
+    var store = new QuestResume.Core.Persistence.AnnotationStore(options.IndexPath);
+    var ann = store.Add(new QuestResume.Core.Models.Annotation
+    {
+        SourcePath = path,
+        Text = text,
+        Note = note,
+        StartOffset = 0,
+        EndOffset = text.Length
+    });
+
+    Console.WriteLine($"Anotação criada (id {ann.Id}) para '{path}'.");
+    return 0;
+}
+
+int RunHealthCheck(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var svc = new QuestResume.Core.Indexing.IndexHealthCheckService();
+    var repair = cmdArgs.Contains("--repair");
+
+    var report = repair ? svc.Repair(options.IndexPath) : svc.Check(options.IndexPath);
+    Console.WriteLine(report.Summary);
+    Console.WriteLine($"Íntegro: {(report.IsHealthy ? "sim" : "não")} | Segmentos: {report.SegmentCount}");
+    foreach (var problem in report.Problems)
+        Console.WriteLine($" - {problem}");
+
+    return report.IsHealthy ? 0 : 2;
+}
+
+int RunVersions(string[] cmdArgs)
+{
+    var options = configService.Load();
+    var positional = cmdArgs.Where(a => !a.StartsWith("--")).ToArray();
+    var path = positional.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(path))
+    {
+        Console.Error.WriteLine("Uso: questresume versions <caminho> [--diff <N>]");
+        return 1;
+    }
+
+    var store = new QuestResume.Core.Persistence.DocumentVersionStore(options.IndexPath, options.MaxVersionsPerDocument);
+    var versions = store.GetVersions(path);
+
+    if (versions.Count == 0)
+    {
+        Console.WriteLine("Nenhuma versão anterior guardada para este documento.");
+        Console.WriteLine("(Versionamento é opt-in: habilite com DocumentVersioningEnabled.)");
+        return 0;
+    }
+
+    var diffN = GetIntFlagValue(cmdArgs, "--diff");
+    if (diffN is not null)
+    {
+        var search = new SearchService(options.IndexPath);
+        var currentText = string.Join("\n\n", search.GetChunksByPath(path).Select(c => c.ChunkText));
+        try
+        {
+            foreach (var line in store.DiffAgainstCurrent(path, diffN.Value, currentText))
+                Console.WriteLine(line);
+        }
+        catch (KeyNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+        return 0;
+    }
+
+    foreach (var v in versions)
+        Console.WriteLine($"[{v.VersionNumber}] {v.SnapshotUtc:yyyy-MM-dd HH:mm} — {v.ContentHash[..12]} ({v.FullTextSnapshot.Length} chars)");
+
+    return 0;
+}
+
+int RunDiagnostics(string[] cmdArgs)
+{
+    var sub = cmdArgs.FirstOrDefault()?.ToLowerInvariant();
+    if (sub != "export")
+    {
+        Console.Error.WriteLine("Uso: questresume diagnostics export <arquivo.zip>");
+        return 1;
+    }
+
+    var zipPath = cmdArgs.Skip(1).FirstOrDefault(a => !a.StartsWith("--"));
+    if (string.IsNullOrWhiteSpace(zipPath))
+    {
+        Console.Error.WriteLine("Informe o arquivo de destino: questresume diagnostics export <arquivo.zip>");
+        return 1;
+    }
+
+    var svc = new QuestResume.Core.Services.DiagnosticsService(configService);
+    svc.ExportToFile(zipPath);
+    Console.WriteLine($"Pacote de diagnóstico exportado para: {zipPath}");
     return 0;
 }
 
@@ -1319,6 +1498,34 @@ int RunConfig(string[] cmdArgs)
 
     switch (sub)
     {
+        case "export":
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                Console.Error.WriteLine("Uso: questresume config export <arquivo>");
+                return 1;
+            }
+            File.WriteAllText(value, configService.ExportConfig());
+            Console.WriteLine($"Configuração exportada (segredos redigidos) para: {value}");
+            return 0;
+
+        case "import":
+            if (string.IsNullOrWhiteSpace(value) || !File.Exists(value))
+            {
+                Console.Error.WriteLine("Uso: questresume config import <arquivo> (arquivo deve existir)");
+                return 1;
+            }
+            try
+            {
+                configService.ImportConfig(File.ReadAllText(value));
+                Console.WriteLine("Configuração importada e aplicada com sucesso.");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Falha ao importar configuração: {ex.Message}");
+                return 1;
+            }
+
         case "show":
             Console.WriteLine($"Arquivo de configuração: {configService.ConfigPath}");
             Console.WriteLine($"DocumentsFolder: {options.DocumentsFolder}");
@@ -2053,6 +2260,29 @@ int RunPlugins(string[] cmdArgs)
     return 0;
 }
 
+int RunWipe(string[] cmdArgs)
+{
+    // Apagamento seguro do índice/vetores. Exige a flag --confirm explícita para evitar acidentes.
+    if (!cmdArgs.Contains("--confirm"))
+    {
+        Console.Error.WriteLine("Uso: questresume wipe --confirm");
+        Console.Error.WriteLine("ATENÇÃO: apaga de forma irreversível o índice e os vetores (sobrescreve os bytes antes de deletar).");
+        Console.Error.WriteLine("Observação: em SSDs modernos (wear-leveling) a sobrescrita NÃO garante destruição física — é uma mitigação, não uma garantia.");
+        return 1;
+    }
+
+    var options = configService.Load();
+    if (string.IsNullOrWhiteSpace(options.IndexPath) || !Directory.Exists(options.IndexPath))
+    {
+        Console.WriteLine("Nenhum índice encontrado para apagar.");
+        return 0;
+    }
+
+    var count = QuestResume.Core.Persistence.SecureWipeService.WipeDirectory(options.IndexPath);
+    Console.WriteLine($"Apagados com segurança {count} arquivo(s) do índice em '{options.IndexPath}'.");
+    return 0;
+}
+
 int RunUser(string[] cmdArgs)
 {
     var userStore = new QuestResume.Core.Auth.UserStore();
@@ -2100,7 +2330,8 @@ int RunUser(string[] cmdArgs)
         case "list":
             foreach (var u in userStore.ListUsers())
             {
-                Console.WriteLine($"  - {u.Username} ({u.Role}) [{u.Id}]");
+                var flags = u.TotpEnabled ? " [2FA]" : "";
+                Console.WriteLine($"  - {u.Username} ({u.Role}){flags} [{u.Id}]");
             }
             return 0;
 
@@ -2114,8 +2345,49 @@ int RunUser(string[] cmdArgs)
             Console.WriteLine(removed ? $"Usuário '{subArgs[0]}' removido." : $"Usuário '{subArgs[0]}' não encontrado.");
             return removed ? 0 : 1;
 
+        case "enable-2fa":
+        {
+            if (subArgs.Length < 1)
+            {
+                Console.Error.WriteLine("Uso: questresume user enable-2fa <username>");
+                return 1;
+            }
+
+            try
+            {
+                var secret = userStore.EnableTotp(subArgs[0]);
+                var uri = QuestResume.Core.Auth.TotpService.BuildOtpAuthUri("QuestResume", subArgs[0], secret);
+                Console.WriteLine($"2FA (TOTP) habilitado para '{subArgs[0]}'.");
+                Console.WriteLine();
+                Console.WriteLine("Segredo (Base32) — guarde em local seguro:");
+                Console.WriteLine($"  {secret}");
+                Console.WriteLine();
+                Console.WriteLine("Cole esta URI no seu app autenticador (Google Authenticator, Aegis, etc.):");
+                Console.WriteLine($"  {uri}");
+                return 0;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.Error.WriteLine($"Erro: {ex.Message}");
+                return 1;
+            }
+        }
+
+        case "disable-2fa":
+        {
+            if (subArgs.Length < 1)
+            {
+                Console.Error.WriteLine("Uso: questresume user disable-2fa <username>");
+                return 1;
+            }
+
+            var ok = userStore.DisableTotp(subArgs[0]);
+            Console.WriteLine(ok ? $"2FA desabilitado para '{subArgs[0]}'." : $"Usuário '{subArgs[0]}' não encontrado.");
+            return ok ? 0 : 1;
+        }
+
         default:
-            Console.Error.WriteLine("Uso: questresume user <add|list|remove> ...");
+            Console.Error.WriteLine("Uso: questresume user <add|list|remove|enable-2fa|disable-2fa> ...");
             return 1;
     }
 }
