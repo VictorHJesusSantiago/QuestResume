@@ -37,7 +37,7 @@ public sealed class ArchiveExtractor : IFileExtractor
         try
         {
             using var stream = File.OpenRead(path);
-            using var reader = ReaderFactory.Open(stream);
+            using var reader = ReaderFactory.OpenReader(stream);
 
             while (reader.MoveToNextEntry())
             {
