@@ -129,7 +129,7 @@ public class NewExtractorsLibraryTests
         try
         {
             using (var fileStream = File.OpenWrite(path))
-            using (var writer = WriterFactory.Open(fileStream, ArchiveType.Tar, new WriterOptions(CompressionType.GZip)))
+            using (var writer = WriterFactory.OpenWriter(fileStream, ArchiveType.Tar, new WriterOptions(CompressionType.GZip)))
             {
                 var content = Encoding.UTF8.GetBytes("Texto dentro do arquivo compactado.");
                 using var entryStream = new MemoryStream(content);

@@ -14,7 +14,7 @@ public class ArchiveExtractorTests
         try
         {
             using (var stream = File.Create(path))
-            using (var writer = WriterFactory.Open(stream, ArchiveType.Tar, new WriterOptions(CompressionType.GZip)))
+            using (var writer = WriterFactory.OpenWriter(stream, ArchiveType.Tar, new WriterOptions(CompressionType.GZip)))
             {
                 var bytes = System.Text.Encoding.UTF8.GetBytes("Conteúdo do arquivo compactado");
                 using var entryStream = new MemoryStream(bytes);
