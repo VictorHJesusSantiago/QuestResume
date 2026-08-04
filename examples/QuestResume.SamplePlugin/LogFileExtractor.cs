@@ -3,12 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.SamplePlugin;
 
-/// <summary>
-/// Extrator de exemplo para arquivos de log (<c>.log</c>): lê o arquivo como texto puro. Serve
-/// como modelo mínimo de um plugin de terceiros — copie este arquivo, ajuste
-/// <see cref="SupportedExtensions"/> e a lógica de <see cref="ExtractAsync"/>, compile e coloque
-/// a DLL resultante em <c>%LOCALAPPDATA%\QuestResume\plugins</c>.
-/// </summary>
 public sealed class LogFileExtractor : IExtractorPlugin
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".log" };

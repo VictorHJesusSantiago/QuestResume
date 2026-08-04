@@ -25,14 +25,14 @@ using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Structured logging via Serilog, replacing the default Microsoft.Extensions.Logging providers.
-// Configured entirely from appsettings.json ("Serilog" section) — console sink for
-// interactive/docker use plus a daily-rotating file sink under
-// <LOCALAPPDATA>/QuestResume/logs/log-.txt for post-mortem diagnostics. Because Serilog plugs in
-// via UseSerilog(), every existing `ILogger<T>` injection (all the PT-BR log messages below)
-// keeps working unchanged — this is transparent to callers.
-// To change the minimum log level: edit "Serilog:MinimumLevel:Default" in appsettings.json
-// (or appsettings.Development.json for local overrides), e.g. "Debug" or "Warning".
+
+
+
+
+
+
+
+
 var logsFolder = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QuestResume", "logs");
 Directory.CreateDirectory(logsFolder);
@@ -52,8 +52,8 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<RagEngineProvider>();
-// LuceneIndexManager holds a shared DirectoryReader open across requests and refreshes
-// it via OpenIfChanged — eliminates O(requests) FSDirectory open/close cycles.
+
+
 builder.Services.AddSingleton<LuceneIndexManager>();
 builder.Services.AddHostedService<AuditLogRotationService>();
 builder.Services.AddHostedService<AutoReindexHostedService>();
@@ -62,12 +62,12 @@ builder.Services.AddHostedService<ScheduledBackupHostedService>();
 builder.Services.AddSingleton<QuestResume.Core.Indexing.IndexingStateService>();
 builder.Services.AddHttpClient();
 
-// OpenTelemetry tracing: records HTTP server spans for each incoming request.
-// Console exporter is used by default so traces appear in stdout/docker logs without
-// requiring an external collector. Swap AddConsoleExporter for AddOtlpExporter when a
-// Jaeger/Tempo/OTLP endpoint is available.
+
+
+
+
 builder.Services.AddSingleton<QuestResume.Api.Services.QuestResumeMetrics>();
-// Guarda o último texto de progresso de indexação para o endpoint de polling GET /api/index/progress.
+
 builder.Services.AddSingleton<QuestResume.Api.Services.IndexingProgressStore>();
 
 builder.Services.AddOpenTelemetry()
@@ -75,18 +75,18 @@ builder.Services.AddOpenTelemetry()
     .WithTracing(t => t
         .AddAspNetCoreInstrumentation()
         .AddConsoleExporter())
-    // Métricas customizadas (QuestResumeMetrics.MeterName) + instrumentação padrão do
-    // ASP.NET Core, expostas via GET /metrics no formato Prometheus (app.MapPrometheusScrapingEndpoint()
-    // abaixo). Veja QuestResumeMetrics para instruções de como apontar um Prometheus local.
+    
+    
+    
     .WithMetrics(m => m
         .AddMeter(QuestResume.Api.Services.QuestResumeMetrics.MeterName)
         .AddAspNetCoreInstrumentation()
         .AddPrometheusExporter());
 
-// Rate limiting — protects expensive endpoints from abuse even without API key auth.
-// "indexing": at most 1 concurrent re-index (CPU/IO intensive); rejects additional concurrent
-// calls immediately (QueueLimit = 0) rather than queueing them indefinitely.
-// "inference": sliding window of 10 requests/minute per IP for LLM endpoints.
+
+
+
+
 builder.Services.AddRateLimiter(rl =>
 {
     rl.AddConcurrencyLimiter("indexing", o =>
@@ -102,9 +102,9 @@ builder.Services.AddRateLimiter(rl =>
         o.SegmentsPerWindow = 6;
         o.QueueLimit = 0;
     });
-    // Rate limit global particionado POR USUÁRIO autenticado (item 6): em vez de um único balde
-    // compartilhado por todos, cada usuário (ou IP, quando anônimo) tem sua própria janela fixa,
-    // de modo que um usuário abusivo não consome a cota dos demais.
+    
+    
+    
     rl.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
         var partitionKey = context.User.Identity?.Name
@@ -126,11 +126,11 @@ builder.Services.AddRateLimiter(rl =>
     };
 });
 
-// --- Autenticação multiusuário (JWT) ---
-// Chave de assinatura JWT: gerada aleatoriamente na primeira execução e persistida em
-// %LOCALAPPDATA%\QuestResume\jwt.key (fora do config.json), para que os tokens continuem válidos
-// entre reinicializações do processo mas nunca sejam versionados/expostos em texto claro no
-// repositório de configuração.
+
+
+
+
+
 var jwtKeyPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QuestResume", "jwt.key");
 Directory.CreateDirectory(Path.GetDirectoryName(jwtKeyPath)!);
@@ -158,26 +158,26 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
 
-    // "Writer" (item 5 — perfil somente-leitura): endpoints de escrita (indexar, remover
-    // documento, tags, backup/restore, config) exigem Admin ou User, excluindo o papel ReadOnly.
-    // Endpoints de leitura (busca, perguntar, listar) permanecem abertos a qualquer papel autenticado.
-    // Nota: em modo single-user (nenhum usuário cadastrado) não há JWT/claims; o middleware de auth
-    // já libera as rotas nesse cenário, então esta política só passa a valer com multiusuário ativo.
+    
+    
+    
+    
+    
     options.AddPolicy("Writer", policy => policy.RequireAssertion(ctx =>
         !ctx.User.Identity!.IsAuthenticated || ctx.User.IsInRole("Admin") || ctx.User.IsInRole("User")));
 });
 
 var app = builder.Build();
 
-// Expõe as métricas customizadas (QuestResumeMetrics) + instrumentação ASP.NET Core no formato
-// Prometheus em GET /metrics. Coexiste com o painel interno (DashboardService/api/status).
+
+
 app.MapPrometheusScrapingEndpoint();
 
-// Structured per-request access log (method, path, status code, elapsed ms) emitted via Serilog.
+
 app.UseSerilogRequestLogging();
 
-// Global exception handler: maps known domain exceptions to 400/503 with a structured JSON
-// body; all other exceptions return 500 with a generic message (no stack trace leakage).
+
+
 app.UseExceptionHandler(exApp => exApp.Run(async ctx =>
 {
     var feature = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
@@ -185,7 +185,7 @@ app.UseExceptionHandler(exApp => exApp.Run(async ctx =>
 
     if (ex is OperationCanceledException)
     {
-        // Client disconnected — no response needed.
+        
         return;
     }
 
@@ -207,9 +207,9 @@ app.UseExceptionHandler(exApp => exApp.Run(async ctx =>
 
 app.UseRateLimiter();
 
-// Optional shared-secret auth for the HTTP API: set QUESTRESUME_API_KEY to require an
-// "X-Api-Key" header on every /api/* request. Left unset (the default for local single-user
-// use), the API remains open exactly as before.
+
+
+
 var apiKey = Environment.GetEnvironmentVariable("QUESTRESUME_API_KEY");
 if (!string.IsNullOrWhiteSpace(apiKey))
 {
@@ -230,9 +230,9 @@ if (!string.IsNullOrWhiteSpace(apiKey))
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Requires "Authorization: Bearer <jwt>" on every /api/* request once at least one user is
-// registered (Core/Auth/UserStore). Deployments with no users configured keep working exactly
-// as before (single-user/local mode) — this mirrors the existing X-Api-Key opt-in pattern.
+
+
+
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api")
@@ -251,9 +251,9 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// Requires the "X-Master-Key" header (never logged) on every /api/* request when the configured
-// AppOptions.EncryptionEnabled is true, validating it against the persisted PBKDF2 verifier
-// (MasterKeyVerifier) — the master password itself is never stored.
+
+
+
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/auth/login"))
@@ -283,7 +283,7 @@ app.MapPost("/api/auth/login", (LoginRequest request, UserStore userStore, Confi
         return Results.Unauthorized();
     }
 
-    // 2FA (TOTP): quando habilitado para o usuário, exige um segundo fator válido.
+    
     if (user.TotpEnabled && !string.IsNullOrEmpty(user.TotpSecret))
     {
         if (string.IsNullOrWhiteSpace(request.TotpCode)
@@ -350,11 +350,11 @@ app.MapDelete("/api/users/{username}", (string username, UserStore userStore) =>
     .RequireAuthorization("AdminOnly");
 
 app.UseDefaultFiles();
-// Content-Security-Policy prevents inline script injection from indexed document content
-// displayed in the preview panel from executing in the browser.
-// All scripts and styles are now in external files (app.js / styles.css); 'unsafe-inline'
-// is no longer needed and has been removed. The chart bar widths are set via element.style
-// in app.js (a trusted file, not user-supplied content), which is permitted by script-src 'self'.
+
+
+
+
+
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.Append(
@@ -397,16 +397,16 @@ app.MapGet("/api/status", async (HttpContext context, ConfigService configServic
     });
 });
 
-// --- Múltiplas coleções ---
-// Permissões por coleção (item 4): quando o usuário autenticado tem AllowedCollections preenchida
-// (não-nula/não-vazia), ele só pode listar/acessar/alterar as coleções nessa lista. Nulo/vazio =
-// acesso a todas (comportamento padrão). Em modo single-user (sem usuário) o acesso é irrestrito.
+
+
+
+
 static List<string>? AllowedCollectionsFor(HttpContext context, UserStore userStore)
 {
     var username = context.User.Identity?.Name;
     if (string.IsNullOrEmpty(username))
     {
-        return null; // single-user / não autenticado -> sem restrição
+        return null; 
     }
 
     var user = userStore.FindByUsername(username);
@@ -476,7 +476,7 @@ app.MapDelete("/api/collections/{name}", (HttpContext context, string name, Conf
     }
 }).RequireAuthorization("Writer");
 
-// --- Busca por similaridade de imagem (CLIP) ---
+
 app.MapPost("/api/search/image", async (HttpContext context, HttpRequest request, ConfigService configService, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
     if (!request.HasFormContentType)
@@ -525,11 +525,11 @@ app.MapPost("/api/search/image", async (HttpContext context, HttpRequest request
 
 app.MapGet("/api/config", (ConfigService configService) => Results.Ok(configService.Load()));
 
-// Item 6: detecção de hardware e sugestão de GpuLayerCount.
+
 app.MapGet("/api/hardware/suggest-gpu-layers", () =>
     Results.Ok(QuestResume.Core.Services.HardwareDetectionService.Detect()));
 
-// Item 3: lista de personas de prompt disponíveis.
+
 app.MapGet("/api/personas", (ConfigService configService) =>
 {
     var options = configService.Load();
@@ -537,7 +537,7 @@ app.MapGet("/api/personas", (ConfigService configService) =>
     return Results.Ok(store.Load());
 });
 
-// Item 7: benchmark local do modelo configurado.
+
 app.MapPost("/api/benchmark", async (
     ConfigService configService,
     RagEngineProvider engineProvider,
@@ -566,9 +566,9 @@ app.MapPut("/api/config", (AppOptions options, ConfigService configService) =>
 {
     var current = configService.Load();
 
-    // When AllowedDocumentRoots is non-empty, the new DocumentsFolder must start with
-    // one of the configured prefixes. Prevents an attacker from redirecting indexing to
-    // arbitrary paths (e.g. /etc/) and then exfiltrating content via /api/documents/preview.
+    
+    
+    
     if (current.AllowedDocumentRoots.Count > 0 && !string.IsNullOrWhiteSpace(options.DocumentsFolder))
     {
         var fullNew = Path.GetFullPath(options.DocumentsFolder);
@@ -588,8 +588,8 @@ app.MapPut("/api/config", (AppOptions options, ConfigService configService) =>
         }
     }
 
-    // Propagate AllowedDocumentRoots from the current config so callers cannot clear
-    // the restriction by omitting the field in their PUT body.
+    
+    
     if (current.AllowedDocumentRoots.Count > 0 && options.AllowedDocumentRoots.Count == 0)
     {
         options.AllowedDocumentRoots = current.AllowedDocumentRoots;
@@ -636,10 +636,10 @@ app.MapGet("/api/cloud/{provider}/auth-url", (HttpContext context, string provid
         var redirectUri = $"{context.Request.Scheme}://{context.Request.Host}/api/cloud/{cloudProvider.Name}/callback";
         var (authorizationUrl, codeVerifier) = cloudProvider.BuildAuthorizationUrl(redirectUri);
 
-        // O redirecionamento que o provedor faz de volta para /callback só inclui os parâmetros
-        // OAuth2 padrão (code + o state que anexamos abaixo) — não há como o navegador reenviar
-        // codeVerifier/redirectUri sozinho. Por isso guardamos os dois no servidor, associados a
-        // um "state" opaco de uso único, e recuperamos no /callback a partir dele.
+        
+        
+        
+        
         var state = QuestResume.Core.CloudSync.CloudOAuthStateStore.Save(cloudProvider.Name, codeVerifier, redirectUri);
         var separator = authorizationUrl.Contains('?') ? '&' : '?';
         authorizationUrl = $"{authorizationUrl}{separator}state={Uri.EscapeDataString(state)}";
@@ -739,9 +739,9 @@ app.MapPost("/api/index", async (
         return Results.BadRequest(new { error = "Informe a pasta a indexar (folderPath)." });
     }
 
-    // Mirror the AllowedDocumentRoots check already applied in PUT /api/config to prevent
-    // an attacker from triggering indexing of arbitrary server paths (e.g. /etc, C:\Windows)
-    // and later exfiltrating content via GET /api/documents/preview.
+    
+    
+    
     if (options.AllowedDocumentRoots.Count > 0)
     {
         var fullFolder = Path.GetFullPath(folder);
@@ -777,8 +777,8 @@ app.MapPost("/api/index", async (
     }
 
     ILlmProvider? summarizationLlm = null;
-    // O mesmo provider de LLM alimenta o resumo automático e a extração de entidades (ambas etapas
-    // pós-indexação opt-in). Carregamos o LLM se qualquer uma delas estiver habilitada.
+    
+    
     if (options.AutoSummarizationEnabled || options.EntityExtractionEnabled)
     {
         try
@@ -849,9 +849,9 @@ app.MapPost("/api/index", async (
         globalOptions.DocumentsFolder = folder;
         configService.Save(globalOptions);
 
-        // The vectorStore opened above is a different instance than the one inside the cached
-        // engine — without this, /api/ask would keep serving the pre-reindex snapshot until
-        // the engine is rebuilt for an unrelated config change.
+        
+        
+        
         engineProvider.InvalidateVectorCache();
 
         return Results.Ok(stats);
@@ -896,9 +896,9 @@ app.MapPost("/api/search", (HttpContext context, SearchRequest request, ConfigSe
     }
 });
 
-// Corretor ortográfico (item 11): consultado à parte de /api/search (não embutido na resposta)
-// para não alterar o contrato existente (array simples de SearchResultItem) já usado pela Web UI
-// e por testes de integração — o chamador decide quando pedir sugestões (ex.: resultado vazio).
+
+
+
 app.MapGet("/api/search/didyoumean", (HttpContext context, string q, ConfigService configService, LuceneIndexManager indexManager) =>
 {
     if (string.IsNullOrWhiteSpace(q))
@@ -911,7 +911,7 @@ app.MapGet("/api/search/didyoumean", (HttpContext context, string q, ConfigServi
     return Results.Ok(search.SuggestSpelling(q));
 });
 
-// Autocomplete/sugestões (item 12).
+
 app.MapGet("/api/search/suggest", (HttpContext context, string q, ConfigService configService, LuceneIndexManager indexManager) =>
 {
     if (string.IsNullOrWhiteSpace(q))
@@ -924,7 +924,7 @@ app.MapGet("/api/search/suggest", (HttpContext context, string q, ConfigService 
     return Results.Ok(search.Suggest(q));
 });
 
-// "Mais como este" (item 17).
+
 app.MapGet("/api/documents/similar", async (HttpContext context, string path, int? topK, ConfigService configService, LuceneIndexManager indexManager, ILogger<Program> logger) =>
 {
     if (string.IsNullOrWhiteSpace(path))
@@ -954,9 +954,9 @@ app.MapGet("/api/documents/similar", async (HttpContext context, string path, in
     }
 });
 
-// Clustering automático de documentos por tema (item 1). Rótulos de cluster são gerados via LLM
-// em melhor esforço (best-effort) — o próprio LLM configurado é reaproveitado quando disponível;
-// se o LLM não carregar, o clustering ainda funciona, apenas sem rótulo.
+
+
+
 app.MapGet("/api/documents/clusters", async (HttpContext context, int? k, ConfigService configService, RagEngineProvider engineProvider, LuceneIndexManager indexManager, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -1132,7 +1132,7 @@ app.MapPost("/api/ask/stream", async (
     }
     catch (OperationCanceledException)
     {
-        // Cliente desconectou no meio do streaming — nada mais a escrever.
+        
     }
     catch (Exception ex) when (ex is ModelNotConfiguredException or OllamaNotAvailableException)
     {
@@ -1151,7 +1151,7 @@ app.MapPost("/api/compare", async (
     ILogger<Program> logger,
     CancellationToken cancellationToken) =>
 {
-    // Aceita tanto o formato antigo (PathA/PathB) quanto uma lista Paths com 2+ documentos.
+    
     var paths = (request.Paths is { Count: > 0 })
         ? request.Paths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList()
         : new List<string> { request.PathA, request.PathB }.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
@@ -1317,9 +1317,9 @@ app.MapGet("/api/documents/preview", (HttpContext context, string path, int? pag
         return Results.NotFound(new { error = $"Documento não encontrado no índice: {path}" });
     }
 
-    // Paginação real do conteúdo do documento — antes truncava em 20000 caracteres sem
-    // navegação; agora divide o texto completo em páginas de tamanho fixo (pageSize)
-    // e retorna a página solicitada, permitindo ao Web UI navegar com "Anterior"/"Próxima".
+    
+    
+    
     var effectivePageSize = pageSize.GetValueOrDefault(5000);
     if (effectivePageSize <= 0) effectivePageSize = 5000;
     var effectivePage = page.GetValueOrDefault(1);
@@ -1532,9 +1532,9 @@ app.MapPut("/api/documents/tags", (HttpContext context, SetTagsRequest request, 
     return Results.Ok(new { path = request.Path, tags = search.GetTags(request.Path) });
 }).RequireAuthorization("Writer");
 
-// Liveness + readiness probe for Docker HEALTHCHECK, Kubernetes probes and reverse proxies.
-// Returns "degraded" (still 200) when the index or model isn't configured yet — the process
-// is alive and should not be killed, but a load balancer can use this to skip routing.
+
+
+
 app.MapGet("/healthz", (ConfigService configService, LuceneIndexManager indexManager) =>
 {
     var options = configService.Load();
@@ -1621,9 +1621,9 @@ app.MapPost("/api/restore", async (HttpContext context, HttpRequest request, Con
     return Results.Ok(new { message = "Restauração concluída." });
 }).RequireRateLimiting("indexing").RequireAuthorization("Writer");
 
-// Uploads one or more files dropped in the Web UI (browsers do not expose the absolute path of
-// dragged files, so drag-and-drop is implemented as an upload into a dedicated subfolder of the
-// configured index path) which can then be indexed like any other folder via POST /api/index.
+
+
+
 app.MapPost("/api/upload", async (HttpContext context, HttpRequest request, ConfigService configService, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
     if (!request.HasFormContentType)
@@ -1666,8 +1666,8 @@ app.MapPost("/api/upload", async (HttpContext context, HttpRequest request, Conf
                 continue;
             }
 
-            // Sanitize against path traversal: keep only the file name component (discards any
-            // directory segments such as "../"), then strip characters not valid on the file system.
+            
+            
             var safeName = Path.GetFileName(file.FileName);
             foreach (var invalidChar in Path.GetInvalidFileNameChars())
             {
@@ -1689,7 +1689,7 @@ app.MapPost("/api/upload", async (HttpContext context, HttpRequest request, Conf
                 continue;
             }
 
-            // Avoid clobbering a same-named file already uploaded, by suffixing with a counter.
+            
             var finalPath = destinationPath;
             var counter = 1;
             while (File.Exists(finalPath))
@@ -1720,9 +1720,9 @@ app.MapPost("/api/upload", async (HttpContext context, HttpRequest request, Conf
     return Results.Ok(new { uploadsFolder, files = saved, errors });
 }).RequireRateLimiting("indexing");
 
-// Returns a single chunk of text for a specific document + chunk index, used by the Web UI's
-// clickable citations to show exactly the passage the LLM used to answer a question (rather than
-// the whole document preview).
+
+
+
 app.MapGet("/api/documents/chunk", (HttpContext context, string path, int index, string? highlight, ConfigService configService, LuceneIndexManager indexManager) =>
 {
     if (string.IsNullOrWhiteSpace(path))
@@ -1740,16 +1740,16 @@ app.MapGet("/api/documents/chunk", (HttpContext context, string path, int index,
     }
 
     var chunk = chunks.FirstOrDefault(c => c.ChunkIndex == index) ?? chunks[Math.Clamp(index, 0, chunks.Count - 1)];
-    // `highlight` (optional): the exact fragment string (with the Lucene highlighter's U+0001/
-    // U+0002 markers) that the caller already has from a prior /api/ask or /api/search response
-    // for this same chunk — echoed back so the Web UI can mark the precise passage used inside
-    // the modal even when it navigates here directly (e.g. a bookmarked/shared link).
+    
+    
+    
+    
     return Results.Ok(new { fileName = chunk.FileName, sourcePath = chunk.SourcePath, chunkIndex = chunk.ChunkIndex, chunkText = chunk.ChunkText, totalChunks = chunks.Count, highlight });
 });
 
-// Exports the given chat history as a PDF (mirrors the Web UI's existing Markdown export), using
-// QuestResume.Core.Models.ChatPdfExporter — a lightweight, offline PDF generator (no external
-// service/CDN involved).
+
+
+
 app.MapPost("/api/chat/export-pdf", (ChatExportRequest request, ILogger<Program> logger) =>
 {
     if (request.Turns is null || request.Turns.Count == 0)
@@ -1767,7 +1767,7 @@ app.MapPost("/api/chat/export-pdf", (ChatExportRequest request, ILogger<Program>
     return Results.File(pdfBytes, "application/pdf", fileName);
 });
 
-// ---- Estudo: exportar flashcards para Anki (item 1) ----
+
 app.MapPost("/api/documents/flashcards/export-anki", (AnkiExportRequest request) =>
 {
     if (request.Flashcards is null || request.Flashcards.Count == 0)
@@ -1777,7 +1777,7 @@ app.MapPost("/api/documents/flashcards/export-anki", (AnkiExportRequest request)
     return Results.File(bytes, "text/tab-separated-values", $"flashcards-anki-{DateTime.Now:yyyy-MM-dd-HHmmss}.csv");
 });
 
-// ---- Estudo: estatísticas (item 3) ----
+
 app.MapGet("/api/study/stats", (HttpContext context, ConfigService configService) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -1785,7 +1785,7 @@ app.MapGet("/api/study/stats", (HttpContext context, ConfigService configService
     return Results.Ok(store.ComputeStats());
 });
 
-// ---- Análise: mapa mental (item 4) ----
+
 app.MapGet("/api/documents/mindmap", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
@@ -1797,7 +1797,7 @@ app.MapGet("/api/documents/mindmap", async (HttpContext context, string path, Co
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireRateLimiting("inference");
 
-// ---- Análise: linha do tempo (item 5) ----
+
 app.MapGet("/api/documents/timeline", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
@@ -1809,7 +1809,7 @@ app.MapGet("/api/documents/timeline", async (HttpContext context, string path, C
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireRateLimiting("inference");
 
-// ---- Análise: sumário/índice (item 10) ----
+
 app.MapGet("/api/documents/outline", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
@@ -1820,7 +1820,7 @@ app.MapGet("/api/documents/outline", async (HttpContext context, string path, Co
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireRateLimiting("inference");
 
-// ---- Análise: resumo executivo multi-documento (item 6) ----
+
 app.MapPost("/api/documents/summarize-multi", async (HttpContext context, SummarizeMultiRequest request, ConfigService configService, RagEngineProvider engineProvider, CancellationToken cancellationToken) =>
 {
     var paths = request.Paths?.Where(p => !string.IsNullOrWhiteSpace(p)).ToList() ?? new();
@@ -1831,12 +1831,12 @@ app.MapPost("/api/documents/summarize-multi", async (HttpContext context, Summar
     catch (OllamaNotAvailableException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireRateLimiting("inference");
 
-// ---- Análise: entidades (item 8) ----
+
 app.MapGet("/api/documents/entities", async (HttpContext context, string path, ConfigService configService, RagEngineProvider engineProvider, LuceneIndexManager indexManager, CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
     var options = ResolveForUser(configService.Load(), context);
-    // Preferir o sidecar entities.json se já existir (extração na indexação).
+    
     var store = new QuestResume.Core.Persistence.EntityStore(options.IndexPath);
     var cached = store.GetEntities(path);
     if (cached.Count > 0) return Results.Ok(cached);
@@ -1859,7 +1859,7 @@ app.MapGet("/api/entities/{entidade}/documents", (HttpContext context, string en
     return Results.Ok(store.GetDocumentsMentioning(entidade));
 });
 
-// ---- Análise: grafo de conhecimento (item 9) ----
+
 app.MapGet("/api/knowledge-graph", (HttpContext context, ConfigService configService) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -1867,7 +1867,7 @@ app.MapGet("/api/knowledge-graph", (HttpContext context, ConfigService configSer
     return Results.Ok(store.BuildKnowledgeGraph());
 });
 
-// ---- Anotações (item 11) ----
+
 app.MapGet("/api/documents/annotations", (HttpContext context, string path, ConfigService configService) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -1894,7 +1894,7 @@ app.MapDelete("/api/documents/annotations", (HttpContext context, string id, Con
     return store.Remove(id) ? Results.Ok(new { removed = true }) : Results.NotFound(new { error = "Anotação não encontrada." });
 });
 
-// ---- Exportar conversa em DOCX/HTML/TXT (item 12) ----
+
 app.MapPost("/api/chat/export-docx", (ChatExportRequest request) =>
 {
     if (request.Turns is null || request.Turns.Count == 0) return Results.BadRequest(new { error = "Não há conversa para exportar." });
@@ -1917,7 +1917,7 @@ app.MapPost("/api/chat/export-txt", (ChatExportRequest request) =>
     return Results.File(Encoding.UTF8.GetBytes(txt), "text/plain", $"conversa-questresume-{DateTime.Now:yyyy-MM-dd-HHmmss}.txt");
 });
 
-// ---- Exportar resultados de busca CSV/XLSX (item 13) ----
+
 app.MapPost("/api/search/export", (SearchExportRequest request) =>
 {
     var results = request.Results ?? new List<SearchResultItem>();
@@ -1932,7 +1932,7 @@ app.MapPost("/api/search/export", (SearchExportRequest request) =>
     return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv", $"resultados-{DateTime.Now:yyyy-MM-dd-HHmmss}.csv");
 });
 
-// ---- Uso de disco por coleção (item 16) ----
+
 app.MapGet("/api/collections/disk-usage", (HttpContext context, ConfigService configService) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -1940,7 +1940,7 @@ app.MapGet("/api/collections/disk-usage", (HttpContext context, ConfigService co
     return Results.Ok(new QuestResume.Core.Services.CollectionDiskUsageService(store).Compute());
 });
 
-// ---- Health check do índice (item 15) ----
+
 app.MapGet("/api/health/index", (HttpContext context, ConfigService configService) =>
 {
     var options = ResolveForUser(configService.Load(), context);
@@ -1952,7 +1952,7 @@ app.MapPost("/api/health/index/repair", (HttpContext context, ConfigService conf
     return Results.Ok(new QuestResume.Core.Indexing.IndexHealthCheckService().Repair(options.IndexPath));
 });
 
-// ---- Importar/exportar configuração (item 17) ----
+
 app.MapGet("/api/config/export", (ConfigService configService) =>
     Results.Text(configService.ExportConfig(), "application/json"));
 app.MapPost("/api/config/import", (ConfigImportRequest request, ILogger<Program> logger) =>
@@ -1967,7 +1967,7 @@ app.MapPost("/api/config/import", (ConfigImportRequest request, ILogger<Program>
     catch (Exception ex) { logger.LogWarning("POST /api/config/import falhou: {Message}", ex.Message); return Results.BadRequest(new { error = ex.Message }); }
 }).RequireAuthorization("Writer");
 
-// ---- Versões de documento (item 20) ----
+
 app.MapGet("/api/documents/versions", (HttpContext context, string path, ConfigService configService) =>
 {
     if (string.IsNullOrWhiteSpace(path)) return Results.BadRequest(new { error = "Informe o caminho do documento (path)." });
@@ -1976,7 +1976,7 @@ app.MapGet("/api/documents/versions", (HttpContext context, string path, ConfigS
     return Results.Ok(store.GetVersions(path));
 });
 
-// ---- Diagnóstico (item 19) ----
+
 app.MapGet("/api/diagnostics/export", (ConfigService configService) =>
 {
     var svc = new QuestResume.Core.Services.DiagnosticsService(configService);
@@ -1991,8 +1991,8 @@ app.MapGet("/api/diagnostics/logs", (ConfigService configService, int? lines) =>
 
 app.Run();
 
-// Compares two API-key strings in constant time (hash both to a fixed length first) to
-// prevent timing-based side-channel attacks that can leak the expected key byte-by-byte.
+
+
 static bool IsApiKeyValid(string provided, string expected)
 {
     var providedHash = SHA256.HashData(Encoding.UTF8.GetBytes(provided));
@@ -2007,12 +2007,12 @@ static async Task WriteSseEventAsync(HttpResponse response, string eventName, ob
     await response.Body.FlushAsync(cancellationToken);
 }
 
-// Derives a per-request AppOptions with an isolated IndexPath for the authenticated user
-// (<baseIndexPath>/<userId>/), so distinct users never read or write each other's Lucene
-// index / vectors.db. Anonymous/no-auth deployments (no users registered) are unaffected —
-// the original shared options instance is returned unchanged.
-// Aplica apenas o isolamento por usuário (sem resolver coleção), usado pelos endpoints
-// GET/POST/DELETE /api/collections que operam sobre o catálogo de coleções em si.
+
+
+
+
+
+
 static AppOptions ResolveBaseIndexPathForUser(AppOptions options, HttpContext context)
 {
     if (context.User.Identity?.IsAuthenticated == true)
@@ -2033,9 +2033,9 @@ static AppOptions ResolveForUser(AppOptions options, HttpContext context)
 {
     var effective = ResolveBaseIndexPathForUser(options, context);
 
-    // Múltiplas coleções: cabeçalho opcional "X-Collection" (padrão "default"), combinado com o
-    // isolamento por usuário acima quando aplicável — <baseIndexPath>/<userId>/collections/<nome>/
-    // em modo multiusuário, ou <baseIndexPath>/collections/<nome>/ em modo single-user.
+    
+    
+    
     var collectionName = context.Request.Headers["X-Collection"].ToString();
     if (!string.IsNullOrWhiteSpace(collectionName) && !collectionName.Equals("default", StringComparison.OrdinalIgnoreCase))
     {
@@ -2063,9 +2063,9 @@ static async Task<bool> IsOllamaAvailableAsync(IHttpClientFactory httpClientFact
     }
 }
 
-// Exposes the top-level-statements-generated Program class as public so
-// Microsoft.AspNetCore.Mvc.Testing's WebApplicationFactory<Program> (used by
-// tests/QuestResume.Api.IntegrationTests) can reference it — by default that class is
-// generated as `internal`, which is inaccessible from another assembly.
+
+
+
+
 public partial class Program { }
 
