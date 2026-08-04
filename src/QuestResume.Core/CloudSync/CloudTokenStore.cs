@@ -2,12 +2,6 @@ using System.Text.Json;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Persiste os tokens OAuth2 (access/refresh) obtidos de cada provedor de nuvem como um
-/// JSON sidecar (<c>cloud-tokens.json</c>) dentro da pasta do índice, seguindo o mesmo
-/// padrão de <see cref="QuestResume.Core.Persistence.WebhookStore"/>. Os tokens nunca são
-/// logados; este arquivo deve ser tratado como segredo (mesma sensibilidade de uma senha).
-/// </summary>
 public sealed class CloudTokenStore
 {
     public const string FileName = "cloud-tokens.json";

@@ -2,23 +2,9 @@ using QuestResume.Core.Configuration;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Baixa os arquivos de uma pasta remota de um provedor de nuvem (<see cref="ICloudProvider"/>)
-/// para uma subpasta local (<c>&lt;localTargetPath&gt;/_cloud_&lt;provider&gt;/</c>), para que o
-/// pipeline normal de indexação (<see cref="QuestResume.Core.Indexing.DocumentIndexer"/>) possa
-/// processá-los como qualquer outro arquivo local. Não é responsável por autenticação (veja
-/// <see cref="ICloudProvider.AuthenticateAsync"/> / <see cref="CloudTokenStore"/>) nem por
-/// disparar a indexação em si — isso cabe ao chamador (CLI/API), reaproveitando o mesmo
-/// <c>DocumentIndexer</c> já usado para pastas locais comuns.
-/// </summary>
 public sealed class CloudSyncService
 {
-    /// <summary>
-    /// Baixa os arquivos (não-recursivo) da pasta remota <paramref name="remoteFolderId"/> usando
-    /// <paramref name="provider"/> já autenticado (<paramref name="accessToken"/>), salvando-os em
-    /// <c>&lt;localTargetPath&gt;/_cloud_&lt;provider.Name&gt;/</c>.
-    /// </summary>
-    public async Task<CloudSyncResult> SyncFolderAsync(
+        public async Task<CloudSyncResult> SyncFolderAsync(
         ICloudProvider provider,
         string accessToken,
         string remoteFolderId,
@@ -67,11 +53,7 @@ public sealed class CloudSyncService
         return result;
     }
 
-    /// <summary>
-    /// Sobrecarga de conveniência usada pela CLI/API: resolve o provedor e o token salvo a partir
-    /// do nome do provedor e das opções/configuração compartilhadas.
-    /// </summary>
-    public async Task<CloudSyncResult> SyncFolderAsync(
+        public async Task<CloudSyncResult> SyncFolderAsync(
         string providerName,
         string remoteFolderId,
         string localTargetPath,
