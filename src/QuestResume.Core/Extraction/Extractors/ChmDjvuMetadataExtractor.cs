@@ -2,15 +2,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Graceful-degradation extractor for .chm (Compiled HTML Help) and .djvu/.djv (DjVu) files.
-/// Both are complex binary containers without a mature, actively-maintained .NET library
-/// (unlike PDF/ZIP/OOXML). Rather than pull in an unreliable/abandoned dependency, this
-/// extractor only reports basic file metadata (size, magic-number sanity check) and a clear
-/// PT-BR warning, following the same graceful-degradation pattern already used by
-/// <see cref="ExecutableMetadataExtractor"/> for other binary formats the project can't fully
-/// parse. No text content is extracted.
-/// </summary>
 public sealed class ChmDjvuMetadataExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".chm", ".djvu", ".djv" };
@@ -42,7 +33,7 @@ public sealed class ChmDjvuMetadataExtractor : IFileExtractor
         }
         catch
         {
-            // Best-effort only; a failure reading the first bytes doesn't change the outcome.
+            
         }
 
         var document = new ExtractedDocument

@@ -3,15 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// .dxf (AutoCAD Drawing Exchange Format) is a documented plain-text/ASCII group-code format:
-/// this extractor scans for TEXT/MTEXT entities and pulls their string content (group code 1,
-/// and continuation group code 3 for MTEXT). .dwg is AutoCAD's proprietary binary format with
-/// no mature open-source .NET parser available; for .dwg only the fixed-position version tag in
-/// the file header is read (best-effort metadata), with a clear PT-BR warning that no text
-/// content could be extracted — same graceful-degradation pattern as
-/// <see cref="ChmDjvuMetadataExtractor"/>.
-/// </summary>
 public sealed class DwgDxfExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".dxf", ".dwg" };
@@ -86,9 +77,9 @@ public sealed class DwgDxfExtractor : IFileExtractor
 
             if (insideTextEntity && (groupCode == "1" || groupCode == "3"))
             {
-                // MTEXT stores its content across multiple group-code-3 "continuation" lines,
-                // with the final chunk under group code 1; \P inside MTEXT strings marks a
-                // paragraph break per the DXF spec.
+                
+                
+                
                 builder.AppendLine(value.Replace("\\P", "\n"));
             }
         }
@@ -103,7 +94,7 @@ public sealed class DwgDxfExtractor : IFileExtractor
         var read = stream.Read(buffer, 0, buffer.Length);
         if (read < 6) return null;
 
-        // DWG files start with an ASCII version tag like "AC1027" (AutoCAD 2013+), "AC1021" etc.
+        
         var tag = Encoding.ASCII.GetString(buffer);
         return tag.StartsWith("AC", StringComparison.Ordinal) ? tag : null;
     }
