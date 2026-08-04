@@ -1,26 +1,10 @@
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Quantização simétrica de embeddings float32 para int8 (sbyte) com um fator de escala por
-/// vetor. Reduz o armazenamento a ~25% do float32 (1 byte por dimensão + 4 bytes de escala, vs.
-/// 4 bytes por dimensão).
-///
-/// Trade-off: a quantização introduz um erro de arredondamento por dimensão (no máximo metade de
-/// um passo de quantização = escala/2), o que causa uma pequena perda de precisão na similaridade
-/// de cosseno. Na prática, para embeddings de recuperação típicos (256–1024 dimensões
-/// normalizadas), a diferença de ranking é pequena, mas resultados no limite podem trocar de
-/// ordem. Use quando a economia de memória/disco compensa a leve perda de acurácia.
-/// </summary>
 public static class VectorQuantizer
 {
-    /// <summary>Blob quantizado: <c>"QRQ8"</c> (4 bytes mágicos) || escala (float, 4 bytes) || sbyte[] (1 por dimensão).</summary>
-    private static readonly byte[] Magic = "QRQ8"u8.ToArray();
+        private static readonly byte[] Magic = "QRQ8"u8.ToArray();
 
-    /// <summary>
-    /// Quantiza <paramref name="vector"/> para int8. A escala é <c>max(|vi|)/127</c>; cada
-    /// componente vira <c>round(vi/escala)</c> saturado em [-127, 127].
-    /// </summary>
-    public static (sbyte[] Quantized, float Scale) Quantize(float[] vector)
+        public static (sbyte[] Quantized, float Scale) Quantize(float[] vector)
     {
         var max = 0f;
         foreach (var v in vector)
@@ -43,8 +27,7 @@ public static class VectorQuantizer
         return (quantized, scale);
     }
 
-    /// <summary>Reconstrói um float32 aproximado a partir do int8 e da escala.</summary>
-    public static float[] Dequantize(sbyte[] quantized, float scale)
+        public static float[] Dequantize(sbyte[] quantized, float scale)
     {
         var result = new float[quantized.Length];
         for (var i = 0; i < quantized.Length; i++)
@@ -55,8 +38,7 @@ public static class VectorQuantizer
         return result;
     }
 
-    /// <summary>Serializa um vetor float32 no formato quantizado int8 (com cabeçalho mágico e escala).</summary>
-    public static byte[] ToQuantizedBytes(float[] vector)
+        public static byte[] ToQuantizedBytes(float[] vector)
     {
         var (quantized, scale) = Quantize(vector);
         var bytes = new byte[Magic.Length + sizeof(float) + quantized.Length];
@@ -67,8 +49,7 @@ public static class VectorQuantizer
         return bytes;
     }
 
-    /// <summary>True se <paramref name="blob"/> tem o cabeçalho mágico de um vetor quantizado.</summary>
-    public static bool IsQuantized(byte[] blob)
+        public static bool IsQuantized(byte[] blob)
     {
         if (blob.Length < Magic.Length)
         {
@@ -86,8 +67,7 @@ public static class VectorQuantizer
         return true;
     }
 
-    /// <summary>Desserializa um blob quantizado de volta para float32 aproximado. Assume <see cref="IsQuantized"/> = true.</summary>
-    public static float[] FromQuantizedBytes(byte[] blob)
+        public static float[] FromQuantizedBytes(byte[] blob)
     {
         var scale = BitConverter.ToSingle(blob, Magic.Length);
         var count = blob.Length - Magic.Length - sizeof(float);

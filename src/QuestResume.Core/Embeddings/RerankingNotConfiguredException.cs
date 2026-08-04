@@ -1,10 +1,5 @@
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Thrown when a cross-encoder re-ranking score is requested but no usable ONNX model/vocabulary
-/// has been configured. Hybrid (BM25 + vector) search keeps working without re-ranking; this
-/// exception only affects the optional re-ranking step.
-/// </summary>
 public sealed class RerankingNotConfiguredException : Exception
 {
     public RerankingNotConfiguredException(string modelPath, string vocabPath, Exception? innerException = null)
