@@ -2,19 +2,6 @@ using System.Diagnostics.Metrics;
 
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Métricas customizadas do QuestResume, expostas no formato Prometheus via
-/// <c>GET /metrics</c> (ver <c>Program.cs</c>, <c>app.MapPrometheusScrapingEndpoint()</c>).
-/// Coexiste com <see cref="QuestResume.Core.Services.DashboardService"/> (que alimenta o painel
-/// web interno) — este <see cref="Meter"/> é para consumo por um Prometheus externo.
-///
-/// Para apontar um Prometheus local para este endpoint, adicione ao <c>prometheus.yml</c>:
-///   scrape_configs:
-///     - job_name: 'questresume'
-///       metrics_path: '/metrics'
-///       static_configs:
-///         - targets: ['localhost:5000']   # host:porta onde a API está rodando
-/// </summary>
 public sealed class QuestResumeMetrics
 {
     public const string MeterName = "QuestResume.Api";
@@ -70,6 +57,5 @@ public sealed class QuestResumeMetrics
         if (errors > 0) _indexingErrors.Add(errors);
     }
 
-    /// <summary>Atualiza o valor observado por <c>questresume_index_size_bytes</c>, calculado a partir do tamanho em disco do índice.</summary>
-    public void SetIndexSizeBytes(long sizeBytes) => Volatile.Write(ref _lastIndexSizeBytes, sizeBytes);
+        public void SetIndexSizeBytes(long sizeBytes) => Volatile.Write(ref _lastIndexSizeBytes, sizeBytes);
 }

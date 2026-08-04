@@ -1,14 +1,5 @@
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Guarda o último texto de progresso reportado pelo <c>IProgress&lt;string&gt;</c> do
-/// <c>DocumentIndexer</c> durante a indexação disparada via <c>POST /api/index</c>, para que
-/// <c>GET /api/index/progress</c> possa ser consultado (polling) pelo Web UI e refletir uma barra
-/// de progresso real enquanto a indexação roda em segundo plano.
-///
-/// Como o rate limiter "indexing" (ver Program.cs) permite no máximo 1 indexação concorrente por
-/// processo, um único slot global é suficiente — não é necessário chavear por usuário/coleção.
-/// </summary>
 public sealed class IndexingProgressStore
 {
     private readonly object _lock = new();

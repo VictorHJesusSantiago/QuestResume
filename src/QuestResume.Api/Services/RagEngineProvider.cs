@@ -5,21 +5,11 @@ using QuestResume.Core.Rag;
 
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Keeps a single <see cref="RagQueryEngine"/> (and the GGUF model it loads) alive across
-/// requests, recreating it only when the configuration captured by <see cref="RagEngineKey"/>
-/// changes. Loading a multi-gigabyte model on every request would be far too slow.
-/// </summary>
 public sealed class RagEngineProvider : IDisposable
 {
     private readonly object _lock = new();
 
-    /// <summary>
-    /// Serializes <see cref="RagQueryEngine.AskAsync"/> calls: a single LLamaSharp
-    /// <c>StatelessExecutor</c>/model context is not safe for concurrent inference, so
-    /// overlapping <c>/api/ask</c> requests must queue rather than race on the same model.
-    /// </summary>
-    private readonly SemaphoreSlim _askSemaphore = new(1, 1);
+        private readonly SemaphoreSlim _askSemaphore = new(1, 1);
 
     private RagQueryEngine? _engine;
     private RagEngineKey? _loadedKey;
@@ -40,12 +30,7 @@ public sealed class RagEngineProvider : IDisposable
         }
     }
 
-    /// <summary>
-    /// Obtém o provedor de LLM do engine configurado (item 7 — usado pelo endpoint de benchmark).
-    /// Não segura o semáforo de perguntas: o benchmark deve rodar isoladamente por conta do
-    /// chamador.
-    /// </summary>
-    public Task<ILlmProvider> GetLlmProviderAsync(AppOptions options, CancellationToken cancellationToken)
+        public Task<ILlmProvider> GetLlmProviderAsync(AppOptions options, CancellationToken cancellationToken)
     {
         var engine = GetEngine(options);
         return engine.GetLlmProviderAsync(cancellationToken);
@@ -66,21 +51,7 @@ public sealed class RagEngineProvider : IDisposable
         }
     }
 
-    /// <summary>
-    /// Streaming counterpart to <see cref="AskAsync"/>. Holds <see cref="_askSemaphore"/> for
-    /// the lifetime of the returned token stream (released once it's fully enumerated, or if
-    /// the caller disconnects) so a concurrent <c>/api/ask</c>/<c>/api/ask/stream</c> request
-    /// can't run inference on the shared model at the same time.
-    /// </summary>
-    /// <summary>
-    /// Processes a batch of questions sequentially through <see cref="RagQueryEngine.AskAsync"/>,
-    /// one at a time — each call still goes through <see cref="AskAsync"/> and therefore acquires
-    /// <see cref="_askSemaphore"/>, so questions never run concurrently against the shared local
-    /// LLM. A per-question failure (e.g. the model/Ollama becomes unavailable mid-batch) is
-    /// captured in <see cref="BatchAskResultItem.Error"/> instead of aborting the remaining
-    /// questions.
-    /// </summary>
-    public async Task<List<BatchAskResultItem>> AskBatchAsync(AppOptions options, IReadOnlyList<string> questions, int? topK, CancellationToken cancellationToken)
+        public async Task<List<BatchAskResultItem>> AskBatchAsync(AppOptions options, IReadOnlyList<string> questions, int? topK, CancellationToken cancellationToken)
     {
         var results = new List<BatchAskResultItem>(questions.Count);
 
@@ -284,12 +255,7 @@ public sealed class RagEngineProvider : IDisposable
         }
     }
 
-    /// <summary>
-    /// Acquires <see cref="_askSemaphore"/> with a 30-second timeout so queued requests
-    /// are not held indefinitely when the LLM is generating a long response. Returns 503 to
-    /// the caller (via the thrown exception) rather than silently blocking forever.
-    /// </summary>
-    private async Task AcquireSemaphoreAsync(CancellationToken cancellationToken)
+        private async Task AcquireSemaphoreAsync(CancellationToken cancellationToken)
     {
         var acquired = await _askSemaphore.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
         if (!acquired)
@@ -299,11 +265,7 @@ public sealed class RagEngineProvider : IDisposable
         }
     }
 
-    /// <summary>
-    /// Drops the cached engine's vector-search cache after a re-index, so <c>/api/ask</c>
-    /// immediately reflects newly indexed embeddings instead of a stale pre-reindex snapshot.
-    /// </summary>
-    public void InvalidateVectorCache()
+        public void InvalidateVectorCache()
     {
         lock (_lock)
         {
