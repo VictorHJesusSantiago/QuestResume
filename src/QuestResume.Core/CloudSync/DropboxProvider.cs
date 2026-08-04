@@ -5,14 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Provedor de nuvem para o Dropbox, implementado diretamente sobre a API v2
-/// (<c>https://api.dropboxapi.com/2</c> / <c>https://content.dropboxapi.com/2</c>) via
-/// <see cref="HttpClient"/>, sem depender do SDK oficial. Usa o fluxo OAuth2 "Authorization
-/// Code with PKCE" contra <c>https://www.dropbox.com/oauth2/authorize</c> /
-/// <c>https://api.dropboxapi.com/oauth2/token</c>, adequado para um app público (sem client
-/// secret) registrado no App Console do Dropbox.
-/// </summary>
 public sealed class DropboxProvider : ICloudProvider
 {
     private const string AuthorizationEndpoint = "https://www.dropbox.com/oauth2/authorize";
@@ -102,9 +94,9 @@ public sealed class DropboxProvider : ICloudProvider
 
     public async Task<IReadOnlyList<CloudFileInfo>> ListFilesAsync(string accessToken, string folderId, CancellationToken cancellationToken = default)
     {
-        // A API do Dropbox usa caminhos (ex.: "/Documentos") em vez de IDs de pasta como
-        // Google Drive/OneDrive; "folderId" aqui é tratado como o caminho da pasta remota.
-        // Caminho vazio ou "root"/"/" representa a raiz do Dropbox do usuário (string vazia na API).
+        
+        
+        
         var path = string.IsNullOrWhiteSpace(folderId) || folderId is "root" or "/" ? string.Empty : folderId;
 
         var results = new List<CloudFileInfo>();

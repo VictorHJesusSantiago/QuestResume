@@ -5,14 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Provedor de nuvem para o Google Drive, implementado diretamente sobre a REST API v3
-/// (<c>https://www.googleapis.com/drive/v3</c>) via <see cref="HttpClient"/>, sem depender do
-/// SDK oficial pesado do Google. Usa o fluxo OAuth2 "Authorization Code with PKCE" contra
-/// os endpoints padrão do Google (<c>accounts.google.com</c> / <c>oauth2.googleapis.com</c>),
-/// adequado para um "Aplicativo para computador" (Desktop app) — cliente público, sem
-/// client secret.
-/// </summary>
 public sealed class GoogleDriveProvider : ICloudProvider
 {
     private const string AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
