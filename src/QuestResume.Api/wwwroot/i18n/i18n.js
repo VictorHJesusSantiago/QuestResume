@@ -1,7 +1,7 @@
-// Lightweight i18n engine: loads a flat "namespace.key" JSON dictionary for the language saved
-// in localStorage (default 'pt-BR'), applies it to every element with data-i18n /
-// data-i18n-placeholder, and keeps re-applying it as the DOM changes (dynamic re-renders from
-// app.js) via a debounced MutationObserver.
+
+
+
+
 (function () {
   const DEFAULT_LANGUAGE = 'pt-BR';
   const SUPPORTED_LANGUAGES = ['pt-BR', 'en-US'];
@@ -15,9 +15,9 @@
     return SUPPORTED_LANGUAGES.includes(saved) ? saved : DEFAULT_LANGUAGE;
   }
 
-  // Dictionaries are stored as flat keys (e.g. "header.subtitle": "..."), but we also support
-  // real nested objects (e.g. { header: { subtitle: "..." } }) in case a future dictionary is
-  // structured that way — resolveKey tries a direct lookup first, then walks the dot path.
+  
+  
+  
   function resolveKey(key) {
     if (Object.prototype.hasOwnProperty.call(translations, key)) {
       return translations[key];
@@ -87,9 +87,9 @@
 
   window.applyI18n = applyI18n;
   window.setLanguage = setLanguage;
-  // Exposes a single-key lookup (with optional {placeholder} interpolation) for dynamic strings
-  // built in app.js that can't rely on the [data-i18n] attribute mechanism above (e.g. text
-  // assembled at runtime like "Página X de Y"). Falls back to the raw key if not found.
+  
+  
+  
   window.t = function (key, params) {
     let value = resolveKey(key);
     if (value === undefined) return key;
@@ -106,7 +106,7 @@
     try {
       await loadLanguage(language);
     } catch {
-      // If the dictionary fails to load, leave the hard-coded HTML text in place.
+      
       translations = {};
     }
     applyI18n();
@@ -117,7 +117,7 @@
       select.value = language;
       select.addEventListener('change', () => {
         setLanguage(select.value).catch(() => {
-          // Keep the previous translations visible if the switch fails.
+          
         });
       });
     }

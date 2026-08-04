@@ -27,8 +27,7 @@
   background: #ffffff;
 }
 
-/* Tema de alto contraste — maximiza o contraste texto/fundo para acessibilidade (WCAG AAA-ish),
-   sobrepondo as mesmas custom properties usadas pelos temas claro/escuro acima. */
+
 :root[data-theme="high-contrast"] {
   --bg: #000000;
   --panel: #000000;
@@ -50,8 +49,7 @@
 :root[data-theme="high-contrast"] .md-code-block { background: #000000; }
 :root[data-theme="high-contrast"] button.primary { color: #000000; }
 
-/* Tema "Verde" — variação de cor de destaque (accent) sobre o layout escuro, para quem prefere
-   um tom diferente do azul padrão. */
+
 :root[data-theme="green"] {
   --bg: #0b1a12;
   --panel: #10241a;
@@ -313,8 +311,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   margin: 0 0.15rem;
 }
 
-/* Confidence badge (item 5): heuristic score combining retrieval relevance and, when the
-   faithfulness check is enabled, whether the LLM judged the answer supported by the sources. */
+
 .confidence-badge {
   display: inline-flex;
   align-items: center;
@@ -330,7 +327,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .confidence-badge.confidence-medium { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.4); }
 .confidence-badge.confidence-low { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.4); }
 
-/* Markdown rendering (markdown.js) for chat answers. */
+
 .msg-text .md-paragraph { margin: 0 0 0.6rem 0; }
 .msg-text .md-paragraph:last-child { margin-bottom: 0; }
 .msg-text .md-heading { margin: 0.8rem 0 0.4rem 0; line-height: 1.25; }
@@ -361,8 +358,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .md-code-line { display: block; }
 :root[data-theme="light"] .md-code-block { background: #0f172a; }
 
-/* Basic syntax-highlighting tokens shared by markdown.js code blocks. Colors are chosen to work
-   on the dark code-block background used in both light and dark themes (see .md-code-block). */
+
 .tok-keyword { color: #c792ea; font-weight: 600; }
 .tok-string { color: #a5d6a7; }
 .tok-comment { color: #8a94a6; font-style: italic; }
@@ -512,7 +508,7 @@ button.danger:hover { background: var(--error); color: #fff; }
 }
 .modal-box .close-row { text-align: right; margin-top: 0.75rem; }
 
-/* Utility helpers — replaces the removed inline style= attributes in index.html */
+
 input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
 .header-actions { display: flex; align-items: center; gap: 0.75rem; }
 .search-filters { margin-top: 0.75rem; }
@@ -520,11 +516,11 @@ input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
 #statsGrid { margin-top: 1rem; }
 #extensionChart { margin-top: 0.5rem; }
 
-/* Tradução (chat) */
+
 .translate-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; align-items: center; }
 .translation-result { margin-top: 0.25rem; font-size: 0.9rem; color: var(--text-muted, #999); white-space: pre-wrap; }
 
-/* Estudo — flashcards e quiz */
+
 #flashcardsList, #quizList { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
 .flashcard {
   background: var(--panel);
@@ -553,14 +549,14 @@ input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
 .quiz-feedback { font-weight: 600; margin-top: 0.25rem; }
 .chart-section-title { margin-top: 1.5rem; }
 
-/* Gráficos (canvas) */
+
 .chart-canvas { max-width: 100%; }
 .chart-donut-wrapper { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
 .chart-legend { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.85rem; }
 .chart-legend-item { display: flex; align-items: center; gap: 0.5rem; }
 .chart-legend-swatch { width: 0.75rem; height: 0.75rem; border-radius: 3px; flex-shrink: 0; }
 
-/* Dicas / atalhos */
+
 .hint-line { font-size: 0.8rem; color: var(--muted); margin: 0.25rem 0 0.75rem 0; }
 kbd {
   background: var(--panel-light);
@@ -570,7 +566,7 @@ kbd {
   font-family: inherit;
 }
 
-/* Upload / drag-and-drop */
+
 .drop-zone {
   border: 2px dashed var(--panel-light);
   border-radius: 8px;
@@ -587,7 +583,7 @@ kbd {
 }
 #uploadedFilesList { margin-bottom: 0.75rem; }
 
-/* Atalhos configuráveis */
+
 .shortcuts-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
 .shortcut-row {
   display: flex;
@@ -608,7 +604,7 @@ kbd {
   font-size: 0.85rem;
 }
 
-/* Barra de progresso da indexação (item 16) */
+
 .index-progress-row {
   display: flex;
   align-items: center;
@@ -627,7 +623,7 @@ kbd {
   white-space: nowrap;
 }
 
-/* Paginação do preview de documento (item 15) */
+
 .preview-pagination-row {
   display: flex;
   align-items: center;
@@ -647,12 +643,12 @@ kbd {
 .preview-pagination-row button:disabled { opacity: 0.4; cursor: default; }
 .preview-pagination-row span { font-size: 0.85rem; color: var(--muted); }
 
-/* Wizard de primeira execução (item 17) */
+
 .wizard-step h4 { margin: 0 0 0.4rem 0; }
 .wizard-nav-row { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .wizard-nav-row #wizardSkipButton { margin-right: auto; }
 
-/* Controle de tamanho de fonte e tema de cor no cabeçalho (item 18) */
+
 #fontSizeSelect, #colorThemeSelect {
   width: auto;
   padding: 0.4rem 0.6rem;
@@ -663,7 +659,7 @@ kbd {
   font-size: 0.85rem;
 }
 
-/* Lote 8 — estilos das novas seções */
+
 .knowledge-graph-canvas { width: 100%; max-width: 600px; border: 1px solid var(--panel-light); border-radius: 6px; background: #0b1220; margin-top: 0.5rem; }
 .analysis-modal-body { max-height: 60vh; overflow-y: auto; }
 .analysis-modal-body ul { padding-left: 1.2rem; }
