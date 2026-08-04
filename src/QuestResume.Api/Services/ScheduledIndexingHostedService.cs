@@ -5,15 +5,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Starts an <see cref="IndexScheduler"/> that periodically runs a full
-/// <see cref="DocumentIndexer.IndexFolderAsync"/> when <see cref="AppOptions.ScheduledIndexingEnabled"/>
-/// is set at startup (item 15 of Lote 4). Complements <see cref="AutoReindexHostedService"/>
-/// (which reacts to filesystem changes): this one runs on a fixed wall-clock interval regardless
-/// of whether any change was detected, which also acts as a safety net on filesystems where
-/// <see cref="System.IO.FileSystemWatcher"/> is unreliable (e.g. some network shares).
-/// Configuration is re-read from disk on every startup, same as <see cref="AutoReindexHostedService"/>.
-/// </summary>
 public sealed class ScheduledIndexingHostedService : IHostedService, IDisposable
 {
     private readonly ConfigService _configService;

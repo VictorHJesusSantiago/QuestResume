@@ -3,12 +3,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Inicia um <see cref="BackupScheduler"/> que periodicamente cria backups do índice com rotação/
-/// retenção quando <see cref="AppOptions.ScheduledBackupEnabled"/> está ativo no startup (item 14
-/// do Lote 6). Os backups vão para <c>&lt;IndexPath&gt;/../backups</c>. Mesmo padrão de
-/// <see cref="ScheduledIndexingHostedService"/>.
-/// </summary>
 public sealed class ScheduledBackupHostedService : IHostedService, IDisposable
 {
     private readonly ConfigService _configService;
