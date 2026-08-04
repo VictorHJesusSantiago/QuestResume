@@ -4,11 +4,6 @@ using SixLabors.ImageSharp.Processing;
 
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Carrega e pré-processa uma imagem para entrada de um modelo CLIP ONNX: redimensiona para
-/// <c>size x size</c> e normaliza os canais RGB com média/desvio-padrão do ImageNet, no layout
-/// NCHW (channels-first) esperado pela maioria dos exports padrão do CLIP.
-/// </summary>
 internal static class ImagePreprocessor
 {
     private static readonly float[] Mean = { 0.48145466f, 0.4578275f, 0.40821073f };
