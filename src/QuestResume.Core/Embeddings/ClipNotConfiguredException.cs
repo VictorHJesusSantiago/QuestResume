@@ -1,11 +1,5 @@
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Lançada quando uma busca por similaridade de imagem é solicitada mas nenhum modelo CLIP
-/// ONNX válido foi configurado (<see cref="Configuration.AppOptions.ClipModelPath"/>). Este é o
-/// comportamento esperado sem um modelo CLIP real fornecido pelo usuário — busca textual (BM25 /
-/// embeddings de texto) continua funcionando normalmente.
-/// </summary>
 public sealed class ClipNotConfiguredException : Exception
 {
     public ClipNotConfiguredException(string modelPath, Exception? innerException = null)

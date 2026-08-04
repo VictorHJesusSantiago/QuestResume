@@ -3,20 +3,6 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Gera embeddings visuais (CLIP) para imagens, usados em busca por similaridade de imagem
-/// (<see cref="QuestResume.Core.Indexing.SearchService.SearchByImageAsync"/>). Segue o mesmo
-/// padrão de lazy-init de <see cref="EmbeddingService"/> e <see cref="CrossEncoderService"/>:
-/// a sessão ONNX só é carregada no primeiro uso, e uma falha de configuração lança
-/// <see cref="ClipNotConfiguredException"/> em vez de derrubar o processo.
-///
-/// LIMITAÇÃO TÉCNICA: sem um modelo ONNX CLIP real (com torre de imagem) configurado pelo
-/// usuário via <see cref="Configuration.AppOptions.ClipModelPath"/>, este serviço não pode
-/// gerar embeddings — o comportamento esperado é lançar <see cref="ClipNotConfiguredException"/>,
-/// coberto por teste. O pré-processamento de imagem aqui é um resize+normalize simplificado
-/// (224x224, normalização ImageNet) compatível com a maioria dos exports padrão do CLIP; um
-/// modelo com pré-processamento diferente pode exigir ajustes.
-/// </summary>
 public sealed class ClipEmbeddingService : IClipEmbeddingService
 {
     private const int ImageSize = 224;
@@ -32,8 +18,7 @@ public sealed class ClipEmbeddingService : IClipEmbeddingService
         _modelPath = modelPath;
     }
 
-    /// <exception cref="ClipNotConfiguredException">Quando o modelo CLIP não está configurado ou falha ao carregar.</exception>
-    public Task<float[]> EmbedImageAsync(string imagePath, CancellationToken cancellationToken = default)
+        public Task<float[]> EmbedImageAsync(string imagePath, CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
 

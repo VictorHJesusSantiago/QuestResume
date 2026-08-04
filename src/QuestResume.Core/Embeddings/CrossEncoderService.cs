@@ -4,20 +4,9 @@ using Microsoft.ML.Tokenizers;
 
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Scores how relevant a passage is to a query using a local ONNX cross-encoder model and a
-/// WordPiece tokenizer (vocab.txt), via <see cref="Microsoft.ML.OnnxRuntime"/> and
-/// <see cref="BertTokenizer"/>. Used by <see cref="QuestResume.Core.Indexing.HybridSearchService"/>
-/// to re-rank the top candidates returned by BM25/vector search.
-/// </summary>
 public sealed class CrossEncoderService : ICrossEncoderService
 {
-    /// <summary>
-    /// Max combined (query + passage + special tokens) input sequence length, mirroring
-    /// <see cref="EmbeddingService"/>. Longer inputs are truncated before being sent to the
-    /// ONNX model to avoid a shape-mismatch failure in <see cref="InferenceSession.Run"/>.
-    /// </summary>
-    private const int MaxSequenceLength = 512;
+        private const int MaxSequenceLength = 512;
 
     private readonly string _modelPath;
     private readonly string _vocabPath;
@@ -33,25 +22,16 @@ public sealed class CrossEncoderService : ICrossEncoderService
         _vocabPath = vocabPath;
     }
 
-    /// <summary>
-    /// Computes a relevance score (higher = more relevant) for <paramref name="passage"/> given
-    /// <paramref name="query"/>, using BERT pair encoding: <c>[CLS] query [SEP] passage [SEP]</c>.
-    /// The score is mapped to the 0-1 range (via sigmoid or softmax, depending on the model's
-    /// output shape) so it can be combined with the normalized BM25/vector scores.
-    /// </summary>
-    /// <exception cref="RerankingNotConfiguredException">
-    /// Thrown if the re-ranking model or vocabulary path is missing, invalid, or fails to load.
-    /// </exception>
-    public Task<float> ScoreAsync(string query, string passage, CancellationToken cancellationToken = default)
+        public Task<float> ScoreAsync(string query, string passage, CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
 
         var queryIds = _tokenizer!.EncodeToIds(query, true, true);
         var passageIds = _tokenizer.EncodeToIds(passage, true, true);
 
-        // Pair encoding: [CLS] query... [SEP] passage... [SEP]. queryIds already starts with
-        // [CLS] and ends with [SEP]; passageIds[1..] drops its leading [CLS] but keeps its
-        // trailing [SEP], giving the standard two-segment BERT layout.
+        
+        
+        
         var combined = new List<int>(queryIds.Count + passageIds.Count - 1);
         combined.AddRange(queryIds);
         combined.AddRange(passageIds.Skip(1));
@@ -91,12 +71,7 @@ public sealed class CrossEncoderService : ICrossEncoderService
         return Task.FromResult(ToScore(logits));
     }
 
-    /// <summary>
-    /// Converts the model's raw output to a 0-1 relevance score. Cross-encoders exported as a
-    /// regression head produce a single logit per sequence (sigmoid applied); ones exported as a
-    /// 2-class classifier ([not relevant, relevant]) produce two logits (softmax, take class 1).
-    /// </summary>
-    private static float ToScore(Tensor<float> logits)
+        private static float ToScore(Tensor<float> logits)
     {
         var lastDim = logits.Dimensions[^1];
 
@@ -114,13 +89,7 @@ public sealed class CrossEncoderService : ICrossEncoderService
         return expPositive / (expNegative + expPositive);
     }
 
-    /// <summary>
-    /// Lazily loads the ONNX session and tokenizer. Guarded by <see cref="_initLock"/> because
-    /// this <see cref="CrossEncoderService"/> instance can be shared (via a cached RAG engine)
-    /// across concurrent requests — without the lock, two threads racing through the
-    /// uninitialized check could both construct an <see cref="InferenceSession"/>, leaking one.
-    /// </summary>
-    private void EnsureInitialized()
+        private void EnsureInitialized()
     {
         if (_session is not null && _tokenizer is not null)
         {
