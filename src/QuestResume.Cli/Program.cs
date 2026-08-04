@@ -8,12 +8,12 @@ using QuestResume.Core.Services;
 using Serilog;
 using Serilog.Events;
 
-// Basic diagnostic logger for the CLI: writes to the console only (kept separate from the
-// Console.WriteLine-based UX output above/below), used for error/diagnostic tracing around the
-// unhandled-exception flow and long-running commands (e.g. ask-batch). Level is controlled via:
-//   --log-level <Verbose|Debug|Information|Warning|Error|Fatal>   (checked first)
-//   QUESTRESUME_LOG_LEVEL environment variable                    (fallback)
-// Defaults to Warning so normal CLI usage stays quiet — Console.WriteLine remains the primary UX.
+
+
+
+
+
+
 var logLevelArgIndex = Array.IndexOf(args, "--log-level");
 var logLevelValue = (logLevelArgIndex >= 0 && logLevelArgIndex + 1 < args.Length)
     ? args[logLevelArgIndex + 1]
@@ -30,8 +30,8 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
-// Strip --log-level <value> from args before command parsing so it doesn't get misread as a
-// positional argument by the individual command handlers below.
+
+
 if (logLevelArgIndex >= 0)
 {
     var withoutLogLevel = new List<string>(args);
@@ -129,10 +129,10 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
 
     var indexPath = GetFlagValue(cmdArgs, "--index-path") ?? ResolveCollectionIndexPath(options, cmdArgs);
 
-    // When the index is encrypted at rest (AppOptions.EncryptionEnabled), the master password is
-    // required to decrypt index.enc before indexing and to re-encrypt afterwards — see
-    // QuestResume.Core.Indexing.LuceneIndexEncryptionService, wired end-to-end into
-    // DocumentIndexer.IndexFolderAsync's open/close lifecycle.
+    
+    
+    
+    
     string? masterPassword = null;
     if (options.EncryptionEnabled)
     {
@@ -161,13 +161,13 @@ async Task<int> RunIndexAsync(string[] cmdArgs)
     RagQueryEngine? summarizationEngine = null;
     if (options.AutoSummarizationEnabled || options.EntityExtractionEnabled)
     {
-        // Resumo automático/extração de entidades precisam de um LLM já configurado; reaproveita o
-        // mesmo provedor usado por ask/chat em vez de duplicar a lógica de criação.
+        
+        
         summarizationEngine = RagQueryEngineFactory.Create(options);
         try
         {
-            // Item 5: usa o modelo auxiliar (SummarizationModelPath) quando configurado; caso
-            // contrário reaproveita o modelo principal.
+            
+            
             summarizationLlm = await summarizationEngine.GetAuxiliaryLlmProviderAsync();
         }
         catch (Exception ex)
@@ -289,7 +289,7 @@ int RunSearch(string[] cmdArgs)
         {
             Console.WriteLine("Nenhum resultado encontrado.");
 
-            // Corretor ortográfico (item 11): oferece sugestões quando a busca não retorna nada.
+            
             var suggestions = search.SuggestSpelling(query);
             if (suggestions.Count > 0)
             {
@@ -311,8 +311,8 @@ int RunSearch(string[] cmdArgs)
     }
     finally
     {
-        // ON CLOSE: re-seal the index back into index.enc so it isn't left decrypted on disk
-        // after the command exits.
+        
+        
         search.SealAsync().GetAwaiter().GetResult();
     }
 }
@@ -623,8 +623,8 @@ async Task<int> RunCompareAsync(string[] cmdArgs)
         return 1;
     }
 
-    // Pergunta explícita via --pergunta; senão, se o último positional parecer uma pergunta
-    // (contém espaço), trata-o como pergunta. Caso contrário, todos os positionais são caminhos.
+    
+    
     var question = GetFlagValue(cmdArgs, "--pergunta");
     var paths = positional.ToList();
     if (question is null && paths.Count > 2 && paths[^1].Contains(' '))
@@ -2262,7 +2262,7 @@ int RunPlugins(string[] cmdArgs)
 
 int RunWipe(string[] cmdArgs)
 {
-    // Apagamento seguro do índice/vetores. Exige a flag --confirm explícita para evitar acidentes.
+    
     if (!cmdArgs.Contains("--confirm"))
     {
         Console.Error.WriteLine("Uso: questresume wipe --confirm");
@@ -2451,9 +2451,9 @@ static string ReadMaskedLine()
     return sb.ToString();
 }
 
-// Resolve o IndexPath efetivo a partir da flag opcional "--collection <nome>" (padrão "default"),
-// seguindo QuestResume.Core.Persistence.CollectionStore. Comandos que não recebem a flag continuam
-// operando sobre options.IndexPath normalmente (compatibilidade).
+
+
+
 static string ResolveCollectionIndexPath(AppOptions options, string[] cmdArgs)
 {
     var collectionName = GetFlagValue(cmdArgs, "--collection");
