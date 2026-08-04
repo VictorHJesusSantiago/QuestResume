@@ -4,10 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction;
 
-/// <summary>
-/// Maps file extensions to the <see cref="IFileExtractor"/> able to read them, and provides
-/// a single entry point for extracting a document regardless of its format.
-/// </summary>
 public sealed class ExtractorRegistry
 {
     private readonly Dictionary<string, IFileExtractor> _extractorsByExtension;
@@ -32,12 +28,7 @@ public sealed class ExtractorRegistry
         }
     }
 
-    /// <summary>
-    /// Registra extratores adicionais fornecidos por plugins de terceiros (normalmente obtidos
-    /// via <see cref="PluginLoader.LoadPlugins"/>), sobrescrevendo extratores nativos que
-    /// declarem as mesmas extensões e adicionando o resultado a <see cref="LoadedPlugins"/>.
-    /// </summary>
-    public void RegisterPlugins(IEnumerable<IFileExtractor> pluginExtractors, Action<string>? log = null)
+        public void RegisterPlugins(IEnumerable<IFileExtractor> pluginExtractors, Action<string>? log = null)
     {
         foreach (var extractor in pluginExtractors)
         {
@@ -55,21 +46,9 @@ public sealed class ExtractorRegistry
         }
     }
 
-    /// <summary>Plugins de terceiros carregados com sucesso neste registro (vazio se nenhum foi carregado).</summary>
-    public IReadOnlyList<LoadedPluginInfo> LoadedPlugins => _loadedPlugins;
+        public IReadOnlyList<LoadedPluginInfo> LoadedPlugins => _loadedPlugins;
 
-    /// <summary>
-    /// Default set of extractors covering Group 1 (direct text extraction) formats, plus the
-    /// OCR-based extractors from <paramref name="options"/> when <c>OcrEnabled</c> is true.
-    /// With <paramref name="options"/> <c>null</c> (or OCR disabled), the result is identical
-    /// to the original Group 1-only set.
-    /// </summary>
-    /// <param name="includeArchives">
-    /// When <c>true</c> (the default), includes <see cref="ZipArchiveExtractor"/>. Pass
-    /// <c>false</c> when building the registry used *inside* <see cref="ZipArchiveExtractor"/>
-    /// itself, to avoid unbounded recursion on nested archives.
-    /// </param>
-    public static IEnumerable<IFileExtractor> DefaultExtractors(AppOptions? options = null, bool includeArchives = true)
+        public static IEnumerable<IFileExtractor> DefaultExtractors(AppOptions? options = null, bool includeArchives = true)
     {
         yield return new PlainTextExtractor();
         yield return new IpynbExtractor();
@@ -125,12 +104,7 @@ public sealed class ExtractorRegistry
 
     public bool IsSupported(string extension) => _extractorsByExtension.ContainsKey(extension);
 
-    /// <summary>
-    /// Extracts the document at <paramref name="path"/>. If no extractor is registered for the
-    /// file's extension, returns a document with empty text and a note in <c>Metadata["warning"]</c>
-    /// rather than throwing, so a single unsupported file doesn't abort an indexing run.
-    /// </summary>
-    public async Task<ExtractedDocument> ExtractAsync(string path, CancellationToken cancellationToken = default)
+        public async Task<ExtractedDocument> ExtractAsync(string path, CancellationToken cancellationToken = default)
     {
         var extension = Path.GetExtension(path);
         var info = new FileInfo(path);
@@ -143,14 +117,14 @@ public sealed class ExtractorRegistry
             }
             catch (OperationCanceledException)
             {
-                throw; // cancelamento explícito deve propagar
+                throw; 
             }
             catch (Exception ex)
             {
-                // Degradação graciosa (item 19): um arquivo corrompido/malformado não pode derrubar
-                // toda a indexação. Qualquer falha de parsing de um extrator vira um documento com
-                // texto vazio e o erro registrado em Metadata["error"], para que o indexador siga
-                // adiante com os demais arquivos.
+                
+                
+                
+                
                 return new ExtractedDocument
                 {
                     Path = path,
