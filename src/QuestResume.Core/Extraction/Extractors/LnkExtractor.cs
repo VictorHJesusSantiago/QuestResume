@@ -3,13 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Parses Windows Shell Link (.lnk) binary files to recover the shortcut's target path, per the
-/// publicly documented MS-SHLLINK format: a fixed 76-byte header (starting with the
-/// well-known CLSID <c>00021401-0000-0000-C000-000000000046</c>), optionally followed by an
-/// IDList, and (when the HasLinkInfo flag is set) a LinkInfo structure containing the local
-/// base path of the target.
-/// </summary>
 public sealed class LnkExtractor : IFileExtractor
 {
     private static readonly byte[] LnkGuid =
@@ -61,7 +54,7 @@ public sealed class LnkExtractor : IFileExtractor
     {
         if (bytes.Length < 76) return null;
 
-        // HeaderSize (4 bytes, must be 0x0000004C) + LinkCLSID (16 bytes).
+        
         var headerSize = BitConverter.ToUInt32(bytes, 0);
         if (headerSize != 0x4C) return null;
 
@@ -89,12 +82,12 @@ public sealed class LnkExtractor : IFileExtractor
         var linkInfoSize = BitConverter.ToUInt32(bytes, linkInfoStart);
         if (linkInfoSize < 4 || linkInfoStart + linkInfoSize > bytes.Length) return null;
 
-        // LinkInfoHeaderSize at offset 4, LinkInfoFlags at offset 8.
+        
         var linkInfoFlags = BitConverter.ToUInt32(bytes, linkInfoStart + 8);
         var hasLocalBasePath = (linkInfoFlags & 0x1) != 0;
         if (!hasLocalBasePath) return null;
 
-        // LocalBasePathOffset at offset 16 (relative to linkInfoStart).
+        
         var localBasePathOffset = BitConverter.ToUInt32(bytes, linkInfoStart + 16);
         var pathStart = linkInfoStart + (int)localBasePathOffset;
         if (pathStart < 0 || pathStart >= bytes.Length) return null;

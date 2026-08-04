@@ -5,16 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extrai texto de formatos binários legados do Microsoft Office (pré-2007): .xls (Excel 97-2003),
-/// via NPOI/HSSF (contraparte OLE2 do <see cref="OpenXmlExtractor"/>, que só lê os formatos OOXML
-/// mais novos).
-///
-/// Nota importante sobre .doc e .ppt: a port .NET do NPOI (2.7.x) inclui apenas HSSF (Excel binário);
-/// os módulos HWPF (Word .doc binário) e HSLF (PowerPoint .ppt binário) do POI original NÃO estão
-/// presentes. Por isso, .doc e .ppt têm suporte apenas como aviso de formato não extraível por falta
-/// de biblioteca confiável — o arquivo é indexado com um aviso em PT-BR, mas sem texto de conteúdo.
-/// </summary>
 public sealed class LegacyOfficeExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".doc", ".xls", ".ppt" };

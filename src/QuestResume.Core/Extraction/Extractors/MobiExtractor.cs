@@ -3,17 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Best-effort parser for MOBI/AZW3 e-books (.mobi, .azw3), based on the publicly documented
-/// PalmDOC/MOBI/KF8 container format: a PDB (Palm Database) header holds a list of record
-/// offsets; the first record is the PalmDOC/MOBI header (compression type + text record count);
-/// the following records hold the book text, either uncompressed (type 1) or PalmDOC-LZ77
-/// compressed (type 2). HUFF/CDIC compression (type 17480, used by some older MOBI files) is
-/// NOT supported and is reported as a warning — this is a deliberate scope limitation, not a
-/// bug: implementing the full Huffman dictionary decoder is out of scope for a "best effort"
-/// text extractor. KF8 (.azw3)-specific structures (beyond the shared PalmDOC text records) are
-/// also not parsed; only the base PalmDOC text stream is extracted.
-/// </summary>
 public sealed class MobiExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".mobi", ".azw3" };
@@ -59,8 +48,8 @@ public sealed class MobiExtractor : IFileExtractor
             return string.Empty;
         }
 
-        // PDB header: 32-byte name, then attribute/version fields, ending with a 2-byte record
-        // count at offset 76.
+        
+        
         var recordCount = ReadUInt16BE(bytes, 76);
         if (recordCount == 0)
         {
@@ -111,8 +100,8 @@ public sealed class MobiExtractor : IFileExtractor
             builder.Append(Encoding.Latin1.GetString(decoded));
         }
 
-        // Best-effort: PalmDOC text is Latin-1/CP1252-ish by convention; re-decode assuming
-        // Windows-1252 to recover accented characters when possible.
+        
+        
         try
         {
             var raw = builder.ToString();
@@ -125,8 +114,7 @@ public sealed class MobiExtractor : IFileExtractor
         }
     }
 
-    /// <summary>PalmDOC LZ77-style decompression (documented public format).</summary>
-    private static byte[] PalmDocDecompress(byte[] input)
+        private static byte[] PalmDocDecompress(byte[] input)
     {
         var output = new List<byte>(input.Length * 2);
         var i = 0;
