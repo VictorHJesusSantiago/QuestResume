@@ -1,24 +1,15 @@
 namespace QuestResume.Core.Extraction;
 
-/// <summary>
-/// Lightweight, dependency-free language detector: counts occurrences of a small set of
-/// characteristic stopwords for Portuguese, English, Spanish and French and returns whichever
-/// language scores highest. Not meant to compete with a full statistical language-identification
-/// model — it's a cheap heuristic good enough to tag/filter documents by predominant language
-/// during indexing (see <see cref="Indexing.DocumentIndexer"/>).
-/// </summary>
 public static class LanguageDetector
 {
-    /// <summary>ISO 639-1-ish codes used across the app for the languages this detector recognizes.</summary>
-    public const string Portuguese = "pt";
+        public const string Portuguese = "pt";
     public const string English = "en";
     public const string Spanish = "es";
     public const string French = "fr";
-    /// <summary>Returned when the text is too short/has no recognizable stopwords to decide.</summary>
-    public const string Unknown = "unknown";
+        public const string Unknown = "unknown";
 
-    // Stopwords chosen to be as language-exclusive as possible (e.g. "the"/"and" for English,
-    // "não"/"são"/"você" for Portuguese with diacritics that rarely appear in the others).
+    
+    
     private static readonly Dictionary<string, HashSet<string>> StopwordsByLanguage = new(StringComparer.Ordinal)
     {
         [Portuguese] = new(StringComparer.OrdinalIgnoreCase)
@@ -48,11 +39,7 @@ public static class LanguageDetector
         }
     };
 
-    /// <summary>
-    /// Returns the detected language code for <paramref name="text"/>, or <see cref="Unknown"/>
-    /// if the text is blank or has too few recognizable stopwords to decide confidently.
-    /// </summary>
-    public static string Detect(string? text)
+        public static string Detect(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -75,8 +62,8 @@ public static class LanguageDetector
 
         foreach (var rawWord in words)
         {
-            // Strip surrounding punctuation but keep accented letters, which are load-bearing for
-            // telling Portuguese/Spanish/French apart from English.
+            
+            
             var word = rawWord.Trim(TrimChars);
             if (word.Length == 0) continue;
 
@@ -91,8 +78,8 @@ public static class LanguageDetector
 
         var best = scores.OrderByDescending(kv => kv.Value).First();
 
-        // Require a minimum absolute count so short/ambiguous texts (e.g. a filename-only
-        // document) don't get an overconfident language tag from one incidental match.
+        
+        
         const int minimumMatches = 3;
         return best.Value >= minimumMatches ? best.Key : Unknown;
     }

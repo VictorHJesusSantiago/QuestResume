@@ -3,29 +3,13 @@ using System.Runtime.Loader;
 
 namespace QuestResume.Core.Extraction;
 
-/// <summary>
-/// Descobre e carrega dinamicamente extratores de arquivo de terceiros ("plugins") a partir de
-/// DLLs colocadas em <see cref="DefaultPluginsFolder"/>. Cada DLL é carregada em seu próprio
-/// <see cref="AssemblyLoadContext"/> isolado (collectible), para que um plugin com dependências
-/// conflitantes não derrube o processo host nem colida com os tipos já carregados. Falhas de
-/// carregamento (DLL corrompida, incompatível, sem tipos elegíveis etc.) são registradas via
-/// <paramref name="log"/> e ignoradas — um plugin ruim nunca impede os demais de carregar nem
-/// derruba a aplicação.
-/// </summary>
 public static class PluginLoader
 {
-    /// <summary>Pasta padrão onde plugins (.dll) são procurados no início da aplicação.</summary>
-    public static string DefaultPluginsFolder => Path.Combine(
+        public static string DefaultPluginsFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "QuestResume", "plugins");
 
-    /// <summary>
-    /// Varre <paramref name="pluginsFolder"/> (ou <see cref="DefaultPluginsFolder"/>) em busca de
-    /// DLLs, carrega cada uma em um <see cref="AssemblyLoadContext"/> isolado e instancia todo
-    /// tipo público, concreto, com construtor sem parâmetros que implemente
-    /// <see cref="IFileExtractor"/>.
-    /// </summary>
-    public static IReadOnlyList<IFileExtractor> LoadPlugins(
+        public static IReadOnlyList<IFileExtractor> LoadPlugins(
         string? pluginsFolder = null,
         Action<string>? log = null)
     {
@@ -59,8 +43,8 @@ public static class PluginLoader
             }
             catch (Exception ex)
             {
-                // Qualquer falha (assembly corrompido, dependência ausente, versão incompatível
-                // do runtime etc.) é isolada a este plugin específico: registra e continua.
+                
+                
                 log($"Falha ao carregar plugin '{Path.GetFileName(dllPath)}': {ex.Message}");
             }
         }
