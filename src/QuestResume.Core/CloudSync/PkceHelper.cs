@@ -3,11 +3,6 @@ using System.Text;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Gera o par (code_verifier, code_challenge) do PKCE (RFC 7636), usado pelo fluxo
-/// "Authorization Code with PKCE" nos provedores de nuvem — evita a necessidade de um
-/// client secret para aplicativos desktop/CLI públicos.
-/// </summary>
 public static class PkceHelper
 {
     public static string GenerateCodeVerifier()

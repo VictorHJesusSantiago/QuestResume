@@ -2,20 +2,9 @@ using System.Net;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Servidor HTTP local mínimo (<see cref="HttpListener"/>) usado pela CLI para receber o
-/// redirecionamento do provedor OAuth2 após o usuário autorizar o acesso no navegador
-/// (fluxo "loopback" recomendado pela RFC 8252 para apps nativos/desktop).
-/// </summary>
 public static class OAuthLoopbackListener
 {
-    /// <summary>
-    /// Sobe um listener em <c>http://localhost:{port}/callback/</c>, aguarda uma única
-    /// requisição contendo <c>?code=...</c> (ou <c>?error=...</c>) e retorna o código
-    /// recebido. Responde ao navegador com uma página simples informando que pode ser
-    /// fechado.
-    /// </summary>
-    public static async Task<string> WaitForAuthorizationCodeAsync(int port, CancellationToken cancellationToken = default)
+        public static async Task<string> WaitForAuthorizationCodeAsync(int port, CancellationToken cancellationToken = default)
     {
         using var listener = new HttpListener();
         var prefix = $"http://localhost:{port}/callback/";
@@ -26,7 +15,7 @@ public static class OAuthLoopbackListener
         {
             using var registration = cancellationToken.Register(() =>
             {
-                try { listener.Stop(); } catch { /* ignore */ }
+                try { listener.Stop(); } catch {  }
             });
 
             var contextTask = listener.GetContextAsync();
@@ -65,7 +54,7 @@ public static class OAuthLoopbackListener
         }
         finally
         {
-            try { listener.Stop(); } catch { /* ignore */ }
+            try { listener.Stop(); } catch {  }
         }
     }
 }

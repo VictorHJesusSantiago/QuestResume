@@ -5,15 +5,6 @@ using Microsoft.Identity.Client;
 
 namespace QuestResume.Core.CloudSync;
 
-/// <summary>
-/// Provedor de nuvem para o OneDrive/Microsoft Graph. O fluxo interativo
-/// (<see cref="AuthenticateAsync"/>, usado pela CLI) delega a <c>Microsoft.Identity.Client</c>
-/// (MSAL), que já implementa Authorization Code + PKCE e o listener loopback local
-/// internamente. O fluxo manual (<see cref="BuildAuthorizationUrl"/> + <see cref="ExchangeCodeAsync"/>,
-/// usado pelo endpoint <c>GET /api/cloud/onedrive/callback</c> da API, onde o redirecionamento
-/// chega via HTTP e não pode ser interceptado pelo listener interno do MSAL) fala diretamente
-/// com o endpoint de token do Microsoft Identity Platform v2.0.
-/// </summary>
 public sealed class OneDriveProvider : ICloudProvider
 {
     private const string AuthorizationEndpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
@@ -64,12 +55,7 @@ public sealed class OneDriveProvider : ICloudProvider
         return (url, verifier);
     }
 
-    /// <summary>
-    /// Fluxo interativo local (CLI): usa MSAL (<see cref="IPublicClientApplication.AcquireTokenInteractive"/>),
-    /// que abre o navegador via <paramref name="openBrowser"/> e recebe o redirecionamento no
-    /// loopback local gerenciado internamente pela biblioteca.
-    /// </summary>
-    public async Task<CloudAuthResult> AuthenticateAsync(Action<string> openBrowser, CancellationToken cancellationToken = default)
+        public async Task<CloudAuthResult> AuthenticateAsync(Action<string> openBrowser, CancellationToken cancellationToken = default)
     {
         var result = await _msalApp.AcquireTokenInteractive(Scopes)
             .WithSystemWebViewOptions(new SystemWebViewOptions
@@ -85,17 +71,12 @@ public sealed class OneDriveProvider : ICloudProvider
         return new CloudAuthResult
         {
             AccessToken = result.AccessToken,
-            RefreshToken = null, // MSAL gerencia o refresh internamente via seu próprio token cache.
+            RefreshToken = null, 
             ExpiresAtUtc = result.ExpiresOn,
         };
     }
 
-    /// <summary>
-    /// Troca manual do código de autorização por tokens, usada pelo endpoint HTTP de callback da
-    /// API (onde não é possível usar o loopback interno do MSAL, pois o redirecionamento chega em
-    /// uma rota ASP.NET já existente).
-    /// </summary>
-    public async Task<CloudAuthResult> ExchangeCodeAsync(string code, string codeVerifier, string redirectUri, CancellationToken cancellationToken = default)
+        public async Task<CloudAuthResult> ExchangeCodeAsync(string code, string codeVerifier, string redirectUri, CancellationToken cancellationToken = default)
     {
         var form = new Dictionary<string, string>
         {
