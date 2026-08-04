@@ -42,7 +42,6 @@ public sealed record AnkiExportRequest(List<QuestResume.Core.Models.Flashcard> F
 
 public sealed record ExtractTableRequest(string Path, string? Instruction, string? Format);
 
-/// <summary>Body of <c>POST /api/documents/reindex</c> (item 12): reindexes a single file without rebuilding the whole index.</summary>
 public sealed record ReindexFileRequest(string Path);
 
 public sealed record FlashcardsRequest(string Path, int? Count);

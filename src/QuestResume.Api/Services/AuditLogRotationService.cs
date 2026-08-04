@@ -3,11 +3,6 @@ using QuestResume.Core.Persistence;
 
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Periodically rotates <c>audit.jsonl</c> so it never exceeds
-/// <see cref="AppOptions.MaxAuditLogLines"/>. Running this in a BackgroundService
-/// avoids an O(n) file rewrite on every <c>/api/ask</c> call.
-/// </summary>
 public sealed class AuditLogRotationService : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);

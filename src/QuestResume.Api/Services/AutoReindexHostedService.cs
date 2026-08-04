@@ -5,13 +5,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Api.Services;
 
-/// <summary>
-/// Starts an <see cref="AutoReindexWatcher"/> on <see cref="AppOptions.DocumentsFolder"/> when
-/// <see cref="AppOptions.AutoReindexEnabled"/> is set at startup, triggering a full
-/// <see cref="DocumentIndexer.IndexFolderAsync"/> run whenever the folder changes (debounced).
-/// Configuration is re-read from disk on every startup; changing the toggle via
-/// <c>PUT /api/config</c> takes effect the next time the API process restarts.
-/// </summary>
 public sealed class AutoReindexHostedService : IHostedService, IDisposable
 {
     private readonly ConfigService _configService;
