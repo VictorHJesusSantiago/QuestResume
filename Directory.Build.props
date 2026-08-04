@@ -1,7 +1,6 @@
 <Project>
   <PropertyGroup>
-    <!-- Enforce warnings-as-errors for every project in the solution so compiler
-         warnings never silently accumulate between CI runs. -->
+    
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
