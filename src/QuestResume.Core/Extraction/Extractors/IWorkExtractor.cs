@@ -3,16 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Best-effort extractor for Apple iWork documents (.pages, .numbers, .key). These are zip
-/// packages whose actual document body is stored in Apple's proprietary IWA (Snappy-compressed
-/// protobuf) format, which this project does not parse. Most iWork files, however, bundle a
-/// human-readable rendition at <c>QuickLook/Preview.pdf</c> (or <c>preview.pdf</c>) used by
-/// macOS Quick Look — when present, that PDF is extracted via <see cref="PdfExtractor"/>, giving
-/// full text for most real-world documents. When no preview is present, the file is still
-/// indexed (by name) with a PT-BR warning in <see cref="ExtractedDocument.Metadata"/>, following
-/// the project's graceful-degradation convention rather than throwing.
-/// </summary>
 public sealed class IWorkExtractor : IFileExtractor
 {
     private static readonly string[] PreviewEntryNames =
@@ -76,7 +66,7 @@ public sealed class IWorkExtractor : IFileExtractor
         }
         catch (InvalidDataException)
         {
-            // Not a valid zip; fall through to the "no content extracted" result below.
+            
         }
 
         return new ExtractedDocument

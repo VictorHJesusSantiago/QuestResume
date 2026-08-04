@@ -3,9 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts visible text from HTML/HTM files, stripping scripts, styles and markup.
-/// </summary>
 public sealed class HtmlExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".html", ".htm" };

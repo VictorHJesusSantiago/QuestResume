@@ -5,12 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from image files via OCR (Tesseract 5). Requires <c>TessDataPath</c> to be
-/// configured with a valid <c>tessdata</c> folder; otherwise returns an empty document with
-/// a <c>Metadata["warning"]</c> explaining how to set it up, following the same
-/// graceful-degradation pattern as the other extractors.
-/// </summary>
 public sealed class ImageOcrExtractor : IFileExtractor, IDisposable
 {
     private readonly TesseractOcrHelper _ocr;
@@ -57,12 +51,7 @@ public sealed class ImageOcrExtractor : IFileExtractor, IDisposable
         return Task.FromResult(document);
     }
 
-    /// <summary>
-    /// Reads date taken, camera make/model and GPS coordinates from the image's EXIF data, so
-    /// photos can be found by when/where/with-what-device they were taken. Returns <c>null</c>
-    /// if the file has no EXIF data (e.g. PNG screenshots) or it can't be parsed.
-    /// </summary>
-    private static string? TryReadExifSummary(string path)
+        private static string? TryReadExifSummary(string path)
     {
         try
         {

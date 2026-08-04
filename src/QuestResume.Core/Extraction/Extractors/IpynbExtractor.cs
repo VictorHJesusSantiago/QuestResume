@@ -4,10 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts the markdown and code cell sources from a Jupyter notebook (.ipynb),
-/// discarding outputs/metadata noise so the LLM context stays focused on content.
-/// </summary>
 public sealed class IpynbExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".ipynb" };
