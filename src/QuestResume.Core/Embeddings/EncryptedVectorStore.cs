@@ -3,20 +3,6 @@ using QuestResume.Core.Security;
 
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Decora um <see cref="IVectorStore"/> (tipicamente <see cref="VectorStore"/>) criptografando
-/// o texto do chunk e o vetor de embedding com AES-256-GCM antes de repassá-los ao armazenamento
-/// subjacente, e decriptando-os ao ler. A chave é derivada da senha mestre via PBKDF2 (ver
-/// <see cref="Security.MasterKeyManager"/>) e nunca é persistida. Caminho, nome de arquivo e
-/// índice do trecho permanecem em texto claro no SQLite (necessários para indexação/remoção por
-/// caminho e busca por prefixo), mas o conteúdo do trecho e o vetor de embedding — o que de fato
-/// permitiria reconstruir o conteúdo do documento — ficam ilegíveis em <c>vectors.db</c> sem a
-/// senha mestre.
-///
-/// Como o armazenamento subjacente só enxerga bytes criptografados, ele não pode ranquear por
-/// similaridade de cosseno sozinho: <see cref="Search"/> busca todas as entradas via
-/// <see cref="IVectorStore.GetAllEntries"/>, decripta cada uma e pontua localmente.
-/// </summary>
 public sealed class EncryptedVectorStore : IVectorStore
 {
     private readonly IVectorStore _inner;
@@ -92,10 +78,10 @@ public sealed class EncryptedVectorStore : IVectorStore
         return embedding;
     }
 
-    // The underlying VectorStore only knows how to persist float[] embeddings; to reuse it
-    // unchanged for ciphertext we round-trip the AES-GCM payload (nonce+tag+ciphertext, plus a
-    // 4-byte length prefix to recover the exact byte count after float-alignment padding)
-    // through a byte<->float[] encoding.
+    
+    
+    
+    
     private static float[] BytesToFloats(byte[] bytes)
     {
         var padded = new byte[4 + ((bytes.Length + 3) / 4) * 4];
@@ -137,9 +123,9 @@ public sealed class EncryptedVectorStore : IVectorStore
         return dot / (MathF.Sqrt(normA) * MathF.Sqrt(normB));
     }
 
-    // Embeddings visuais (CLIP) são delegados sem criptografia adicional: ao contrário do texto
-    // do trecho, um vetor CLIP isolado não permite reconstruir o conteúdo do documento, e manter
-    // o caminho em claro aqui já é necessário para localizar a imagem original.
+    
+    
+    
     public void AddImageEmbedding(string sourcePath, string fileName, float[] embedding) =>
         _inner.AddImageEmbedding(sourcePath, fileName, embedding);
 

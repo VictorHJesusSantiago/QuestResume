@@ -1,10 +1,5 @@
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Thrown when a chunk's embedding is requested but no usable ONNX model/vocabulary has been
-/// configured. Full-text (BM25) search keeps working without embeddings; this exception only
-/// affects the optional hybrid-search and indexing-time embedding steps.
-/// </summary>
 public sealed class EmbeddingsNotConfiguredException : Exception
 {
     public EmbeddingsNotConfiguredException(string modelPath, string vocabPath, Exception? innerException = null)

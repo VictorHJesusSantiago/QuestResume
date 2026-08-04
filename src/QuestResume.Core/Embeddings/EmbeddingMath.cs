@@ -1,15 +1,8 @@
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Small vector-math helpers shared by the semantic-quality features of the RAG pipeline
-/// (semantic chunking, "mais como este", deduplicação semântica) so the same cosine-similarity
-/// definition used by <see cref="VectorStore"/>/<see cref="EncryptedVectorStore"/> for search
-/// scoring is reused everywhere embeddings are compared, instead of being redefined per caller.
-/// </summary>
 public static class EmbeddingMath
 {
-    /// <summary>Cosine similarity between two equal-length vectors; 0 for empty/mismatched vectors.</summary>
-    public static float CosineSimilarity(float[] a, float[] b)
+        public static float CosineSimilarity(float[] a, float[] b)
     {
         if (a.Length != b.Length || a.Length == 0)
         {
@@ -32,8 +25,7 @@ public static class EmbeddingMath
         return dot / (MathF.Sqrt(normA) * MathF.Sqrt(normB));
     }
 
-    /// <summary>Element-wise average of a non-empty collection of equal-length vectors.</summary>
-    public static float[] Average(IReadOnlyList<float[]> vectors)
+        public static float[] Average(IReadOnlyList<float[]> vectors)
     {
         if (vectors.Count == 0)
         {

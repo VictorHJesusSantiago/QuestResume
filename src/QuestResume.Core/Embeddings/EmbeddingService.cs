@@ -4,22 +4,9 @@ using Microsoft.ML.Tokenizers;
 
 namespace QuestResume.Core.Embeddings;
 
-/// <summary>
-/// Generates sentence embeddings for text chunks using a local ONNX model and a WordPiece
-/// tokenizer (vocab.txt), via <see cref="Microsoft.ML.OnnxRuntime"/> and
-/// <see cref="BertTokenizer"/>. Used to populate and query the <see cref="VectorStore"/> for
-/// hybrid (BM25 + vector) search.
-/// </summary>
 public sealed class EmbeddingService : IEmbeddingService
 {
-    /// <summary>
-    /// Max input sequence length accepted by typical BERT-family encoders
-    /// (<c>max_position_embeddings</c>). Longer chunks are truncated before being sent to the
-    /// ONNX model — without this, a chunk tokenizing past this length can make
-    /// <see cref="InferenceSession.Run"/> throw on a shape mismatch, aborting the whole file
-    /// being indexed.
-    /// </summary>
-    private const int MaxSequenceLength = 512;
+        private const int MaxSequenceLength = 512;
 
     private readonly string _modelPath;
     private readonly string _vocabPath;
@@ -35,13 +22,7 @@ public sealed class EmbeddingService : IEmbeddingService
         _vocabPath = vocabPath;
     }
 
-    /// <summary>
-    /// Computes a normalized embedding vector for <paramref name="text"/>.
-    /// </summary>
-    /// <exception cref="EmbeddingsNotConfiguredException">
-    /// Thrown if the embedding model or vocabulary path is missing, invalid, or fails to load.
-    /// </exception>
-    public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
+        public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
 
@@ -73,9 +54,9 @@ public sealed class EmbeddingService : IEmbeddingService
             inputs.Add(NamedOnnxValue.CreateFromTensor("token_type_ids", new DenseTensor<long>(tokenTypeIds, dimensions, false)));
         }
 
-        // ONNX Runtime InferenceSession.Run is CPU-bound and blocks the calling thread for
-        // the duration of the inference pass. Task.Run offloads it to the thread pool so the
-        // ASP.NET request thread is free to handle other requests while inference runs.
+        
+        
+        
         var session = _session!;
         var mask = attentionMask;
         return Task.Run(() =>
@@ -124,13 +105,7 @@ public sealed class EmbeddingService : IEmbeddingService
         return embedding;
     }
 
-    /// <summary>
-    /// Lazily loads the ONNX session and tokenizer. Guarded by <see cref="_initLock"/> because
-    /// this <see cref="EmbeddingService"/> instance can be shared (via a singleton RAG engine)
-    /// across concurrent requests — without the lock, two threads racing through the
-    /// uninitialized check could both construct an <see cref="InferenceSession"/>, leaking one.
-    /// </summary>
-    private void EnsureInitialized()
+        private void EnsureInitialized()
     {
         if (_session is not null && _tokenizer is not null)
         {
