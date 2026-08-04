@@ -6,15 +6,6 @@ using Whisper.net.Wave;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Transcribes <c>.wav</c> audio files via Whisper.net. Requires <c>WhisperModelPath</c> to point
-/// to a ggml Whisper model; otherwise returns an empty document with a <c>Metadata["warning"]</c>
-/// explaining how to set it up, following the same graceful-degradation pattern as the other
-/// extractors. Whisper.net itself only accepts PCM 16kHz mono; if the input file isn't in that
-/// format, this extractor tries to resample it on the fly via <c>ffmpeg</c> (if available on
-/// PATH), falling back to a warning with manual conversion instructions if ffmpeg is missing or
-/// the conversion fails.
-/// </summary>
 public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
 {
     private readonly string _modelPath;
@@ -38,7 +29,7 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
 
         if (!EnsureFactory(out warning))
         {
-            // warning already set by EnsureFactory
+            
         }
         else
         {
@@ -108,12 +99,7 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
         return document;
     }
 
-    /// <summary>
-    /// Reads <paramref name="path"/> as a WAV file and returns its samples, or <c>null</c> if the
-    /// file isn't PCM 16kHz mono. Throws <see cref="NotSupportedWaveException"/> or
-    /// <see cref="CorruptedWaveException"/> if the file isn't a readable WAV at all.
-    /// </summary>
-    private static async Task<float[]?> LoadSamplesAsync(string path, CancellationToken cancellationToken)
+        private static async Task<float[]?> LoadSamplesAsync(string path, CancellationToken cancellationToken)
     {
         await using var stream = File.OpenRead(path);
         var parser = new WaveParser(stream, new WaveParserOptions());
@@ -127,12 +113,7 @@ public sealed class AudioTranscriptionExtractor : IFileExtractor, IDisposable
         return await parser.GetAvgSamplesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Tries to resample <paramref name="sourcePath"/> to PCM 16kHz mono using <c>ffmpeg</c>,
-    /// returning the path to the resulting temporary file, or <c>null</c> if ffmpeg isn't
-    /// available on PATH or the conversion fails.
-    /// </summary>
-    private static async Task<string?> TryResampleWithFfmpegAsync(string sourcePath, CancellationToken cancellationToken)
+        private static async Task<string?> TryResampleWithFfmpegAsync(string sourcePath, CancellationToken cancellationToken)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), $"questresume-stt-{Guid.NewGuid()}.wav");
 

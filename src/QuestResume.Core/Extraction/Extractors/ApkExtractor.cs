@@ -4,15 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts a best-effort summary of an Android .apk package. An APK is a ZIP archive, so the
-/// entry list is always readable; <c>AndroidManifest.xml</c> inside it is stored as Android's
-/// compact binary XML (AXML) format, not plain XML. This extractor lists the ZIP contents and
-/// attempts a minimal AXML string-pool scan (extracting readable UTF-16 strings from the
-/// manifest's string pool chunk) to surface package/permission-like strings on a best-effort
-/// basis; it does not fully parse the AXML tree. If the manifest can't be read or decoded
-/// meaningfully, falls back to just the ZIP entry listing with a clear warning.
-/// </summary>
 public sealed class ApkExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".apk" };
@@ -91,14 +82,7 @@ public sealed class ApkExtractor : IFileExtractor
         return Task.FromResult(document);
     }
 
-    /// <summary>
-    /// Minimal AXML string-pool scan: Android's binary XML format begins with a
-    /// ResStringPool_header chunk holding UTF-16LE (or UTF-8) length-prefixed strings. Rather
-    /// than fully parsing the chunk headers (out of scope for best-effort text extraction), this
-    /// scans the raw bytes for runs that look like plausible UTF-16LE printable text, which in
-    /// practice recovers most package names, permission strings, and activity/class names.
-    /// </summary>
-    private static List<string> ExtractAxmlStrings(byte[] bytes)
+        private static List<string> ExtractAxmlStrings(byte[] bytes)
     {
         var results = new List<string>();
         var current = new StringBuilder();

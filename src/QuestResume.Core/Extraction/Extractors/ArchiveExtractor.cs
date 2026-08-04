@@ -7,20 +7,14 @@ using SharpCompress.Readers;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from .7z, .rar and .tar.gz archives, via SharpCompress. Follows the same
-/// pattern as <see cref="ZipArchiveExtractor"/>: every supported entry is run through an inner
-/// <see cref="ExtractorRegistry"/> built with <c>includeArchives: false</c>, avoiding unbounded
-/// recursion on nested archives.
-/// </summary>
 public sealed class ArchiveExtractor : IFileExtractor
 {
     private readonly ExtractorRegistry _innerRegistry;
 
-    // Nota: ExtractorRegistry roteia por Path.GetExtension(path), que para "arquivo.tar.gz"
-    // devolve apenas ".gz" (a última extensão) — por isso ".gz" é a extensão registrada aqui
-    // (cobre tanto "arquivo.tar.gz" quanto um .gz avulso; SharpCompress detecta automaticamente
-    // se o conteúdo é um tarball comprimido ou um único arquivo gzipado) em vez de ".tar.gz".
+    
+    
+    
+    
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".7z", ".rar", ".gz", ".tgz" };
 
     public ArchiveExtractor(AppOptions? options = null)
