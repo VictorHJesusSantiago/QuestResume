@@ -1,9 +1,9 @@
 const $ = (id) => document.getElementById(id);
 
-// --- Múltiplas coleções ---
-// Todas as chamadas fetch a /api/* passam o cabeçalho X-Collection com a coleção selecionada
-// (persistida em localStorage), via um wrapper em torno de window.fetch — evita duplicar a
-// lógica em cada uma das dezenas de chamadas fetch espalhadas neste arquivo.
+
+
+
+
 const nativeFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
@@ -13,9 +13,9 @@ window.fetch = async (input, init) => {
     init.headers = new Headers(init.headers || {});
     init.headers.set('X-Collection', collection);
 
-    // Multiusuário (opt-in): quando o servidor tem usuários cadastrados, todo /api/* exige
-    // "Authorization: Bearer <jwt>" (exceto /api/auth/login e /api/plugins, ver Program.cs).
-    // Um servidor sem usuários cadastrados continua funcionando sem token, como sempre.
+    
+    
+    
     const token = localStorage.getItem('authToken');
     if (token && !url.startsWith('/api/auth/login')) {
       init.headers.set('Authorization', `Bearer ${token}`);
@@ -48,14 +48,14 @@ async function loadCollections() {
       localStorage.setItem('activeCollection', 'default');
     }
   } catch {
-    // Painel de coleções é um extra; falha ao carregar não deve travar o restante da UI.
+    
   }
 }
 
 $('collectionSelect').addEventListener('change', () => {
   localStorage.setItem('activeCollection', $('collectionSelect').value);
-  // A coleção ativa muda o índice usado por praticamente todas as abas; recarrega o estado
-  // visível em vez de tentar reconciliar cada painel individualmente.
+  
+  
   location.reload();
 });
 
@@ -79,7 +79,7 @@ $('newCollectionButton').addEventListener('click', async () => {
 
 loadCollections();
 
-// --- Busca por similaridade de imagem (CLIP) ---
+
 $('imageSearchButton').addEventListener('click', async () => {
   const input = $('imageSearchInput');
   const resultsEl = $('imageSearchResults');
@@ -127,9 +127,9 @@ document.querySelectorAll('nav button').forEach(btn => {
   });
 });
 
-// Color theme: dark (default), light, high-contrast, green — all implemented as
-// [data-theme="..."] CSS custom-property overrides in styles.css. Persisted in localStorage and
-// applied on load via the #colorThemeSelect in the header.
+
+
+
 const VALID_THEMES = ['dark', 'light', 'high-contrast', 'green'];
 function applyColorTheme(theme) {
   if (!VALID_THEMES.includes(theme)) theme = 'dark';
@@ -145,9 +145,9 @@ function applyColorTheme(theme) {
 applyColorTheme(localStorage.getItem('theme') || 'dark');
 $('colorThemeSelect').addEventListener('change', () => applyColorTheme($('colorThemeSelect').value));
 
-// Font size: small/medium/large, applied via the --base-font-size CSS custom property on :root
-// (consumed by body { font-size: var(--base-font-size, 16px) } in styles.css). Persisted in
-// localStorage and applied on load via the #fontSizeSelect in the header.
+
+
+
 const FONT_SIZES = { small: '14px', medium: '16px', large: '19px' };
 function applyFontSize(size) {
   if (!FONT_SIZES[size]) size = 'medium';
@@ -213,17 +213,17 @@ async function loadConfig() {
   $('googleDriveClientIdInput').value = config.googleDriveClientId || '';
   $('oneDriveClientIdInput').value = config.oneDriveClientId || '';
   $('dropboxClientIdInput').value = config.dropboxClientId || '';
-  // Lote 8 — Sub-lote A: ajustes finos do LLM.
+  
   $('llmTemperatureInput').value = config.llmTemperature ?? 0.8;
   $('llmTopPInput').value = config.llmTopP ?? 0.9;
   $('llmSeedInput').value = config.llmSeed ?? '';
   $('customSystemPromptInput').value = config.customSystemPrompt || '';
   $('summarizationModelPathInput').value = config.summarizationModelPath || '';
-  // Lote 8 — Sub-lote B: expansão de consulta / HyDE / multi-query.
+  
   $('queryExpansionEnabledInput').checked = !!config.queryExpansionEnabled;
   $('hydeEnabledInput').checked = !!config.hydeEnabled;
   $('multiQueryEnabledInput').checked = !!config.multiQueryEnabled;
-  // Lote 8 — Sub-lote E1: hooks pós-indexação.
+  
   $('entityExtractionEnabledInput').checked = !!config.entityExtractionEnabled;
   $('documentVersioningEnabledInput').checked = !!config.documentVersioningEnabled;
 }
@@ -292,13 +292,13 @@ $('saveConfigButton').addEventListener('click', async () => {
   }
 });
 
-// --- Integrações com nuvem (Google Drive / OneDrive / Dropbox) ---
-// Fluxo OAuth2 Authorization Code + PKCE: obtemos a URL de autorização do backend (que já
-// guarda o code_verifier no servidor, associado a um "state" opaco embutido na própria URL —
-// veja CloudOAuthStateStore.cs), abrimos a URL numa nova aba e, quando o provedor redireciona
-// de volta para /api/cloud/{provider}/callback com "code"+"state" na query string, o próprio
-// endpoint recupera o code_verifier pelo state e troca o código por token — não há nada para o
-// JavaScript desta página fazer além de abrir a aba e aguardar a confirmação nela.
+
+
+
+
+
+
+
 async function connectCloudProvider(provider) {
   $('cloudSyncStatus').textContent = `Abrindo autenticação com ${provider}...`;
   $('cloudSyncStatus').className = 'status-line';
@@ -403,11 +403,11 @@ $('restoreFileInput').addEventListener('change', async (event) => {
   }
 });
 
-// --- Barra de progresso da indexação (item 16) ---
-// DocumentIndexer reporta progresso via IProgress<string> no formato "[N/M] mensagem" (ver
-// DocumentIndexer.cs); Program.cs guarda o último texto em IndexingProgressStore e o expõe via
-// GET /api/index/progress. Como não há SSE aqui, fazemos polling nesse endpoint enquanto a
-// chamada POST /api/index (que só retorna ao final) está em andamento.
+
+
+
+
+
 let indexProgressPollTimer = null;
 
 function startIndexProgressPolling(rowEl, barEl, textEl) {
@@ -429,7 +429,7 @@ function startIndexProgressPolling(rowEl, barEl, textEl) {
         textEl.textContent = data.message || '';
       }
     } catch {
-      // Falha temporária de rede durante o polling não deve interromper a indexação em si.
+      
     }
   }, 1000);
 }
@@ -441,8 +441,8 @@ function stopIndexProgressPolling() {
   }
 }
 
-// Dispara POST /api/index e acompanha o progresso via polling; reutilizado pelo botão "Indexar"
-// da aba Configurações e pela última etapa do wizard de primeira execução.
+
+
 async function runIndexing(folderPath, { statusEl, buttonEl, progressRowEl, progressBarEl, progressTextEl }) {
   if (buttonEl) buttonEl.disabled = true;
   statusEl.textContent = 'Indexando... isso pode levar alguns minutos.';
@@ -497,13 +497,13 @@ $('indexButton').addEventListener('click', async () => {
       progressTextEl: $('indexProgressText')
     });
   } catch {
-    // Erro já refletido em indexStatus por runIndexing.
+    
   }
 });
 
-// Splits a highlight string on the U+0001/U+0002 markers produced by the Lucene highlighter
-// (SearchService) and appends the result to `container` as text nodes plus <mark> elements,
-// so matched terms can be styled without using innerHTML on document-derived content.
+
+
+
 function appendHighlighted(container, highlight) {
   const parts = highlight.split('');
   container.append(parts[0]);
@@ -515,10 +515,10 @@ function appendHighlighted(container, highlight) {
   }
 }
 
-// Clicking a citation opens a modal with the exact chunk of text the LLM used to answer,
-// fetched from GET /api/documents/chunk (falls back to the whole-document preview if the
-// specific chunk index is unavailable). The modal also offers a button to open the original
-// file, mirroring the previous file:// link behaviour.
+
+
+
+
 function appendSources(container, sources) {
   if (!sources || !sources.length) return;
 
@@ -550,8 +550,8 @@ function appendSources(container, sources) {
   container.appendChild(sourcesDiv);
 }
 
-// Confidence badge (item 5): renders AskResult.confidenceScore (0-1) as a green/yellow/red pill.
-// >= 0.66 = alta confiança, >= 0.33 = média, abaixo disso = baixa.
+
+
 function appendConfidenceBadge(container, confidenceScore, isFaithful) {
   if (confidenceScore == null) return;
 
@@ -577,10 +577,10 @@ function appendConfidenceBadge(container, confidenceScore, isFaithful) {
   container.appendChild(badge);
 }
 
-// Extracts the distinct matched terms from a highlighter fragment (text between the U+0001/
-// U+0002 markers produced by SearchService's Lucene Highlighter) so they can be re-highlighted
-// inside the *full* chunk text shown in the citation modal — the highlight fragment itself is
-// only a ~150-char snippet, not the whole chunk.
+
+
+
+
 function extractHighlightTerms(highlight) {
   if (!highlight) return [];
   const terms = new Set();
@@ -592,8 +592,8 @@ function extractHighlightTerms(highlight) {
   return [...terms];
 }
 
-// Renders `chunkText` into `container` as text, wrapping every case-insensitive occurrence of
-// any term in `terms` in a <mark> element — the exact trecho highlighted in the citation.
+
+
 function renderChunkTextWithHighlight(container, chunkText, terms) {
   container.textContent = '';
   if (!terms.length) {
@@ -690,9 +690,9 @@ function appendTranslateControls(container, getText) {
   container.append(row, result);
 }
 
-// Re-renders `textSpan`'s content as Markdown from `rawText`, using window.renderMarkdown
-// (markdown.js) instead of textContent so answers get bold/italic/code/lists/headings without
-// ever touching innerHTML. Falls back to plain text if markdown.js hasn't loaded for some reason.
+
+
+
 function renderMessageText(textSpan, rawText) {
   textSpan.rawText = rawText;
   textSpan.replaceChildren();
@@ -703,10 +703,10 @@ function renderMessageText(textSpan, rawText) {
   }
 }
 
-// --- Sessões de chat persistentes (localStorage) ---
-// Estrutura: { sessions: [{id, name, messages: [{role, text, sources, favorited}], createdAt}],
-// activeSessionId }. O antigo array solto `chatHistory` (histórico da conversa) agora vive dentro
-// das `messages` da sessão ativa.
+
+
+
+
 const CHAT_SESSIONS_KEY = 'chatSessions';
 const MAX_HISTORY_TURNS = 4;
 
@@ -724,7 +724,7 @@ function loadChatSessionsStore() {
     const raw = JSON.parse(localStorage.getItem(CHAT_SESSIONS_KEY) || 'null');
     if (raw && Array.isArray(raw.sessions) && raw.sessions.length > 0) return raw;
   } catch {
-    // Dados corrompidos: recomeça com uma sessão nova.
+    
   }
   const session = makeChatSession('Conversa 1');
   return { sessions: [session], activeSessionId: session.id };
@@ -755,8 +755,8 @@ function pushMessageToSession(role, text, sources) {
   return session.messages.length - 1;
 }
 
-// All complete question/answer pairs in the active session, used for export and (sliced) as
-// conversational memory sent to the backend.
+
+
 function getAllQaPairs() {
   const session = getActiveSession();
   const pairs = [];
@@ -817,8 +817,8 @@ function sessionMatchesQuery(session, query) {
   return session.messages.some(m => (m.text || '').toLowerCase().includes(q));
 }
 
-// Appends `text` to `container` as text nodes plus <mark> elements around case-insensitive
-// occurrences of `query`, mirroring appendHighlighted's approach of avoiding innerHTML.
+
+
 function appendTextWithHighlight(container, text, query) {
   if (!query) {
     container.append(text);
@@ -948,8 +948,8 @@ function startEditMessage(index) {
   pendingEditIndex = index;
 }
 
-// Renders a single stored message (question or answer) into #chatLog, wiring up the per-message
-// action buttons (Editar/Copiar/Regenerar/Favoritar) required by items 11-13.
+
+
 function renderStoredMessage(msg, index) {
   const div = document.createElement('div');
   div.className = `msg ${msg.role}`;
@@ -1019,12 +1019,12 @@ function setAskingState(isAsking) {
   $('stopGenerationButton').classList.toggle('hidden', !isAsking);
 }
 
-// Sends `question` to /api/ask/stream and renders the answer incrementally as it's generated
-// (SSE frames: `event: sources|token|done|error` followed by `data: <json>\n\n`), for a
-// ChatGPT-style streaming response. `history` is the list of prior Q/A pairs to send as
-// conversational memory. If `existingIndex` is given (regenerate), the answer message at that
-// position in the active session is replaced instead of appending a new one. An AbortController
-// backs the "Parar" button (item 10): aborting mid-stream keeps whatever text was received so far.
+
+
+
+
+
+
 async function streamAsk(question, history, existingIndex) {
   currentAbortController = new AbortController();
 
@@ -1109,9 +1109,9 @@ async function streamAsk(question, history, existingIndex) {
   answerDiv = $('chatLog').querySelector(`.msg[data-index="${answerIndex}"]`) || answerDiv;
   appendSources(answerDiv, sources);
 
-  // /api/ask/stream não retorna sugestões de perguntas relacionadas (geradas apenas em
-  // POST /api/ask). Como a resposta acabou de ser gerada, engine.AskAsync reaproveita o
-  // cache de resposta (mesma pergunta + topK), então esta chamada extra é barata.
+  
+  
+  
   try {
     const relatedRes = await fetch('/api/ask', {
       method: 'POST',
@@ -1127,7 +1127,7 @@ async function streamAsk(question, history, existingIndex) {
       appendConfidenceBadge(answerDiv, relatedData.confidenceScore, relatedData.isFaithful);
     }
   } catch {
-    // Sugestões são um extra best-effort; falha aqui não deve afetar a resposta principal.
+    
   }
 
   renderChatSessionsSidebar();
@@ -1151,8 +1151,8 @@ function renderRelatedQuestions(container, questions) {
   container.appendChild(wrap);
 }
 
-// Re-sends the question preceding `answerIndex` and replaces the answer at the same position
-// in the active session (item 11 - regenerate).
+
+
 async function regenerateAnswer(answerIndex) {
   const session = getActiveSession();
   const questionMsg = session.messages[answerIndex - 1];
@@ -1187,9 +1187,9 @@ async function regenerateAnswer(answerIndex) {
   }
 }
 
-// Submits a new question. If `truncateFromIndex` is given (editing a previous question, item 11),
-// every message from that point on is dropped from the active session before the new
-// question+answer is appended.
+
+
+
 async function submitQuestion(question, truncateFromIndex) {
   const session = getActiveSession();
   if (truncateFromIndex != null) {
@@ -1236,8 +1236,8 @@ $('stopGenerationButton').addEventListener('click', () => {
   if (currentAbortController) currentAbortController.abort();
 });
 
-// Plain Enter submits directly; Ctrl+Enter is handled by the configurable shortcuts listener
-// below (so it stays consistent with the shortcuts customization screen).
+
+
 $('questionInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.ctrlKey) $('askButton').click();
 });
@@ -1291,7 +1291,7 @@ $('exportChatPdfButton').addEventListener('click', async () => {
   }
 });
 
-// Bootstrap: restore the persisted chat sessions into the sidebar and #chatLog on load (item 7/8).
+
 renderChatSessionsSidebar();
 renderChatLogFromSession();
 
@@ -1325,8 +1325,8 @@ $('searchButton').addEventListener('click', async () => {
       return;
     }
 
-    // Built via textContent/createElement (not innerHTML), since fileName/chunkText/sourcePath
-    // come from the user's indexed documents and could otherwise inject markup/scripts.
+    
+    
     for (const r of data) {
       const item = document.createElement('div');
       item.className = 'result-item';
@@ -1371,8 +1371,8 @@ $('searchInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('searchButton').click();
 });
 
-// Built via textContent/createElement (not innerHTML), since file names/paths come from the
-// user's indexed documents and could otherwise inject markup/scripts.
+
+
 async function loadDocuments() {
   const listEl = $('documentsList');
   listEl.replaceChildren();
@@ -1445,7 +1445,7 @@ async function loadDocuments() {
         removeButton.addEventListener('click', () => removeDocument(doc.sourcePath));
 
         item.append(info, previewButton, extractTableButton, reindexButton, removeButton);
-        // Lote 8 — Sub-lotes B/C: botões de análise por documento (definidos em lote8.js).
+        
         if (typeof window.appendLote8DocButtons === 'function') {
           window.appendLote8DocButtons(item, doc.sourcePath);
         }
@@ -1499,7 +1499,7 @@ async function loadAvailableTags() {
       listEl.appendChild(option);
     }
   } catch {
-    // Tag suggestions are a nice-to-have; ignore failures.
+    
   }
 }
 
@@ -1601,23 +1601,23 @@ async function loadStats() {
   }
 }
 
-// Renders `documentsByExtension` (e.g. { pdf: 12, docx: 3 }) as a donut chart (charts.js), so the
-// dashboard shows a real chart instead of plain CSS bars.
+
+
 function renderExtensionChart(documentsByExtension) {
   renderDonutChart($('extensionChart'), Object.entries(documentsByExtension));
 }
 
-// Renders `questionsByDay` (e.g. { "2026-07-01": 4, "2026-07-02": 9 }) as a bar chart of
-// questions asked per day, sourced from the audit log via GET /api/stats.
+
+
 function renderQuestionsChart(questionsByDay) {
   const entries = Object.entries(questionsByDay).sort(([a], [b]) => a.localeCompare(b));
   renderBarChart($('questionsChart'), entries);
 }
 
-// --- Paginação do preview de documento (item 15) ---
-// GET /api/documents/preview aceita ?page=N&pageSize=M e retorna { fileName, content, page,
-// totalPages }; o modal mostra botões "Anterior"/"Próxima" e um indicador "Página X de Y" em
-// vez do antigo corte fixo em 20000 caracteres.
+
+
+
+
 const PREVIEW_PAGE_SIZE = 5000;
 let previewState = { path: null, page: 1, totalPages: 1 };
 
@@ -1705,7 +1705,7 @@ async function reindexDocument(path, buttonEl) {
 $('refreshDocumentsButton').addEventListener('click', loadDocuments);
 $('refreshStatsButton').addEventListener('click', loadStats);
 
-// --- Extração de tabela (LLM) ---
+
 
 let extractTablePath = null;
 let extractTableLastResult = null;
@@ -1765,7 +1765,7 @@ $('extractTableModal').addEventListener('click', (e) => {
   if (e.target === $('extractTableModal')) $('extractTableModal').classList.remove('active');
 });
 
-// --- Estudo: flashcards e quiz (LLM) ---
+
 
 $('generateFlashcardsButton').addEventListener('click', async () => {
   const path = $('studyDocInput').value.trim();
@@ -1789,7 +1789,7 @@ $('generateFlashcardsButton').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao gerar flashcards.');
 
-    // Lote 8: guarda os últimos flashcards para exportação Anki (lote8.js).
+    
     window.lastFlashcards = data;
 
     for (const card of data) {
@@ -1879,10 +1879,10 @@ $('generateQuizButton').addEventListener('click', async () => {
   }
 });
 
-// --- Upload / arrastar e soltar (drag-and-drop) ---
-// Browsers do not expose the absolute path of dropped files, so instead of trying to fake a
-// folder path, dropped/selected files are uploaded via POST /api/upload into a dedicated
-// subfolder of the configured index path, then indexed normally with POST /api/index.
+
+
+
+
 
 let lastUploadsFolder = null;
 
@@ -1996,9 +1996,9 @@ $('indexUploadsButton').addEventListener('click', async () => {
   }
 });
 
-// --- Atalhos de teclado configuráveis ---
-// Mapping is persisted in localStorage so it survives reloads; a central keydown listener
-// dispatches to the matching action. Keys are normalized to a string like "ctrl+enter".
+
+
+
 
 const DEFAULT_SHORTCUTS = {
   focusSearch: { keys: '/', label: 'Focar busca (aba Buscar)' },
@@ -2125,7 +2125,7 @@ function renderShortcutsHelp() {
 document.addEventListener('keydown', (e) => {
   const combo = normalizeKeyEvent(e);
 
-  // Escape always closes modals, even while typing in an input.
+  
   if (combo === 'escape') {
     if (document.querySelector('.modal-overlay.active')) {
       e.preventDefault();
@@ -2134,7 +2134,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Ctrl+Enter inside the question box submits, regardless of the typing guard below.
+  
   if (combo === currentShortcuts.sendQuestion.keys && document.activeElement === $('questionInput')) {
     e.preventDefault();
     runShortcutAction('sendQuestion');
@@ -2159,10 +2159,10 @@ $('shortcutsHelpModal').addEventListener('click', (e) => {
 
 renderShortcutsList();
 
-// --- Login (multiusuário, opt-in) ---
-// Mostrado apenas quando o servidor responde 401 (há usuários cadastrados e ainda não estamos
-// autenticados nesta aba/navegador). Servidores em modo single-user (sem usuários cadastrados)
-// nunca exibem este overlay — o app funciona exatamente como antes.
+
+
+
+
 function showLoginOverlay() {
   $('loginOverlay').classList.add('active');
 }
@@ -2190,11 +2190,11 @@ async function initApp() {
   await maybeShowFirstRunWizard();
 }
 
-// --- Wizard de primeira execução (item 17) ---
-// Quando DocumentsFolder, IndexPath e ModelPath estão todos vazios (servidor recém-instalado,
-// nenhuma configuração ainda), mostra um wizard de 3 passos em vez dos campos de configuração
-// vazios da aba Configurações: (1) pasta de documentos, (2) modelo de IA local, (3) salvar +
-// disparar a primeira indexação (reutilizando runIndexing/salvarConfig já existentes).
+
+
+
+
+
 let wizardStep = 1;
 
 async function maybeShowFirstRunWizard() {
@@ -2209,8 +2209,8 @@ async function maybeShowFirstRunWizard() {
       $('wizardModal').classList.add('active');
     }
   } catch {
-    // Se /api/config falhar aqui, o restante da UI já vai reportar o erro de outra forma
-    // (loadStatus/loadConfig) — não bloqueia a inicialização por causa do wizard.
+    
+    
   }
 }
 
@@ -2300,7 +2300,7 @@ $('loginButton').addEventListener('click', async () => {
   $('loginStatus').textContent = 'Entrando...';
   $('loginStatus').className = 'status-line';
   try {
-    // Campo opcional de 2FA (TOTP): enviado apenas quando o input existir e estiver preenchido.
+    
     const totpEl = document.getElementById('loginTotpInput');
     const totpCode = totpEl ? totpEl.value.trim() : '';
     const res = await nativeFetch('/api/auth/login', {
@@ -2337,12 +2337,12 @@ $('logoutButton').addEventListener('click', () => {
 
 updateLoggedInUserBadge();
 
-// --- Bloqueio automático por inatividade (item 1) ---
-// Após N minutos sem interação (mouse/teclado/toque), esconde o conteúdo e reexibe o overlay de
-// login, exigindo a senha novamente antes de continuar. N é configurável em localStorage
-// ('autoLockMinutes', padrão 15). Reutiliza o overlay de login já existente; em modo single-user
-// (sem token) o overlay de login não valida credenciais, então só bloqueamos quando há um usuário
-// autenticado (authToken presente).
+
+
+
+
+
+
 const AUTO_LOCK_DEFAULT_MINUTES = 15;
 let autoLockTimer = null;
 
@@ -2352,12 +2352,12 @@ function autoLockMinutes() {
 }
 
 function lockSession() {
-  // Só bloqueia quando há sessão autenticada para reexigir a senha; caso contrário, apenas rearma.
+  
   if (!localStorage.getItem('authToken')) {
     return;
   }
-  // Descarta o token: a próxima requisição dá 401 e o fluxo normal de re-login assume, e forçamos
-  // o overlay imediatamente para esconder o conteúdo sensível já.
+  
+  
   localStorage.removeItem('authToken');
   updateLoggedInUserBadge();
   showLoginOverlay();
@@ -2380,17 +2380,17 @@ function resetAutoLockTimer() {
 });
 resetAutoLockTimer();
 
-// Bootstrap: uma chamada leve decide se o overlay de login precisa aparecer antes de disparar
-// o carregamento normal do resto da interface (evita uma enxurrada de respostas 401 no console
-// quando há usuários cadastrados e ainda não há token salvo nesta aba).
+
+
+
 (async () => {
   try {
     const probe = await fetch('/api/status');
     if (probe.status === 401) {
-      return; // showLoginOverlay() já foi chamado pelo wrapper de fetch acima.
+      return; 
     }
   } catch {
-    // Rede indisponível — segue para initApp(), que vai falhar de forma visível no status.
+    
   }
   await initApp();
 })();

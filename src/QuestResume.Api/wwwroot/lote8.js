@@ -1,9 +1,9 @@
-// ============================================================================
-// Lote 8 — conexões finais do Web UI com endpoints já existentes no backend.
-// Carregado depois de app.js, reaproveita o wrapper global de window.fetch
-// (cabeçalhos X-Collection + Authorization) definido lá. Todas as strings de UI
-// são PT-BR; nomes/paths vindos dos documentos são inseridos via textContent.
-// ============================================================================
+
+
+
+
+
+
 (function () {
   'use strict';
   const g = (id) => document.getElementById(id);
@@ -13,7 +13,7 @@
   function statusErr(el, msg) { if (el) { el.textContent = msg; el.className = 'status-line status-error'; } }
   function statusInfo(el, msg) { if (el) { el.textContent = msg; el.className = 'status-line'; } }
 
-  // Dispara o download de uma resposta binária (blob) com um nome de arquivo.
+  
   async function downloadResponse(res, fallbackName) {
     const blob = await res.blob();
     let name = fallbackName;
@@ -30,9 +30,9 @@
     URL.revokeObjectURL(url);
   }
 
-  // ---------------------------------------------------------------------------
-  // Sub-lote A — Ajustes do LLM
-  // ---------------------------------------------------------------------------
+  
+  
+  
   async function loadPersonas() {
     const sel = g('personaSelect');
     if (!sel) return;
@@ -51,7 +51,7 @@
         opt.textContent = p.name;
         sel.appendChild(opt);
       }
-    } catch { /* personas são opcionais */ }
+    } catch {  }
   }
 
   on('suggestGpuLayersButton', 'click', async () => {
@@ -81,11 +81,11 @@
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Sub-lote B — Busca avançada (ordenação, filtros, paginação, fuzzy, sugestões)
-  // Assume o controle da aba Buscar substituindo o botão para remover o listener
-  // que app.js registrou (evita disparo duplicado).
-  // ---------------------------------------------------------------------------
+  
+  
+  
+  
+  
   const SEARCH_PAGE_SIZE = 20;
   let searchPage = 1;
   let lastSearchResults = [];
@@ -160,7 +160,7 @@
         });
         el.appendChild(link);
       });
-    } catch { /* sugestões são opcionais */ }
+    } catch {  }
   }
 
   async function runSearch(page) {
@@ -204,7 +204,7 @@
     }
   }
 
-  // Remove o listener original de app.js clonando o botão, e assume a busca.
+  
   const searchBtn = g('searchButton');
   if (searchBtn) {
     const clone = searchBtn.cloneNode(true);
@@ -214,7 +214,7 @@
   on('searchPrevButton', 'click', () => { if (searchPage > 1) runSearch(searchPage - 1); });
   on('searchNextButton', 'click', () => runSearch(searchPage + 1));
 
-  // Autocomplete via <datalist> alimentado por /api/search/suggest.
+  
   let suggestTimer = null;
   on('searchInput', 'input', () => {
     clearTimeout(suggestTimer);
@@ -232,7 +232,7 @@
           opt.value = s;
           list.appendChild(opt);
         }
-      } catch { /* opcional */ }
+      } catch {  }
     }, 250);
   });
 
@@ -252,9 +252,9 @@
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Sub-lote C — Análise (modal genérico) + botões por documento
-  // ---------------------------------------------------------------------------
+  
+  
+  
   function openAnalysisModal(title) {
     if (g('analysisModalTitle')) g('analysisModalTitle').textContent = title;
     const body = g('analysisModalBody');
@@ -267,7 +267,7 @@
     g('analysisModal').addEventListener('click', (e) => { if (e.target === g('analysisModal')) g('analysisModal').classList.remove('active'); });
   }
 
-  // Renderiza recursivamente um nó de mapa mental como árvore <ul><li>.
+  
   function renderMindMapNode(parentUl, node) {
     const li = document.createElement('li');
     li.textContent = node.topic || '';
@@ -334,7 +334,7 @@
     }
   }
 
-  // Chamado por app.js loadDocuments para cada item de documento.
+  
   window.appendLote8DocButtons = function (item, sourcePath) {
     const mk = (label, kind) => {
       const b = document.createElement('button');
@@ -350,7 +350,7 @@
     );
   };
 
-  // Exportar flashcards para Anki (usa os últimos gerados por app.js).
+  
   on('exportAnkiButton', 'click', async () => {
     const st = g('studyStatus');
     const cards = window.lastFlashcards;
@@ -369,7 +369,7 @@
     }
   });
 
-  // Exportações adicionais de chat: DOCX/HTML/TXT.
+  
   function chatTurns() {
     if (typeof window.getAllQaPairs !== 'function') return [];
     return window.getAllQaPairs().map((t) => ({ question: t.question, answer: t.answer, sources: [] }));
@@ -393,12 +393,12 @@
   on('exportChatHtmlButton', 'click', () => exportChat('/api/chat/export-html', 'html'));
   on('exportChatTxtButton', 'click', () => exportChat('/api/chat/export-txt', 'txt'));
 
-  // getAllQaPairs vive em app.js; exponha-a no window se ainda não estiver.
+  
   if (typeof getAllQaPairs === 'function' && typeof window.getAllQaPairs !== 'function') {
     window.getAllQaPairs = getAllQaPairs;
   }
 
-  // Grafo de conhecimento em <canvas> (nós em círculo, arestas como linhas).
+  
   on('loadKnowledgeGraphButton', 'click', async () => {
     const st = g('knowledgeGraphStatus');
     const canvas = g('knowledgeGraphCanvas');
@@ -448,7 +448,7 @@
     }
   }
 
-  // Comparação de 2+ documentos: checkboxes populados a partir de /api/documents.
+  
   window.onLote8DocumentsLoaded = async function () {
     const listEl = g('compareDocsList');
     if (!listEl) return;
@@ -465,7 +465,7 @@
         label.append(cb, ' ', doc.fileName || doc.sourcePath);
         listEl.appendChild(label);
       }
-    } catch { /* opcional */ }
+    } catch {  }
   };
 
   on('compareDocsButton', 'click', async () => {
@@ -490,7 +490,7 @@
     }
   });
 
-  // Anotações.
+  
   async function loadAnnotations(path) {
     const listEl = g('annotationsList');
     if (!listEl) return;
@@ -543,9 +543,9 @@
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Sub-lote D — Diagnóstico, saúde do índice, disco, import/export config, 2FA
-  // ---------------------------------------------------------------------------
+  
+  
+  
   on('exportDiagnosticsButton', 'click', async () => {
     try {
       const res = await fetch('/api/diagnostics/export');
@@ -644,11 +644,11 @@
         div.textContent = `${u.name}: ${u.sizeMb} MB`;
         listEl.appendChild(div);
       }
-    } catch { /* opcional */ }
+    } catch {  }
   }
   on('refreshStatsButton', 'click', loadDiskUsage);
 
-  // 2FA: revela o campo de código quando a API sinaliza que é necessário.
+  
   const loginStatusEl = g('loginStatus');
   if (loginStatusEl && typeof MutationObserver === 'function') {
     const obs = new MutationObserver(() => {
@@ -661,11 +661,11 @@
     obs.observe(loginStatusEl, { childList: true, characterData: true, subtree: true });
   }
 
-  // ---------------------------------------------------------------------------
-  // Sub-lote E2 — Voz por microfone (Web Speech API nativa do navegador).
-  // OBS: é reconhecimento local do navegador; no Chrome o áudio pode ser
-  // processado nos servidores do Google (decisão do Lote 5, mantida aqui).
-  // ---------------------------------------------------------------------------
+  
+  
+  
+  
+  
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const micBtn = g('micButton');
   if (micBtn) {
@@ -693,9 +693,9 @@
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Sub-lote E3 — TTS "Ouvir" em cada resposta (window.speechSynthesis nativo).
-  // ---------------------------------------------------------------------------
+  
+  
+  
   window.appendLote8ListenButton = function (actionsRow, getText) {
     if (!('speechSynthesis' in window)) return;
     const btn = document.createElement('button');
@@ -713,9 +713,9 @@
     actionsRow.appendChild(btn);
   };
 
-  // ---------------------------------------------------------------------------
-  // Inicialização
-  // ---------------------------------------------------------------------------
+  
+  
+  
   function initLote8() {
     loadPersonas();
     loadDiskUsage();

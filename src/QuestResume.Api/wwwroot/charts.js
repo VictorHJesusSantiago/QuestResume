@@ -1,7 +1,7 @@
-// Minimal dependency-free canvas chart renderer for the dashboard (no CDN/npm build — the app is
-// offline-first). Provides a donut chart (used for "Documentos por tipo") and a bar/line chart
-// (used for "Perguntas ao longo do tempo"). Colors follow the app's CSS custom properties so the
-// charts adapt to the light/dark theme.
+
+
+
+
 
 const CHART_PALETTE = ['#38bdf8', '#4ade80', '#facc15', '#f87171', '#a78bfa', '#fb923c', '#2dd4bf', '#f472b6', '#818cf8', '#94a3b8'];
 
@@ -10,10 +10,7 @@ function cssVar(name, fallback) {
   return value || fallback;
 }
 
-/**
- * Renders a donut chart of `entries` (array of [label, value]) into the given <canvas>.
- * Also appends a text legend after the canvas inside `container`.
- */
+
 function renderDonutChart(container, entries) {
   container.replaceChildren();
 
@@ -70,8 +67,8 @@ function renderDonutChart(container, entries) {
     legend.appendChild(item);
   });
 
-  // Cut out the inner circle to turn the pie into a donut, filling with the panel background
-  // color so it blends with the surrounding card.
+  
+  
   ctx.beginPath();
   ctx.arc(cx, cy, innerRadius, 0, Math.PI * 2);
   ctx.fillStyle = cssVar('--panel', '#1e293b');
@@ -83,10 +80,7 @@ function renderDonutChart(container, entries) {
   container.replaceChildren(wrapper);
 }
 
-/**
- * Renders a simple bar chart of `entries` (array of [label, value], e.g. dates and counts) into
- * the given container, drawn on a <canvas>.
- */
+
 function renderBarChart(container, entries) {
   container.replaceChildren();
 
@@ -120,7 +114,7 @@ function renderBarChart(container, entries) {
   const barColor = cssVar('--accent', '#38bdf8');
   const textColor = cssVar('--muted', '#94a3b8');
 
-  // Baseline.
+  
   ctx.strokeStyle = gridColor;
   ctx.beginPath();
   ctx.moveTo(padding.left, padding.top + plotHeight);
@@ -142,7 +136,7 @@ function renderBarChart(container, entries) {
     ctx.fillStyle = textColor;
     ctx.fillText(String(value), x + barWidth / 2, y - 4 < padding.top ? padding.top + 10 : y - 4);
 
-    const shortLabel = label.length > 6 ? label.slice(5) : label; // e.g. "2026-07-01" -> "07-01"
+    const shortLabel = label.length > 6 ? label.slice(5) : label; 
     ctx.save();
     ctx.translate(x + barWidth / 2, padding.top + plotHeight + 14);
     ctx.rotate(-Math.PI / 6);

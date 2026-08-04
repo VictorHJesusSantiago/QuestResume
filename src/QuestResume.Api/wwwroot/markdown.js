@@ -1,9 +1,9 @@
-// Minimal, dependency-free Markdown renderer used for LLM answers in the chat.
-// Everything is built via document.createElement/textContent — never innerHTML with
-// LLM/user-derived text — so there is no way for the rendered text to inject markup.
-// Supports: **bold**, *italic*, `inline code`, ```fenced code blocks``` (with optional
-// language + basic syntax highlighting for csharp/javascript/typescript/python/sql),
-// - / * bullet lists, 1. numbered lists, and #/##/### headings.
+
+
+
+
+
+
 (function () {
   const KEYWORDS = {
     csharp: [
@@ -49,13 +49,13 @@
     return (lang || '').trim().toLowerCase();
   }
 
-  // Tokenizes a line of code into { type, text } pieces using one combined regex covering
-  // comments, strings and numbers; everything else falls through to a plain-text token which is
-  // then re-scanned for keywords on word boundaries. All spans are built via createElement, so
-  // the "type" is always one of a fixed, hardcoded set of class names.
+  
+  
+  
+  
   function tokenizeLine(line, keywords) {
     const tokens = [];
-    // comment (// or #), string ('...' / "..." / `...`), number
+    
     const pattern = /(\/\/.*$|#.*$|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b\d+(?:\.\d+)?\b)/g;
     let lastIndex = 0;
     let match;
@@ -74,7 +74,7 @@
       tokens.push({ type: 'plain', text: line.slice(lastIndex) });
     }
 
-    // Re-split "plain" tokens further to mark keywords.
+    
     const finalTokens = [];
     const keywordSet = new Set(keywords || []);
     for (const token of tokens) {
@@ -138,8 +138,8 @@
     return pre;
   }
 
-  // Parses inline markdown (**bold**, *italic*, `code`) within a single block of text and
-  // appends the resulting nodes to `container`.
+  
+  
   function renderInline(container, text) {
     const pattern = /(\*\*(?:[^*]|\*(?!\*))+\*\*|`[^`]+`|\*(?:[^*]+)\*)/g;
     let lastIndex = 0;
@@ -192,9 +192,9 @@
     listItems.length = 0;
   }
 
-  // Parses `rawText` (LLM/markdown-ish text) into a DocumentFragment of real DOM nodes, ready
-  // for appendChild. No HTML string is ever parsed — headings/lists/paragraphs are built element
-  // by element and all text content goes through textContent/Text nodes.
+  
+  
+  
   function renderMarkdown(rawText) {
     const fragment = document.createDocumentFragment();
     if (!rawText) return fragment;
@@ -213,7 +213,7 @@
     while (i < lines.length) {
       const line = lines[i];
 
-      // Fenced code block.
+      
       const fenceMatch = /^```\s*([\w+-]*)\s*$/.exec(line);
       if (fenceMatch) {
         flushAll();
@@ -224,12 +224,12 @@
           codeLines.push(lines[i]);
           i++;
         }
-        i++; // skip closing fence (or move past end)
+        i++; 
         fragment.appendChild(renderCodeBlock(codeLines.join('\n'), lang));
         continue;
       }
 
-      // Headings.
+      
       const headingMatch = /^(#{1,3})\s+(.*)$/.exec(line);
       if (headingMatch) {
         flushAll();
@@ -242,7 +242,7 @@
         continue;
       }
 
-      // Numbered list item.
+      
       const orderedMatch = /^\s*\d+\.\s+(.*)$/.exec(line);
       if (orderedMatch) {
         if (listItems.length && !listOrdered) flushList(fragment, listItems, listOrdered);
@@ -253,7 +253,7 @@
         continue;
       }
 
-      // Bullet list item.
+      
       const bulletMatch = /^\s*[-*]\s+(.*)$/.exec(line);
       if (bulletMatch) {
         if (listItems.length && listOrdered) flushList(fragment, listItems, listOrdered);
@@ -264,7 +264,7 @@
         continue;
       }
 
-      // Blank line separates blocks.
+      
       if (line.trim() === '') {
         flushList(fragment, listItems, listOrdered);
         flushParagraph(fragment, paragraphBuffer);
@@ -272,7 +272,7 @@
         continue;
       }
 
-      // Plain paragraph text.
+      
       if (listItems.length) flushList(fragment, listItems, listOrdered);
       paragraphBuffer.push(line.trim());
       i++;
