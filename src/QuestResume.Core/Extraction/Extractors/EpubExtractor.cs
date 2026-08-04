@@ -4,10 +4,6 @@ using VersOne.Epub;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from EPUB e-books by reading every chapter in reading order and
-/// stripping the chapter HTML down to visible text.
-/// </summary>
 public sealed class EpubExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".epub" };

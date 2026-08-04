@@ -5,15 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extrai metadados pesquisáveis de arquivos executáveis e bibliotecas Windows (.exe, .dll):
-/// versão, empresa, descrição (via <see cref="FileVersionInfo"/>) e o timestamp de compilação
-/// do cabeçalho COFF (via <see cref="PEReader"/>).
-///
-/// LIMITAÇÃO TÉCNICA: aplica-se apenas a binários no formato PE (Windows); executáveis ELF
-/// (Linux) ou Mach-O (macOS) não são reconhecidos pelo <see cref="PEReader"/> e retornam apenas
-/// metadados de sistema de arquivos.
-/// </summary>
 public sealed class ExecutableMetadataExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".exe", ".dll" };
@@ -92,8 +83,8 @@ public sealed class ExecutableMetadataExtractor : IFileExtractor
         }
         catch (Exception ex)
         {
-            // Não é um PE válido (ex.: script renomeado para .exe) ou outro formato binário
-            // (ELF/Mach-O) — best-effort, não falha a extração inteira.
+            
+            
             metadata["peWarning"] = $"Não foi possível ler o cabeçalho PE: {ex.Message}";
         }
 

@@ -4,12 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from FictionBook 2 (.fb2) e-books. FB2 is a plain XML format, so it's parsed
-/// directly with <see cref="XDocument"/> (similar in spirit to <see cref="EpubExtractor"/>, but
-/// without the container/OPF indirection an EPUB needs), concatenating every &lt;p&gt; element's
-/// text under &lt;body&gt;.
-/// </summary>
 public sealed class Fb2Extractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".fb2" };

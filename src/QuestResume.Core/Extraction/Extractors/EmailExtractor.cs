@@ -5,17 +5,9 @@ using MsgReader.Outlook;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts headers and body text from email messages: .eml (via MimeKit) and
-/// Outlook .msg (via MsgReader).
-/// </summary>
 public sealed class EmailExtractor : IFileExtractor
 {
-    /// <summary>
-    /// Attachment extensions whose content is appended as text alongside the email body.
-    /// Binary attachments (images, PDFs, etc.) are still listed by name but not inlined.
-    /// </summary>
-    private static readonly HashSet<string> TextLikeAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly HashSet<string> TextLikeAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt", ".csv", ".md", ".json", ".xml", ".html", ".htm", ".log", ".ini",
         ".yaml", ".yml", ".cs", ".py", ".js", ".ts", ".java", ".sql", ".bib", ".tex"
