@@ -3,13 +3,6 @@ using QuestResume.Core.Security;
 
 namespace QuestResume.Core.Auth;
 
-/// <summary>
-/// Persiste usuários do QuestResume em um arquivo JSON sidecar (<c>users.json</c>) em
-/// <c>%LOCALAPPDATA%\QuestResume</c>, fora do <c>config.json</c> principal. Senhas nunca são
-/// gravadas em texto claro — apenas o verificador PBKDF2 (ver <see cref="MasterKeyManager"/>).
-/// Thread-safe via lock em memória; adequado à escala de um punhado de usuários locais/de equipe
-/// pequena (não um IdP completo).
-/// </summary>
 public sealed class UserStore
 {
     private readonly object _lock = new();
@@ -22,12 +15,7 @@ public sealed class UserStore
             "QuestResume", "users.json");
     }
 
-    /// <summary>
-    /// Valida uma senha contra a política de senha forte: mínimo 8 caracteres, pelo menos uma
-    /// letra maiúscula e pelo menos um número. Lança <see cref="InvalidOperationException"/> com
-    /// mensagem clara em PT-BR quando a senha não atende ao critério.
-    /// </summary>
-    public static void ValidatePasswordStrength(string password)
+        public static void ValidatePasswordStrength(string password)
     {
         if (string.IsNullOrEmpty(password) || password.Length < 8)
         {
@@ -130,8 +118,7 @@ public sealed class UserStore
         }
     }
 
-    /// <summary>Busca um usuário pelo nome (case-insensitive); null se não existir.</summary>
-    public User? FindByUsername(string username)
+        public User? FindByUsername(string username)
     {
         lock (_lock)
         {
@@ -139,11 +126,7 @@ public sealed class UserStore
         }
     }
 
-    /// <summary>
-    /// Habilita o 2FA (TOTP) para o usuário, gerando e persistindo um segredo Base32 novo.
-    /// Retorna o segredo gerado para ser exibido ao usuário (só nesse momento). Lança se o usuário não existir.
-    /// </summary>
-    public string EnableTotp(string username)
+        public string EnableTotp(string username)
     {
         lock (_lock)
         {
@@ -159,8 +142,7 @@ public sealed class UserStore
         }
     }
 
-    /// <summary>Desabilita o 2FA do usuário, removendo o segredo. Retorna false se o usuário não existir.</summary>
-    public bool DisableTotp(string username)
+        public bool DisableTotp(string username)
     {
         lock (_lock)
         {
@@ -178,8 +160,7 @@ public sealed class UserStore
         }
     }
 
-    /// <summary>Define as coleções permitidas para um usuário (null/vazia = todas). Retorna false se não existir.</summary>
-    public bool SetAllowedCollections(string username, List<string>? collections)
+        public bool SetAllowedCollections(string username, List<string>? collections)
     {
         lock (_lock)
         {
@@ -196,8 +177,7 @@ public sealed class UserStore
         }
     }
 
-    /// <summary>Se não houver nenhum usuário cadastrado, autenticação é dispensada (modo compatibilidade single-user).</summary>
-    public bool HasAnyUser()
+        public bool HasAnyUser()
     {
         lock (_lock)
         {
