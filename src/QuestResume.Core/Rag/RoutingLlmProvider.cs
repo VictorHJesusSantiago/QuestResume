@@ -3,16 +3,6 @@ using System.Text;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Envolve uma lista ordenada de <see cref="ILlmProvider"/> (ex.: Ollama primeiro, LLamaSharp
-/// local como fallback) e tenta cada um em ordem, avançando para o próximo quando um provedor
-/// falha (timeout, serviço indisponível, modelo não configurado etc.).
-///
-/// LIMITAÇÃO DE STREAMING: para <see cref="CompleteStreamAsync"/>, a troca de provedor só é
-/// segura ANTES do primeiro token ser emitido. Uma vez que o provedor primário já emitiu algum
-/// texto para o chamador, não é seguro descartá-lo e recomeçar com o próximo provedor (o
-/// chamador já recebeu uma resposta parcial); nesse caso a exceção é propagada normalmente.
-/// </summary>
 public sealed class RoutingLlmProvider : ILlmProvider
 {
     private readonly IReadOnlyList<ILlmProvider> _providers;
@@ -89,20 +79,20 @@ public sealed class RoutingLlmProvider : ILlmProvider
 
                     if (emittedAny || isLastProvider)
                     {
-                        // Not safe (or not possible) to fall back once we already emitted
-                        // tokens from this provider to the caller.
+                        
+                        
                         exceptions.Add(failure);
                         throw BuildAggregateException(exceptions);
                     }
 
                     exceptions.Add(failure);
-                    break; // try next provider
+                    break; 
                 }
 
                 if (!hasNext)
                 {
                     await enumerator.DisposeAsync().ConfigureAwait(false);
-                    yield break; // this provider completed successfully
+                    yield break; 
                 }
 
                 emittedAny = true;
