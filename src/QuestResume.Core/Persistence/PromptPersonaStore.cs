@@ -3,13 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Persiste as personas de prompt (item 3) como um sidecar JSON (<c>personas.json</c>) dentro da
-/// pasta do índice, seguindo o mesmo padrão de <see cref="WebhookStore"/>. Quando o arquivo ainda
-/// não existe, <see cref="Load"/> devolve um conjunto de personas pré-definidas em PT-BR
-/// (<see cref="Defaults"/>) sem gravar nada em disco — o usuário só materializa o arquivo ao
-/// salvar/editar personas.
-/// </summary>
 public sealed class PromptPersonaStore
 {
     public const string FileName = "personas.json";
@@ -25,8 +18,7 @@ public sealed class PromptPersonaStore
 
     private string FilePath => Path.Combine(_indexPath, FileName);
 
-    /// <summary>Personas pré-definidas usadas quando nenhum <c>personas.json</c> foi salvo ainda.</summary>
-    public static IReadOnlyList<PromptPersona> Defaults { get; } = new List<PromptPersona>
+        public static IReadOnlyList<PromptPersona> Defaults { get; } = new List<PromptPersona>
     {
         new("Padrão",
             "Você é um assistente que responde perguntas com base apenas no conteúdo dos documentos " +
@@ -50,11 +42,7 @@ public sealed class PromptPersonaStore
             "Responda no idioma da pergunta."),
     };
 
-    /// <summary>
-    /// Carrega as personas salvas ou, na ausência do arquivo, devolve uma cópia de
-    /// <see cref="Defaults"/>.
-    /// </summary>
-    public List<PromptPersona> Load()
+        public List<PromptPersona> Load()
     {
         if (!File.Exists(FilePath))
         {
@@ -100,8 +88,7 @@ public sealed class PromptPersonaStore
         return removed;
     }
 
-    /// <summary>Busca uma persona pelo nome (case-insensitive), ou <c>null</c> se não existir.</summary>
-    public PromptPersona? Find(string name)
+        public PromptPersona? Find(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
