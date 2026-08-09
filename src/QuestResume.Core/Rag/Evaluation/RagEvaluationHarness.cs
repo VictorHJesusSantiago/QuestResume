@@ -3,19 +3,11 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag.Evaluation;
 
-/// <summary>
-/// Offline evaluation harness for a <see cref="RagQueryEngine"/>: runs every question from a
-/// "golden set" (<see cref="EvaluationCase"/>) through <see cref="RagQueryEngine.AskAsync"/> and
-/// scores recall@k of the expected sources plus an optional keyword check on the answer. Used by
-/// the <c>evaluate</c> CLI command; a dev/CI tool, not exposed in the API or web UI.
-/// </summary>
 public static class RagEvaluationHarness
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>Loads a golden set (JSON array of <see cref="EvaluationCase"/>) from disk.</summary>
-    /// <exception cref="InvalidOperationException">When the file is empty, malformed, or not a JSON array of cases.</exception>
-    public static List<EvaluationCase> LoadGoldenSet(string path)
+        public static List<EvaluationCase> LoadGoldenSet(string path)
     {
         var json = File.ReadAllText(path);
         var cases = JsonSerializer.Deserialize<List<EvaluationCase>>(json, JsonOptions);
@@ -28,11 +20,7 @@ public static class RagEvaluationHarness
         return cases;
     }
 
-    /// <summary>
-    /// Runs every case in <paramref name="cases"/> against <paramref name="engine"/> sequentially
-    /// (mirrors how <c>ask-batch</c> drives a shared engine) and returns the aggregated report.
-    /// </summary>
-    public static async Task<RagEvaluationReport> RunAsync(
+        public static async Task<RagEvaluationReport> RunAsync(
         RagQueryEngine engine,
         IReadOnlyList<EvaluationCase> cases,
         int? topK = null,
@@ -49,8 +37,7 @@ public static class RagEvaluationHarness
         return Aggregate(caseReports);
     }
 
-    /// <summary>Scores a single case's already-computed <see cref="AskResult"/> (used by <see cref="RunAsync"/>; exposed for direct unit testing).</summary>
-    internal static RagEvaluationCaseReport ScoreCase(EvaluationCase evalCase, AskResult result)
+        internal static RagEvaluationCaseReport ScoreCase(EvaluationCase evalCase, AskResult result)
     {
         var retrievedPaths = result.Sources.Select(s => s.SourcePath).Distinct().ToList();
 
@@ -102,12 +89,7 @@ public static class RagEvaluationHarness
         };
     }
 
-    /// <summary>
-    /// Two source paths are considered a match when equal (case-insensitive) or when one ends
-    /// with the other after normalizing slashes — lets a golden set reference just a file name
-    /// (e.g. <c>"contrato.pdf"</c>) instead of a full, environment-specific absolute path.
-    /// </summary>
-    private static bool PathsMatch(string retrieved, string expected)
+        private static bool PathsMatch(string retrieved, string expected)
     {
         var normalizedRetrieved = retrieved.Replace('\\', '/');
         var normalizedExpected = expected.Replace('\\', '/');
