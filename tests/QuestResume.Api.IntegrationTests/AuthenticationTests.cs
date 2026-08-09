@@ -5,11 +5,6 @@ using QuestResume.Core.Auth;
 
 namespace QuestResume.Api.IntegrationTests;
 
-/// <summary>
-/// Cobre o fluxo de autenticação JWT multiusuário exposto pela API: sem nenhum usuário
-/// cadastrado a API opera em modo compatibilidade (sem exigir token); assim que um usuário é
-/// registrado, endpoints sob /api/* passam a exigir "Authorization: Bearer &lt;jwt&gt;".
-/// </summary>
 public sealed class AuthenticationTests
 {
     [Fact]
@@ -67,13 +62,7 @@ public sealed class AuthenticationTests
         Assert.Equal("Admin", body.Role);
     }
 
-    /// <summary>
-    /// Semeia um usuário diretamente via <see cref="UserStore"/> resolvido do container de DI da
-    /// fábrica de testes — necessário porque POST /api/users exige a policy "AdminOnly", ou seja,
-    /// não é possível criar o primeiro usuário Admin através da própria API (mesma limitação que
-    /// existe em produção: o primeiro usuário precisa ser provisionado fora da API HTTP).
-    /// </summary>
-    internal static void SeedAdminUser(QuestResumeApiFactory factory, string username, string password)
+        internal static void SeedAdminUser(QuestResumeApiFactory factory, string username, string password)
     {
         using var scope = factory.Services.CreateScope();
         var userStore = scope.ServiceProvider.GetRequiredService<UserStore>();

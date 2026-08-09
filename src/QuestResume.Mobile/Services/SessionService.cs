@@ -2,11 +2,6 @@ using Microsoft.Maui.Storage;
 
 namespace QuestResume.Mobile.Services;
 
-/// <summary>
-/// Guarda a URL do servidor e o token JWT da sessão atual. O token é persistido com
-/// <see cref="SecureStorage"/> (Keystore no Android / Keychain no iOS); a URL do servidor é
-/// persistida com <see cref="Preferences"/> (não é segredo).
-/// </summary>
 public sealed class SessionService
 {
     private const string TokenKey = "questresume_token";
@@ -29,8 +24,8 @@ public sealed class SessionService
         }
         catch
         {
-            // SecureStorage pode falhar em alguns emuladores sem keystore configurado —
-            // trata como "sem sessão salva" em vez de derrubar o app.
+            
+            
             Token = null;
             Username = null;
         }

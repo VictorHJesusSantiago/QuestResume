@@ -4,10 +4,6 @@ using QuestResume.Mobile.Models;
 
 namespace QuestResume.Mobile.Services;
 
-/// <summary>
-/// Cliente HTTP fino para a QuestResume.Api remota. Todas as chamadas usam a URL do servidor e
-/// o token JWT atualmente salvos em <see cref="SessionService"/>.
-/// </summary>
 public sealed class ApiClient
 {
     private readonly SessionService _session;
@@ -48,7 +44,7 @@ public sealed class ApiClient
         }
         catch
         {
-            // Corpo não era JSON — cai para a mensagem genérica abaixo.
+            
         }
 
         return $"Erro HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).";
