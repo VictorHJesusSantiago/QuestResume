@@ -1,10 +1,5 @@
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Thrown when an answer is requested but no usable .gguf model has been configured.
-/// Full-text search keeps working without an LLM; this exception only affects the
-/// "ask a question in natural language" flow.
-/// </summary>
 public sealed class ModelNotConfiguredException : Exception
 {
     public ModelNotConfiguredException(string modelPath)

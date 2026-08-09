@@ -4,17 +4,12 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>Um nó hierárquico de tópico/subtópico do mapa mental.</summary>
 public sealed class MindMapNode
 {
     public string Topic { get; set; } = string.Empty;
     public List<MindMapNode> Children { get; set; } = new();
 }
 
-/// <summary>
-/// Gera um mapa mental (estrutura hierárquica de tópicos/subtópicos em JSON) de um documento
-/// indexado usando o LLM configurado. Parse defensivo com fallback para uma raiz vazia.
-/// </summary>
 public sealed class MindMapService
 {
     private readonly Func<string, IReadOnlyList<SearchResultItem>> _getChunksByPath;
