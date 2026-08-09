@@ -22,9 +22,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConfigService _configService;
     private readonly AppOptions _options;
 
-    // Shared DirectoryReader kept open across all SearchService calls in this process.
-    // Refreshed via OpenIfChanged on each acquisition — eliminates repeated FSDirectory
-    // open/close cycles that degrade after each index operation.
+    
+    
+    
     private readonly LuceneIndexManager _indexManager = new();
 
     private RagQueryEngine? _engine;
@@ -97,7 +97,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int gpuLayerCount;
 
-    // Lote 8 — Sub-lote A: ajustes finos do LLM no Desktop.
+    
     [ObservableProperty]
     private double llmTemperature = 0.8;
 
@@ -137,18 +137,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string uiLanguage = "pt-BR";
 
-    /// <summary>Idiomas aceitos pelo seletor de idioma em Configurações (ver <see cref="AppOptions.UiLanguage"/>).</summary>
-    public string[] UiLanguageOptions { get; } = { "pt-BR", "en-US" };
+        public string[] UiLanguageOptions { get; } = { "pt-BR", "en-US" };
 
     partial void OnUiLanguageChanged(string value)
     {
-        // Applies the new language dictionary immediately (live-swap of MergedDictionaries), as
-        // opposed to only persisting it and requiring a restart — see App.ApplyUiLanguage.
+        
+        
         App.ApplyUiLanguage(value);
     }
 
-    /// <summary>Progresso da indexação atual, parseado do formato "[N/M] mensagem" reportado via IProgress&lt;string&gt;.</summary>
-    [ObservableProperty]
+        [ObservableProperty]
     private int indexingCurrent;
 
     [ObservableProperty]
@@ -186,13 +184,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<string> AvailableCollections { get; } = new();
 
-    /// <summary>
-    /// Caminho físico efetivo do índice para a coleção selecionada (ver
-    /// <see cref="QuestResume.Core.Persistence.CollectionStore"/>). Usado em todas as operações
-    /// de índice/busca/pergunta em vez de <see cref="IndexPath"/> diretamente, que permanece
-    /// como o caminho base configurável em Configurações.
-    /// </summary>
-    private string EffectiveIndexPath =>
+        private string EffectiveIndexPath =>
         new QuestResume.Core.Persistence.CollectionStore(IndexPath).ResolvePath(SelectedCollection);
 
     partial void OnSelectedCollectionChanged(string value)
@@ -219,7 +211,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch
         {
-            // Falha ao carregar coleções não deve impedir o uso da coleção "default".
+            
         }
     }
 
@@ -252,8 +244,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<QuizQuestionViewModel> QuizQuestions { get; } = new();
 
-    /// <summary>Plugins de extração de terceiros carregados de %LOCALAPPDATA%\QuestResume\plugins, exibidos em Configurações.</summary>
-    public ObservableCollection<string> LoadedPlugins { get; } = new();
+        public ObservableCollection<string> LoadedPlugins { get; } = new();
 
     public string[] LlmProviderOptions { get; } = { "LlamaSharp", "Ollama" };
 
@@ -514,9 +505,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                                 (stats.Errors.Count > 0 ? $" ({stats.Errors.Count} erro(s))" : string.Empty);
             }
 
-            // The vectorStore opened above is a different instance than the one inside
-            // _engine — without this, AskAsync would keep serving the pre-reindex snapshot
-            // until the engine is rebuilt for an unrelated config change.
+            
+            
+            
             _engine?.InvalidateVectorCache();
             LoadDocuments();
         }
@@ -531,11 +522,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Refreshes the "Documentos" tab with the files currently in the index plus the errors
-    /// and duplicates detected during the last <see cref="IndexAsync"/> run.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void LoadDocuments()
     {
         IndexedDocuments.Clear();
@@ -567,11 +554,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Removes a single document from the Lucene index (and the vector store, if embeddings are
-    /// enabled) without rebuilding the whole index from the documents folder.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void RemoveDocument(string sourcePath)
     {
         try
@@ -601,11 +584,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Saves the comma-separated tags the user typed into <see cref="IndexedDocumentViewModel.TagsInput"/>
-    /// for the given document, normalizing the displayed value to match what was actually stored.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void SaveTags(IndexedDocumentViewModel document)
     {
         try
@@ -622,12 +601,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Pairs up consecutive "Você"/"QuestResume" entries from <see cref="Messages"/> into
-    /// <see cref="ChatTurn"/>s so <see cref="RagQueryEngine.AskAsync"/> can use them as
-    /// short-term conversational memory for the next question.
-    /// </summary>
-    private IReadOnlyList<ChatTurn> BuildHistory()
+        private IReadOnlyList<ChatTurn> BuildHistory()
     {
         var history = new List<ChatTurn>();
         for (var i = 0; i < Messages.Count - 1; i++)
@@ -641,12 +615,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         return history;
     }
 
-    /// <summary>
-    /// Moves keyboard focus to the question box (Ctrl+K shortcut, see <c>MainWindow.xaml</c>
-    /// <c>Window.InputBindings</c>). The Desktop app has no global search box like the Web UI, so
-    /// this targets the closest equivalent primary input field.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void FocusQuestion()
     {
         if (System.Windows.Application.Current?.MainWindow is MainWindow window)
@@ -734,12 +703,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         UpdateAutoReindexWatcher();
     }
 
-    /// <summary>
-    /// Starts or stops the <see cref="AutoReindexWatcher"/> to match <see cref="AutoReindexEnabled"/>
-    /// and <see cref="DocumentsFolder"/>, called after every config save so a toggle takes effect
-    /// immediately without restarting the app.
-    /// </summary>
-    private void UpdateAutoReindexWatcher()
+        private void UpdateAutoReindexWatcher()
     {
         _autoReindexWatcher?.Dispose();
         _autoReindexWatcher = null;
@@ -756,8 +720,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _autoReindexWatcher.Start();
     }
 
-    /// <summary>Compacts the whole index folder into a .zip chosen via a save dialog.</summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task BackupIndexAsync()
     {
         if (string.IsNullOrWhiteSpace(IndexPath) || !Directory.Exists(IndexPath))
@@ -795,8 +758,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Restores a previously created backup .zip into the current index path.</summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task RestoreIndexAsync()
     {
         if (string.IsNullOrWhiteSpace(IndexPath))
@@ -836,17 +798,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Opens an indexed source file in its associated default application (e.g. PDF viewer,
-    /// Word), so the user can jump from a citation in the chat directly to the original
-    /// document. <see cref="ProcessStartInfo.UseShellExecute"/> delegates to the OS's file
-    /// association instead of trying to execute the file directly.
-    /// </summary>
-    /// <summary>
-    /// Exports the current chat history (<see cref="Messages"/>) as a Markdown file chosen via
-    /// a save dialog, so the user can keep a record of a Q&amp;A session outside the app.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void ExportChat()
     {
         if (Messages.Count == 0)
@@ -892,12 +844,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Shows the exact chunk of text used to answer the question (mirroring the Web UI's
-    /// clickable citations), via a simple message box since the Desktop app has no modal
-    /// infrastructure yet.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void ViewSourceChunk(SourceReference source)
     {
         if (source is null)
@@ -928,11 +875,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Exports the current chat history as a PDF using <see cref="ChatPdfExporter"/> (mirrors
-    /// <see cref="ExportChat"/>, which exports to Markdown).
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private void ExportChatPdf()
     {
         if (Messages.Count == 0)
@@ -1002,11 +945,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Extrai dados tabulares do documento indicado via LLM e salva o resultado (JSON ou CSV,
-    /// conforme escolha do usuário no diálogo de salvar) em um arquivo.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task ExtractTableAsync(string sourcePath)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
@@ -1051,8 +990,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Gera flashcards de estudo (pergunta/resposta) para o documento em <see cref="StudyDocumentPath"/>.</summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task GenerateFlashcardsAsync()
     {
         if (string.IsNullOrWhiteSpace(StudyDocumentPath))
@@ -1089,8 +1027,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Gera um quiz de múltipla escolha para o documento em <see cref="StudyDocumentPath"/>.</summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task GenerateQuizAsync()
     {
         if (string.IsNullOrWhiteSpace(StudyDocumentPath))
@@ -1138,11 +1075,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         selection.Question.SelectOption(selection.OptionIndex);
     }
 
-    /// <summary>
-    /// Traduz o texto de uma resposta do chat para <see cref="TranslateTargetLanguage"/> e
-    /// adiciona o resultado como uma nova entrada na conversa.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task TranslateAsync(ChatEntry entry)
     {
         if (entry is null || string.IsNullOrWhiteSpace(entry.Text))
@@ -1173,8 +1106,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    // TTS nativo do Windows (Lote 8 — Sub-lote E4): lê a resposta em voz alta usando
-    // System.Speech.Synthesis, sem depender de rede. Um segundo clique interrompe a leitura.
+    
+    
     private System.Speech.Synthesis.SpeechSynthesizer? _synthesizer;
     private bool _isSpeaking;
 
@@ -1271,13 +1204,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _configService.Save(_options);
     }
 
-    /// <summary>
-    /// Updates <see cref="StatusMessage"/> and, when the message matches the <c>"[N/M] mensagem"</c>
-    /// format reported by <see cref="DocumentIndexer.IndexFolderAsync"/>'s <c>IProgress&lt;string&gt;</c>,
-    /// also updates <see cref="IndexingCurrent"/>/<see cref="IndexingTotal"/> so the Perguntas tab's
-    /// <c>ProgressBar</c> reflects real indexing progress instead of just a status string.
-    /// </summary>
-    private void UpdateIndexingProgress(string message)
+        private void UpdateIndexingProgress(string message)
     {
         StatusMessage = message;
 
@@ -1293,13 +1220,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Inicia o fluxo de autenticação OAuth2 (Authorization Code + PKCE) com o provedor de
-    /// nuvem informado ("google" ou "onedrive"), abrindo o navegador padrão do usuário e
-    /// aguardando o redirecionamento local. Requer que o respectivo Client ID já tenha sido
-    /// preenchido e salvo (<see cref="SaveConfig"/>).
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task ConnectCloudProviderAsync(string providerName)
     {
         try
@@ -1340,12 +1261,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Baixa os arquivos da pasta remota (<see cref="CloudRemoteFolderId"/>) do provedor
-    /// informado para <c>&lt;IndexPath&gt;/_cloud_&lt;provedor&gt;/</c>, reaproveitando o
-    /// pipeline normal de indexação em seguida.
-    /// </summary>
-    [RelayCommand]
+        [RelayCommand]
     private async Task SyncCloudProviderAsync(string providerName)
     {
         if (string.IsNullOrWhiteSpace(CloudRemoteFolderId))
