@@ -4,13 +4,8 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>Resultado de <see cref="StructuredExtractionService.ExtractTableAsync"/>.</summary>
 public sealed record TableExtractionResult(string Json, string Csv);
 
-/// <summary>
-/// Usa o LLM configurado para extrair dados tabulares (ex.: tabelas dentro de um documento) de
-/// um arquivo já indexado, retornando o resultado tanto em JSON quanto em CSV.
-/// </summary>
 public sealed class StructuredExtractionService
 {
     private readonly Func<string, IReadOnlyList<SearchResultItem>> _getChunksByPath;
@@ -22,12 +17,7 @@ public sealed class StructuredExtractionService
         _llmProvider = llmProvider;
     }
 
-    /// <summary>
-    /// Extrai dados tabulares do documento em <paramref name="documentPath"/> (já indexado),
-    /// seguindo opcionalmente <paramref name="instruction"/> (ex.: "apenas a tabela de preços").
-    /// </summary>
-    /// <exception cref="LlmJsonParseException">Se a resposta do modelo não for um JSON válido.</exception>
-    public async Task<TableExtractionResult> ExtractTableAsync(string documentPath, string? instruction, CancellationToken cancellationToken = default)
+        public async Task<TableExtractionResult> ExtractTableAsync(string documentPath, string? instruction, CancellationToken cancellationToken = default)
     {
         var chunks = _getChunksByPath(documentPath);
         if (chunks.Count == 0)
