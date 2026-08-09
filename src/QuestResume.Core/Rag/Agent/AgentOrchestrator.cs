@@ -3,13 +3,6 @@ using System.Text.Json.Serialization;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Orquestra o uso opcional de ferramentas (<see cref="ITool"/>) por um <see cref="ILlmProvider"/>:
-/// pede ao LLM que escolha, em JSON estrito, no máximo uma ferramenta para responder a uma
-/// pergunta; executa a ferramenta escolhida (com parse defensivo — JSON inválido ou ferramenta
-/// desconhecida simplesmente resulta em "nenhuma ferramenta usada"); e por fim pede ao LLM uma
-/// resposta final incorporando o resultado da ferramenta ao contexto.
-/// </summary>
 public sealed class AgentOrchestrator
 {
     private const int MaxParseAttempts = 2;
@@ -23,12 +16,7 @@ public sealed class AgentOrchestrator
         _tools = tools;
     }
 
-    /// <summary>
-    /// Executa o fluxo completo: escolha de ferramenta (até <see cref="MaxParseAttempts"/>
-    /// tentativas de obter um JSON válido do LLM) → no máximo 1 execução de ferramenta →
-    /// resposta final do LLM já incorporando o resultado da ferramenta, se houver.
-    /// </summary>
-    public async Task<AgentResult> RunAsync(string question, CancellationToken cancellationToken = default)
+        public async Task<AgentResult> RunAsync(string question, CancellationToken cancellationToken = default)
     {
         var toolChoice = await ChooseToolAsync(question, cancellationToken).ConfigureAwait(false);
 
@@ -41,7 +29,7 @@ public sealed class AgentOrchestrator
         var tool = _tools.FirstOrDefault(t => t.Name.Equals(toolChoice.Tool, StringComparison.OrdinalIgnoreCase));
         if (tool is null)
         {
-            // Ferramenta desconhecida escolhida pelo LLM: ignora e responde sem ferramenta.
+            
             var fallbackAnswer = await _llm.CompleteAsync(question, cancellationToken).ConfigureAwait(false);
             return new AgentResult { Answer = fallbackAnswer, ToolUsed = null, ToolOutput = null };
         }
@@ -89,16 +77,11 @@ public sealed class AgentOrchestrator
             }
         }
 
-        // Depois de esgotar as tentativas, assume "nenhuma ferramenta" em vez de travar o fluxo.
+        
         return null;
     }
 
-    /// <summary>
-    /// Parse defensivo da escolha de ferramenta do LLM: extrai o primeiro objeto JSON encontrado
-    /// no texto (o LLM às vezes envolve a resposta em markdown/texto extra), valida contra o
-    /// esquema esperado e ignora silenciosamente qualquer coisa que não faça sentido.
-    /// </summary>
-    internal static ToolChoice? TryParseToolChoice(string raw)
+        internal static ToolChoice? TryParseToolChoice(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -144,10 +127,8 @@ public sealed class AgentOrchestrator
     }
 }
 
-/// <summary>Escolha de ferramenta feita pelo LLM, já validada estruturalmente.</summary>
 public sealed record ToolChoice(string Tool, string? Input);
 
-/// <summary>Resultado de uma execução do agente: resposta final e, se aplicável, a ferramenta usada.</summary>
 public sealed class AgentResult
 {
     public string Answer { get; set; } = string.Empty;
