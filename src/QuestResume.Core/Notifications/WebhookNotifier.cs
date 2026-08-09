@@ -6,12 +6,6 @@ using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Notifications;
 
-/// <summary>
-/// Notifica webhooks cadastrados (<see cref="WebhookStore"/>) quando eventos relevantes
-/// ocorrem: <c>"indexing.completed"</c>, <c>"document.error"</c>, <c>"question.asked"</c>.
-/// Cada notificação é enviada de forma assíncrona "fire-and-forget": nunca bloqueia nem lança
-/// exceção para o chamador — falhas de rede/timeout apenas são logadas via <see cref="_log"/>.
-/// </summary>
 public sealed class WebhookNotifier
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -27,11 +21,7 @@ public sealed class WebhookNotifier
         _log = log;
     }
 
-    /// <summary>
-    /// Dispara (sem aguardar) a notificação de <paramref name="eventName"/> para todos os
-    /// webhooks cadastrados que estão inscritos nesse evento. Não lança exceções.
-    /// </summary>
-    public void Notify(string eventName, object payload)
+        public void Notify(string eventName, object payload)
     {
         try
         {
@@ -53,9 +43,9 @@ public sealed class WebhookNotifier
 
             foreach (var webhook in webhooks)
             {
-                // Fire-and-forget: cada envio roda em background e nunca propaga exceção
-                // para o chamador (DocumentIndexer/RagQueryEngine), que não deve ter seu fluxo
-                // principal afetado por um webhook lento ou indisponível.
+                
+                
+                
                 _ = SendAsync(webhook, body);
             }
         }
@@ -93,8 +83,7 @@ public sealed class WebhookNotifier
         }
     }
 
-    /// <summary>Calcula a assinatura HMAC-SHA256 (hex minúsculo) do corpo, usando <paramref name="secret"/> como chave.</summary>
-    public static string ComputeSignature(string body, string secret)
+        public static string ComputeSignature(string body, string secret)
     {
         var keyBytes = Encoding.UTF8.GetBytes(secret);
         var bodyBytes = Encoding.UTF8.GetBytes(body);
