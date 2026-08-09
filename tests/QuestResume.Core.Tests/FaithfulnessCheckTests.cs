@@ -23,7 +23,7 @@ public class FaithfulnessCheckTests
     [Fact]
     public void ParseFaithfulnessResponse_WhicheverTokenAppearsFirst_Wins()
     {
-        // "Não, mas na verdade sim" -> "não" appears before "sim" -> false.
+        
         Assert.False(RagQueryEngine.ParseFaithfulnessResponse("Não, mas na verdade sim"));
     }
 

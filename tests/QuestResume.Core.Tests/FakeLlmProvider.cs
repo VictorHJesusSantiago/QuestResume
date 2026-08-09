@@ -2,11 +2,6 @@ using QuestResume.Core.Rag;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Minimal <see cref="ILlmProvider"/> stub for tests that exercise Core.Rag services
-/// (StructuredExtractionService, FlashcardService, TranslationService, RoutingLlmProvider)
-/// without loading a real GGUF model or hitting a real Ollama server.
-/// </summary>
 public sealed class FakeLlmProvider : ILlmProvider
 {
     private readonly Func<string, string>? _completeFunc;
