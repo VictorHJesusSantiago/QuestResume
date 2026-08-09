@@ -10,9 +10,9 @@ public class OpenXmlExtractorTests
     [Fact]
     public async Task ExtractAsync_Docx_PrependsCoreAndExtendedMetadata()
     {
-        // Item 15: dc:creator (core.xml) e Company (app.xml) devem aparecer como
-        // "[Metadados: autor=..., empresa=...]" no início do texto extraído, seguindo o mesmo
-        // padrão usado por ImageOcrExtractor para EXIF.
+        
+        
+        
         var path = Path.Combine(Path.GetTempPath(), $"metadados-{Guid.NewGuid()}.docx");
 
         try

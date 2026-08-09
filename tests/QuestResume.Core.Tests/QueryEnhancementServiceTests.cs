@@ -87,9 +87,9 @@ public class QueryEnhancementServiceTests
         var llm = new FakeLlmProvider(new InvalidOperationException("modelo indisponível"));
         var service = new QueryEnhancementService(llm);
 
-        // QueryEnhancementService itself doesn't swallow exceptions — best-effort handling is the
-        // caller's responsibility (HybridSearchService/DocumentIndexer), matching the pattern used
-        // by SummarizationService.SummarizeAsync elsewhere in the codebase.
+        
+        
+        
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExpandQueryAsync("pergunta"));
     }
 }
