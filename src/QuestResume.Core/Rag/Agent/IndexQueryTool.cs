@@ -2,11 +2,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Executa uma busca explícita no índice já indexado e devolve os trechos mais relevantes
-/// (item 11). Útil como ferramenta que o agente pode invocar deliberadamente, além da recuperação
-/// RAG automática. Diferente do fluxo RAG normal, aqui o agente decide quando e o que buscar.
-/// </summary>
 public sealed class IndexQueryTool : ITool
 {
     private const int TopK = 5;
@@ -53,7 +48,6 @@ public sealed class IndexQueryTool : ITool
     }
 }
 
-/// <summary>Lançada quando <see cref="IndexQueryTool"/> recebe entrada inválida.</summary>
 public sealed class IndexQueryToolException : Exception
 {
     public IndexQueryToolException(string message) : base(message)

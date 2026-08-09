@@ -2,13 +2,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Retorna estatísticas do índice (item 11) a partir de <see cref="DashboardStats"/>: número de
-/// documentos, trechos, tags, perguntas, tamanho do índice etc. Útil para o agente responder
-/// perguntas do tipo "quantos documentos estão indexados?". A fonte dos dados é injetada
-/// (<see cref="Func{DashboardStats}"/>) para não acoplar a ferramenta ao cálculo em disco e
-/// permitir testes.
-/// </summary>
 public sealed class IndexStatsTool : ITool
 {
     private readonly Func<DashboardStats> _statsProvider;
