@@ -10,8 +10,7 @@
         Title="QuestResume" Height="650" Width="900"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Window.InputBindings>
-        <!-- Atalhos de teclado: Ctrl+Enter envia a pergunta, Ctrl+K foca a caixa de pergunta,
-             Ctrl+I inicia a indexação. Mantidos consistentes com os atalhos padrão do Web UI. -->
+        
         <KeyBinding Key="Return" Modifiers="Ctrl" Command="{Binding AskCommand}"/>
         <KeyBinding Key="K" Modifiers="Ctrl" Command="{Binding FocusQuestionCommand}"/>
         <KeyBinding Key="I" Modifiers="Ctrl" Command="{Binding IndexCommand}"/>
