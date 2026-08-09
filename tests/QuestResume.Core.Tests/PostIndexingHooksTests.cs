@@ -3,11 +3,6 @@ using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Lote 8 — Sub-lote E1: verifica que a extração de entidades e o versionamento de documentos
-/// rodam automaticamente como etapas pós-indexação de <see cref="DocumentIndexer.IndexFolderAsync"/>
-/// quando habilitados, sem depender dos endpoints sob demanda.
-/// </summary>
 public class PostIndexingHooksTests
 {
     [Fact]

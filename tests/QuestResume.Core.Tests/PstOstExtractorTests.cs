@@ -7,9 +7,9 @@ public class PstOstExtractorTests
     [Fact]
     public async Task ExtractAsync_InvalidPstFile_DegradesGracefullyWithWarning()
     {
-        // Building a real, valid .pst binary from scratch is impractical for a unit test (it's a
-        // complex proprietary format); this test exercises the graceful-degradation path that
-        // kicks in for a corrupt/unreadable file, which XstReader is expected to reject.
+        
+        
+        
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.pst");
 
         try

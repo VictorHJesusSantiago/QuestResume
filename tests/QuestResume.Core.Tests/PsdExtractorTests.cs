@@ -42,18 +42,18 @@ public class PsdExtractorTests
         }
 
         stream.Write(System.Text.Encoding.ASCII.GetBytes("8BPS"));
-        WriteU16(1); // version
-        stream.Write(new byte[6]); // reserved
+        WriteU16(1); 
+        stream.Write(new byte[6]); 
         WriteU16(channels);
         WriteU32((uint)height);
         WriteU32((uint)width);
-        WriteU16(8); // depth
+        WriteU16(8); 
         WriteU16(colorMode);
 
-        WriteU32(0); // Color Mode Data length
-        WriteU32(0); // Image Resources length
-        WriteU32(6); // Layer and Mask Information length (just enough for the fields below)
-        WriteU32(2); // Layer Info length
+        WriteU32(0); 
+        WriteU32(0); 
+        WriteU32(6); 
+        WriteU32(2); 
         WriteU16((ushort)layerCount);
 
         return stream.ToArray();
