@@ -3,18 +3,9 @@ using IODirectory = System.IO.Directory;
 
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Dispara backups do índice (<see cref="IndexBackupService"/>) num intervalo fixo, com rotação/
-/// retenção (mantém só os N backups mais recentes na pasta de destino, apaga os mais antigos).
-/// Mesmo padrão de <see cref="IndexScheduler"/> (usa <see cref="PeriodicTimer"/>); é embrulhado num
-/// <c>IHostedService</c> pela API, já que Core não depende de Microsoft.Extensions.Hosting.
-/// Configurado por <see cref="Configuration.AppOptions.ScheduledBackupEnabled"/>,
-/// <c>ScheduledBackupIntervalHours</c> e <c>BackupRetentionCount</c>.
-/// </summary>
 public sealed class BackupScheduler : IDisposable
 {
-    /// <summary>Prefixo dos arquivos de backup gerados automaticamente (usado também na rotação).</summary>
-    public const string BackupPrefix = "questresume-backup-";
+        public const string BackupPrefix = "questresume-backup-";
 
     private readonly TimeSpan _interval;
     private readonly string _indexPath;
@@ -74,8 +65,7 @@ public sealed class BackupScheduler : IDisposable
         catch (OperationCanceledException) { }
     }
 
-    /// <summary>Cria um backup timestamped e aplica a retenção. Exposto para teste/execução manual.</summary>
-    public async Task<string> RunBackupOnceAsync(CancellationToken cancellationToken = default)
+        public async Task<string> RunBackupOnceAsync(CancellationToken cancellationToken = default)
     {
         IODirectory.CreateDirectory(_backupDir);
         var fileName = $"{BackupPrefix}{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip";
@@ -86,8 +76,7 @@ public sealed class BackupScheduler : IDisposable
         return backupPath;
     }
 
-    /// <summary>Mantém apenas os <see cref="_retentionCount"/> backups mais recentes.</summary>
-    public void ApplyRetention()
+        public void ApplyRetention()
     {
         if (!IODirectory.Exists(_backupDir)) return;
         var backups = IODirectory.EnumerateFiles(_backupDir, $"{BackupPrefix}*.zip")

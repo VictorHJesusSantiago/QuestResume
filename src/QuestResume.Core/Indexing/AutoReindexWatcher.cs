@@ -1,10 +1,5 @@
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Watches a folder for changes (create/change/delete/rename, including subdirectories) using
-/// <see cref="FileSystemWatcher"/> and invokes a reindex callback after a debounce window, so a
-/// batch copy/edit of many files triggers a single reindex instead of one per file event.
-/// </summary>
 public sealed class AutoReindexWatcher : IDisposable
 {
     private readonly IReadOnlyList<string> _folderPaths;
@@ -19,17 +14,7 @@ public sealed class AutoReindexWatcher : IDisposable
     private bool _pendingWhileRunning;
     private bool _disposed;
 
-    /// <param name="folderPath">Primary folder to watch recursively.</param>
-    /// <param name="onReindexRequested">Callback invoked (once) after the debounce window elapses, consolidating changes across every watched folder.</param>
-    /// <param name="debounce">Quiet period after the last change before reindexing runs. Default 5s.</param>
-    /// <param name="log">Optional PT-BR status logger.</param>
-    /// <param name="additionalFolders">
-    /// Extra folders watched alongside <paramref name="folderPath"/> (item 11,
-    /// <see cref="Configuration.AppOptions.AdditionalWatchedFolders"/>) — a change in any of them
-    /// (or <paramref name="folderPath"/>) restarts the same shared debounce timer, so a batch of
-    /// edits spread across multiple folders still triggers a single consolidated reindex.
-    /// </param>
-    public AutoReindexWatcher(
+        public AutoReindexWatcher(
         string folderPath,
         Func<CancellationToken, Task> onReindexRequested,
         TimeSpan? debounce = null,
@@ -56,8 +41,7 @@ public sealed class AutoReindexWatcher : IDisposable
         _log = log;
     }
 
-    /// <summary>Starts watching every configured folder. Safe to call once; call <see cref="Stop"/>/<see cref="Dispose"/> before starting again.</summary>
-    public void Start()
+        public void Start()
     {
         if (_watchers.Count > 0)
         {
@@ -93,8 +77,7 @@ public sealed class AutoReindexWatcher : IDisposable
         }
     }
 
-    /// <summary>Stops watching every folder and cancels any pending (not-yet-fired) debounce timer.</summary>
-    public void Stop()
+        public void Stop()
     {
         lock (_lock)
         {
@@ -124,9 +107,9 @@ public sealed class AutoReindexWatcher : IDisposable
     {
         lock (_lock)
         {
-            // Restart (not just start) the timer on every event, so the debounce window is
-            // measured from the *last* change — a batch copy of many files only reindexes once,
-            // after the copy has been quiet for the debounce period.
+            
+            
+            
             _debounceTimer?.Change(_debounce, Timeout.InfiniteTimeSpan);
         }
     }
@@ -137,8 +120,8 @@ public sealed class AutoReindexWatcher : IDisposable
         {
             if (_reindexInProgress)
             {
-                // A reindex is already running; remember to run one more time once it finishes,
-                // so changes made during the run aren't silently dropped.
+                
+                
                 _pendingWhileRunning = true;
                 return;
             }

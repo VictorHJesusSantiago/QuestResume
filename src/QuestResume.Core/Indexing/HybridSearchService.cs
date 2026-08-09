@@ -3,21 +3,9 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Combines BM25 full-text search (<see cref="SearchService"/>) with vector similarity
-/// search (<see cref="VectorStore"/>) when embeddings are configured. Falls back to pure
-/// BM25 when <paramref name="vectorStore"/>/<paramref name="embeddingService"/> are not
-/// provided, or when embeddings are not configured at query time.
-/// </summary>
 public sealed class HybridSearchService
 {
-    /// <summary>
-    /// When a cross-encoder is configured, how many times <paramref name="topK"/> candidates to
-    /// retrieve from BM25/vector search before re-ranking and trimming back down to
-    /// <paramref name="topK"/> — gives the cross-encoder a wider pool to pick the best matches
-    /// from than the raw BM25/vector ranking alone.
-    /// </summary>
-    private const int RerankCandidateMultiplier = 4;
+        private const int RerankCandidateMultiplier = 4;
 
     private readonly ISearchService _searchService;
     private readonly IVectorStore? _vectorStore;
@@ -60,32 +48,9 @@ public sealed class HybridSearchService
         _multiQueryVariations = multiQueryVariations > 0 ? multiQueryVariations : 3;
     }
 
-    /// <summary>
-    /// Returns every indexed chunk for the given source file path, ordered by chunk index.
-    /// Bypasses the hybrid BM25/vector ranking entirely — used when the caller wants a whole
-    /// document's content (e.g. <see cref="QuestResume.Core.Rag.RagQueryEngine.CompareAsync"/>),
-    /// not chunks relevant to a query.
-    /// </summary>
-    public IReadOnlyList<SearchResultItem> GetChunksByPath(string path) => _searchService.GetChunksByPath(path);
+        public IReadOnlyList<SearchResultItem> GetChunksByPath(string path) => _searchService.GetChunksByPath(path);
 
-    /// <summary>
-    /// Runs hybrid retrieval for <paramref name="queryText"/>, optionally enhanced by LLM-backed
-    /// query-quality features (all opt-in and best-effort — an LLM failure at any stage silently
-    /// falls back to the corresponding non-enhanced behaviour, never breaking the search):
-    /// <list type="bullet">
-    /// <item>Query expansion (<see cref="Configuration.AppOptions.QueryExpansionEnabled"/>): 2-3
-    /// LLM-suggested related terms are OR'd into the BM25 query text.</item>
-    /// <item>HyDE (<see cref="Configuration.AppOptions.HydeEnabled"/>): the vector search embeds
-    /// an LLM-generated hypothetical answer instead of the raw question.</item>
-    /// <item>Multi-query (<see cref="Configuration.AppOptions.MultiQueryEnabled"/>): retrieval is
-    /// run once per LLM-generated question variation (plus the original), and the resulting
-    /// ranked lists are merged via Reciprocal Rank Fusion (see <see cref="CombineRrf"/>)
-    /// regardless of <see cref="Configuration.AppOptions.RankFusionStrategy"/> — RRF is a natural
-    /// fit for merging an arbitrary number of ranked lists, whereas the linear combination is
-    /// only meaningful for exactly two (BM25 + vector).</item>
-    /// </list>
-    /// </summary>
-    public async Task<IReadOnlyList<SearchResultItem>> SearchAsync(string queryText, int topK, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<SearchResultItem>> SearchAsync(string queryText, int topK, CancellationToken cancellationToken = default)
     {
         var candidateK = _crossEncoder is not null ? topK * RerankCandidateMultiplier : topK;
 
@@ -99,7 +64,7 @@ public sealed class HybridSearchService
             }
             catch
             {
-                llm = null; // Best-effort: LLM unavailable, all enhancements below are skipped.
+                llm = null; 
             }
         }
 
@@ -117,7 +82,7 @@ public sealed class HybridSearchService
                 {
                     extraTerms = await enhancer.ExpandQueryAsync(queryText, cancellationToken).ConfigureAwait(false);
                 }
-                catch { /* best-effort */ }
+                catch {  }
             }
 
             if (_hydeEnabled && _vectorStore is not null && _embeddingService is not null)
@@ -126,7 +91,7 @@ public sealed class HybridSearchService
                 {
                     hydeText = await enhancer.GenerateHypotheticalAnswerAsync(queryText, cancellationToken).ConfigureAwait(false);
                 }
-                catch { /* best-effort */ }
+                catch {  }
             }
 
             if (_multiQueryEnabled)
@@ -136,7 +101,7 @@ public sealed class HybridSearchService
                     var variations = await enhancer.GenerateQueryVariationsAsync(queryText, _multiQueryVariations, cancellationToken).ConfigureAwait(false);
                     queryVariations.AddRange(variations);
                 }
-                catch { /* best-effort */ }
+                catch {  }
             }
         }
 
@@ -161,13 +126,7 @@ public sealed class HybridSearchService
         return await ApplyRerankingAsync(queryText, combined, topK, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Runs BM25 + (optional) vector retrieval for a single query variation and combines them
-    /// using the configured <see cref="Configuration.AppOptions.RankFusionStrategy"/> — the same
-    /// per-variation building block used both for a plain single-query search and for each
-    /// variation in multi-query retrieval.
-    /// </summary>
-    private async Task<IReadOnlyList<SearchResultItem>> SearchSingleVariationAsync(
+        private async Task<IReadOnlyList<SearchResultItem>> SearchSingleVariationAsync(
         string queryText, IReadOnlyList<string>? extraTerms, string? hydeText, int candidateK, CancellationToken cancellationToken)
     {
         var bm25QueryText = extraTerms is { Count: > 0 }
@@ -194,14 +153,7 @@ public sealed class HybridSearchService
         }
     }
 
-    /// <summary>
-    /// Re-scores each of <paramref name="candidates"/> against <paramref name="queryText"/>
-    /// using the configured <see cref="CrossEncoderService"/> and returns the top
-    /// <paramref name="topK"/> by that score. Falls back to the existing BM25/vector ordering
-    /// (just trimmed to <paramref name="topK"/>) when no cross-encoder is configured, or if it
-    /// isn't usable at query time.
-    /// </summary>
-    private async Task<IReadOnlyList<SearchResultItem>> ApplyRerankingAsync(
+        private async Task<IReadOnlyList<SearchResultItem>> ApplyRerankingAsync(
         string queryText, IReadOnlyList<SearchResultItem> candidates, int topK, CancellationToken cancellationToken)
     {
         if (_crossEncoder is null || candidates.Count == 0)
@@ -268,14 +220,7 @@ public sealed class HybridSearchService
             .ToList();
     }
 
-    /// <summary>
-    /// Reciprocal Rank Fusion (<see cref="Configuration.AppOptions.RankFusionStrategy"/> = "Rrf"):
-    /// for each result, <c>score_rrf = sum(1 / (k + rank_in_list))</c> across every ranked list it
-    /// appears in (BM25, vector, and — via <see cref="SearchWithVariationsAsync"/> — one list per
-    /// multi-query variation). Rank is 1-based within each list. Unlike the linear combination,
-    /// RRF doesn't need score normalization since it only depends on rank order.
-    /// </summary>
-    public IReadOnlyList<SearchResultItem> CombineRrf(IEnumerable<IReadOnlyList<SearchResultItem>> resultLists, int topK)
+        public IReadOnlyList<SearchResultItem> CombineRrf(IEnumerable<IReadOnlyList<SearchResultItem>> resultLists, int topK)
     {
         var scores = new Dictionary<(string SourcePath, int ChunkIndex), (SearchResultItem Item, double Score)>();
 
@@ -300,14 +245,7 @@ public sealed class HybridSearchService
             .ToList();
     }
 
-    /// <summary>
-    /// Keyed by <c>(SourcePath, ChunkIndex)</c> rather than the <see cref="SearchResultItem"/>
-    /// instance itself — <see cref="SearchResultItem"/> doesn't override
-    /// <see cref="object.Equals(object?)"/>/<see cref="object.GetHashCode"/>, so a
-    /// reference-identity dictionary would silently break (KeyNotFoundException) if either
-    /// result list were ever rebuilt/cloned instead of reusing the same instances.
-    /// </summary>
-    private static Dictionary<(string SourcePath, int ChunkIndex), double> NormalizeScores(IReadOnlyList<SearchResultItem> items)
+        private static Dictionary<(string SourcePath, int ChunkIndex), double> NormalizeScores(IReadOnlyList<SearchResultItem> items)
     {
         var normalized = new Dictionary<(string SourcePath, int ChunkIndex), double>();
         if (items.Count == 0)

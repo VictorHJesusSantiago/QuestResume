@@ -14,10 +14,6 @@ using IODirectory = System.IO.Directory;
 
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Walks a folder, extracts text from every supported file and writes the resulting
-/// chunks to a Lucene.NET full-text index on disk.
-/// </summary>
 public sealed class DocumentIndexer
 {
     public const LuceneVersion MatchVersion = LuceneVersion.LUCENE_48;
@@ -42,11 +38,7 @@ public sealed class DocumentIndexer
         _clipService = clipService;
     }
 
-    /// <summary>
-    /// Indexes every supported file under <paramref name="folderPath"/> (recursively),
-    /// replacing any existing index at <paramref name="indexPath"/>.
-    /// </summary>
-    public async Task<IndexStats> IndexFolderAsync(
+        public async Task<IndexStats> IndexFolderAsync(
         string folderPath,
         string indexPath,
         int chunkSize = 1000,
@@ -89,10 +81,10 @@ public sealed class DocumentIndexer
 
         IODirectory.CreateDirectory(indexPath);
 
-        // When the index is protected by a master password (AppOptions.EncryptionEnabled), the
-        // Lucene index folder is kept encrypted at rest as a single index.enc file. Before doing
-        // any Lucene read/write below, decrypt it in-place into indexPath (a no-op if there is no
-        // index.enc yet, e.g. first ever indexing run, or if it's already open/decrypted).
+        
+        
+        
+        
         byte[]? encryptionSalt = null;
         if (!string.IsNullOrEmpty(masterPassword) && !string.IsNullOrEmpty(masterKeyVerifier))
         {
@@ -102,29 +94,29 @@ public sealed class DocumentIndexer
 
         var stats = new IndexStats();
 
-        // Delta mode (AppOptions.IncrementalIndexingEnabled): the IndexWriter is opened directly
-        // on indexPath in APPEND mode instead of rebuilding the whole index from scratch in a
-        // temp dir + swap. Unchanged files (per the manifest) are skipped entirely — their
-        // existing Lucene documents are left untouched. Changed/new files have their previous
-        // documents deleted (by "path" term) before the fresh ones are added, and files removed
-        // from disk since the last run have their documents deleted too. Falls back to the full
-        // rebuild path below when disabled, preserving prior behaviour exactly.
+        
+        
+        
+        
+        
+        
+        
         var deltaMode = incrementalIndexingEnabled;
 
-        // If a previous SwapIndexDirectory was interrupted mid-delete (crash, power loss),
-        // a _swap_pending.marker file is left behind. The index may be in a partial state,
-        // but since we're about to rebuild it entirely we just remove the marker and continue.
+        
+        
+        
         var swapMarkerPath = Path.Combine(indexPath, "_swap_pending.marker");
         if (File.Exists(swapMarkerPath))
         {
             File.Delete(swapMarkerPath);
         }
 
-        // Built in a temporary sibling directory and only swapped into place once the new
-        // Lucene index has been fully committed. With the previous OpenMode.CREATE-on-indexPath
-        // approach, a crash or cancellation midway through a (potentially long) re-index left
-        // the search index empty/corrupted for the rest of the session. Not used in delta mode,
-        // which writes directly into indexPath instead.
+        
+        
+        
+        
+        
         var tempIndexDir = Path.Combine(indexPath, "_index_tmp");
         if (!deltaMode)
         {
@@ -136,15 +128,15 @@ public sealed class DocumentIndexer
             IODirectory.CreateDirectory(tempIndexDir);
         }
 
-        // Documentos extraídos "de fresco" nesta corrida (não reaproveitados do manifesto
-        // incremental), candidatos a resumo automático (AppOptions.AutoSummarizationEnabled).
-        // Declarado neste escopo (fora dos "using" do writer) para ficar acessível na etapa de
-        // sumarização, executada após o índice já ter sido confirmado e trocado.
+        
+        
+        
+        
         var newOrChangedDocs = new ConcurrentBag<(string Path, string FileName, string Text)>();
 
-        // Paths of files freshly extracted this run (not reused from the incremental-indexing
-        // manifest), used by semantic deduplication (AppOptions.SemanticDeduplicationEnabled)
-        // after the index is committed to know which documents to check against the rest.
+        
+        
+        
         var freshlyIndexedPaths = new ConcurrentBag<string>();
 
         try
@@ -166,30 +158,30 @@ public sealed class DocumentIndexer
 
                 var embeddingsAvailableFlag = _embeddingService is not null && _vectorStore is not null ? 1 : 0;
 
-                // Wrap all vector inserts in a single SQLite transaction instead of one
-                // commit per chunk, which dominates indexing time for large folders.
+                
+                
                 using var batch = _vectorStore?.BeginBatch();
 
-                // Maps content hash -> path of the first file with that content seen in this
-                // run. Concurrent because files are now processed in parallel; TryAdd gives
-                // atomic "first writer wins" duplicate detection.
+                
+                
+                
                 var seenHashes = new ConcurrentDictionary<string, string>();
 
-                // Previous manifest (path -> fingerprint + cached chunks), used for incremental
-                // indexing: files whose hash and last-write time haven't changed since the last
-                // run are not re-extracted/re-chunked/re-embedded — their cached chunks are
-                // reused as-is. The manifest sidecar lives directly in indexPath (not the temp
-                // build dir) and is preserved across re-indexes, like tags.json.
+                
+                
+                
+                
+                
                 var previousManifest = incrementalIndexingEnabled
                     ? new IndexManifestRepository(indexPath).Load()
                     : new IndexManifest();
                 var newManifest = new ConcurrentDictionary<string, ManifestFileEntry>();
 
-                // Item 13 (arquivo movido/renomeado): mapa hash -> caminho antigo, construído uma
-                // única vez antes do loop paralelo (somente leitura depois, sem necessidade de
-                // lock). Usado para diferenciar "arquivo movido" (hash conhecido, caminho novo,
-                // caminho antigo ausente em disco) de "arquivo realmente novo" — no primeiro caso
-                // os chunks/embeddings cacheados são reaproveitados sem reprocessar.
+                
+                
+                
+                
+                
                 var previousPathByHash = new Dictionary<string, string>();
                 if (incrementalIndexingEnabled)
                 {
@@ -199,16 +191,16 @@ public sealed class DocumentIndexer
                     }
                 }
 
-                // Caminhos antigos já reaproveitados como "movidos" nesta corrida — excluídos da
-                // contagem de "removido do índice" no bloco de limpeza do deltaMode abaixo, já que
-                // seus documentos foram apenas realocados para o novo caminho, não descartados.
+                
+                
+                
                 var movedFromPaths = new ConcurrentDictionary<string, byte>();
 
-                // Item 10 (.questresumeignore): carregado uma única vez por raiz (folderPath e,
-                // se configuradas, AppOptions.AdditionalWatchedFolders — item 11), aplicado no
-                // loop paralelo abaixo além de ExcludedFolders. Cada raiz adicional é escaneada
-                // recursivamente e seus arquivos indexados com o caminho absoluto original
-                // (documentos Lucene continuam apontando para fora de folderPath normalmente).
+                
+                
+                
+                
+                
                 var roots = new List<string> { folderPath };
                 if (additionalFolders is not null)
                 {
@@ -233,11 +225,11 @@ public sealed class DocumentIndexer
                     ignoreMatchersByRoot[extra] = GitIgnoreMatcher.LoadFromFolder(extra);
                 }
 
-                // Materialized upfront (instead of streamed via EnumerateFiles) so the total
-                // file count is known, letting progress messages show "[i/total]" — a coarse
-                // but real progress indicator for the CLI/Desktop status line. Each entry keeps
-                // the root it came from, used below to resolve the right ignore matcher/relative
-                // path (roots outside folderPath are scanned but never treated as "inside" it).
+                
+                
+                
+                
+                
                 var allFileEntries = new List<(string Path, string Root)>();
                 foreach (var root in roots)
                 {
@@ -247,11 +239,11 @@ public sealed class DocumentIndexer
                     }
                 }
 
-                // Priorização por data (AppOptions.PrioritizeRecentFiles, item 19 do Lote 4):
-                // arquivos modificados mais recentemente são processados primeiro — útil quando a
-                // indexação é interrompida no meio (item 16/17), pois o conteúdo mais provável de
-                // interessar ao usuário já terá sido indexado. Opt-in: quando desabilitado, mantém
-                // a ordem de enumeração original (comportamento prévio).
+                
+                
+                
+                
+                
                 if (prioritizeRecentFiles)
                 {
                     allFileEntries = allFileEntries
@@ -273,17 +265,17 @@ public sealed class DocumentIndexer
 
                 await Parallel.ForEachAsync(allFiles, parallelOptions, async (filePath, ct) =>
                 {
-                    // Pausar/retomar (item 16 do Lote 4): quando pauseHandle é fornecido e está
-                    // "não sinalizado" (pausado), cada worker bloqueia aqui antes de processar o
-                    // próximo arquivo, até ser sinalizado (retomado) ou cancelado. Arquivos já em
-                    // processamento terminam normalmente; nenhum novo arquivo começa enquanto
-                    // pausado. ManualResetEventSlim.Wait com CancellationToken lança
-                    // OperationCanceledException em cancelamento, propagada normalmente.
+                    
+                    
+                    
+                    
+                    
+                    
                     pauseHandle?.Wait(ct);
 
-                    // Throttling (AppOptions.IndexingThrottleDelayMs, item 18): quando > 0, insere
-                    // um atraso antes de processar cada arquivo, reduzindo a taxa de I/O/CPU usada
-                    // pela indexação (útil em máquinas com poucos recursos). 0 (padrão) = sem atraso.
+                    
+                    
+                    
                     if (throttleDelayMs > 0)
                     {
                         await Task.Delay(throttleDelayMs, ct).ConfigureAwait(false);
@@ -366,11 +358,11 @@ public sealed class DocumentIndexer
                             && previousEntry.LastWriteUtc == fileInfo.LastWriteTimeUtc
                             && previousEntry.Size == fileInfo.Length)
                         {
-                            // Unchanged since the last run: in delta mode its Lucene documents
-                            // and vector embeddings are already in the index/store from a
-                            // previous run, so they're left completely untouched — only the full
-                            // rebuild path (which starts from an empty index every time) needs to
-                            // re-add them here.
+                            
+                            
+                            
+                            
+                            
                             fileName = previousEntry.Chunks.Count > 0 ? previousEntry.Chunks[0].FileName : fileInfo.Name;
                             chunkCountReused = previousEntry.Chunks.Count;
 
@@ -420,10 +412,10 @@ public sealed class DocumentIndexer
                             return;
                         }
 
-                        // Item 13: arquivo movido/renomeado — mesmo hash de conteúdo já conhecido
-                        // do manifesto anterior, mas em outro caminho, e esse caminho antigo não
-                        // existe mais em disco. Reaproveita os chunks/embeddings cacheados sem
-                        // reextrair/refragmentar/reembeddar, apenas realocando path.
+                        
+                        
+                        
+                        
                         if (incrementalIndexingEnabled
                             && previousPathByHash.TryGetValue(hash, out var oldPath)
                             && !string.Equals(oldPath, filePath, StringComparison.OrdinalIgnoreCase)
@@ -489,10 +481,10 @@ public sealed class DocumentIndexer
 
                         if (deltaMode)
                         {
-                            // File is new or changed since the last run: drop its previous
-                            // Lucene documents (no-op if it wasn't indexed before) and vector
-                            // embeddings before re-adding the fresh ones below, so the index
-                            // never ends up with stale + fresh chunks for the same path.
+                            
+                            
+                            
+                            
                             lock (writerLock)
                             {
                                 writer.DeleteDocuments(new Term("path", filePath));
@@ -503,16 +495,16 @@ public sealed class DocumentIndexer
                         var document = await _registry.ExtractAsync(filePath, ct).ConfigureAwait(false);
                         freshlyIndexedPaths.Add(filePath);
 
-                        // Detecção de idioma (item 2): heurística leve baseada em stopwords
-                        // características de cada idioma — ver LanguageDetector. Computada uma
-                        // vez por documento (não por chunk) e gravada no campo Lucene "language"
-                        // abaixo, usada por SearchFilters.Language para filtrar buscas.
+                        
+                        
+                        
+                        
                         var language = LanguageDetector.Detect(document.Text);
 
-                        // Coletamos o texto completo de cada documento novo/alterado quando qualquer
-                        // etapa de pós-processamento (resumo automático, extração de entidades ou
-                        // versionamento) precisar dele. A extração de entidades depende de um LLM;
-                        // o versionamento não.
+                        
+                        
+                        
+                        
                         var needsDocText = (autoSummarizationEnabled && llmProvider is not null)
                             || (entityExtractionEnabled && llmProvider is not null)
                             || documentVersioningEnabled;
@@ -521,11 +513,11 @@ public sealed class DocumentIndexer
                             newOrChangedDocs.Add((filePath, document.FileName, document.Text));
                         }
 
-                        // Contextual retrieval (AppOptions.ContextualRetrievalEnabled): a short
-                        // (1-2 sentence) LLM-generated summary of the whole document, prefixed only
-                        // to the text used for each chunk's embedding below — never to the stored/
-                        // displayed chunk text itself. Best-effort: an LLM failure here just means
-                        // chunks are embedded without the extra context, same as when disabled.
+                        
+                        
+                        
+                        
+                        
                         string? docContext = null;
                         if (contextualRetrievalEnabled && llmProvider is not null && !string.IsNullOrWhiteSpace(document.Text))
                         {
@@ -544,11 +536,11 @@ public sealed class DocumentIndexer
                             }
                         }
 
-                        // Ordem de precedência entre modos de chunking mutuamente exclusivos:
-                        // 1) hierarquia de títulos (.md/.html, quando habilitado) — cada chunk fica
-                        //    dentro dos limites de uma seção; 2) código-fonte (sempre, por extensão);
-                        // 3) chunking semântico (quando habilitado e embeddings disponíveis);
-                        // 4) parent-child; 5) janela de sentenças; 6) padrão por tamanho fixo.
+                        
+                        
+                        
+                        
+                        
                         if (headingAwareChunkingEnabled && TextChunker.HeadingAwareExtensions.Contains(extension))
                         {
                             chunks = TextChunker.ChunkByHeadings(document, chunkSize, overlap);
@@ -637,10 +629,10 @@ public sealed class DocumentIndexer
                         }
                         progress?.Report($"{prefix} Indexado: {fileName} ({chunks.Count} trecho(s))");
 
-                        // Busca por imagem (CLIP): gera e armazena o embedding visual apenas para
-                        // arquivos de imagem quando um modelo CLIP está configurado. Best-effort —
-                        // ClipNotConfiguredException (modelo ausente/inválido) não deve abortar a
-                        // indexação normal do arquivo, que já foi concluída acima.
+                        
+                        
+                        
+                        
                         if (_clipService is not null && _vectorStore is not null && ImageExtensions.Contains(extension))
                         {
                             try
@@ -653,7 +645,7 @@ public sealed class DocumentIndexer
                             }
                             catch (QuestResume.Core.Embeddings.ClipNotConfiguredException)
                             {
-                                // Esperado quando ClipModelPath não está configurado; segue sem embedding visual.
+                                
                             }
                             catch (Exception ex)
                             {
@@ -678,9 +670,9 @@ public sealed class DocumentIndexer
 
                 if (deltaMode)
                 {
-                    // Files that were indexed last run but no longer exist on disk: delete their
-                    // Lucene documents and vector embeddings, and drop them from the manifest so
-                    // a later re-index doesn't try to diff against a stale entry.
+                    
+                    
+                    
                     foreach (var previousPath in previousManifest.Files.Keys)
                     {
                         if (newManifest.ContainsKey(previousPath) || File.Exists(previousPath) || movedFromPaths.ContainsKey(previousPath))
@@ -715,11 +707,11 @@ public sealed class DocumentIndexer
 
                 if (!deltaMode)
                 {
-                    // Re-indexing rebuilds the whole index from scratch (CREATE mode), which can
-                    // leave many small segments. Merge down to a single segment for faster
-                    // searches and a smaller on-disk footprint, then commit the merge. Skipped in
-                    // delta mode: merging on every incremental run would rewrite the entire index
-                    // and defeat the purpose of only touching changed documents.
+                    
+                    
+                    
+                    
+                    
                     writer.ForceMerge(1);
                     writer.Commit();
                 }
@@ -738,9 +730,9 @@ public sealed class DocumentIndexer
             }
         }
 
-        // Deduplicação semântica (AppOptions.SemanticDeduplicationEnabled): roda depois do commit/
-        // swap acima, com o índice vetorial já refletindo o estado final desta corrida — best-
-        // effort, nunca falha a indexação em si.
+        
+        
+        
         if (semanticDeduplicationEnabled && _vectorStore is not null && !freshlyIndexedPaths.IsEmpty)
         {
             try
@@ -761,8 +753,8 @@ public sealed class DocumentIndexer
             NearDuplicates = stats.NearDuplicates
         }.Save(indexPath);
 
-        // ON CLOSE: re-encrypt the freshly (re)built index back into index.enc and delete the
-        // plaintext Lucene files, only after the indexing cycle above completed successfully.
+        
+        
         if (encryptionSalt is not null && !string.IsNullOrEmpty(masterPassword))
         {
             LuceneIndexEncryptionService.SealFromWorkingFolder(indexPath, indexPath, masterPassword, encryptionSalt);
@@ -773,16 +765,16 @@ public sealed class DocumentIndexer
             await GenerateSummariesAsync(indexPath, llmProvider, progress, cancellationToken).ConfigureAwait(false);
         }
 
-        // Extração de entidades (opt-in via AppOptions.EntityExtractionEnabled): mesma abordagem do
-        // resumo automático — etapa separada, pós-commit, tolerante a falhas do LLM, alimentando o
-        // EntityStore usado por /api/documents/entities e pelo grafo de conhecimento.
+        
+        
+        
         if (entityExtractionEnabled && llmProvider is not null)
         {
             await ExtractEntitiesAsync(indexPath, llmProvider, progress, cancellationToken).ConfigureAwait(false);
         }
 
-        // Versionamento de documentos (opt-in via AppOptions.DocumentVersioningEnabled): grava uma
-        // nova versão (com hash) do texto de cada documento novo/alterado, sem depender de LLM.
+        
+        
         if (documentVersioningEnabled)
         {
             SaveDocumentVersions(indexPath, progress);
@@ -798,8 +790,8 @@ public sealed class DocumentIndexer
 
         return stats;
 
-        // Etapa separada, executada após a indexação principal já ter sido confirmada (commit +
-        // swap), para que uma falha do LLM aqui nunca comprometa o índice recém-construído.
+        
+        
         async Task GenerateSummariesAsync(string idxPath, Rag.ILlmProvider provider, IProgress<string>? prog, CancellationToken ct)
         {
             if (newOrChangedDocs.IsEmpty) return;
@@ -918,12 +910,7 @@ public sealed class DocumentIndexer
         }
     }
 
-    /// <summary>
-    /// Returns true if <paramref name="filePath"/> is inside any folder listed in
-    /// <paramref name="excludedFolders"/> (or equal to one of them), so it's never indexed even
-    /// if it's under <c>folderPath</c>.
-    /// </summary>
-    private static bool IsUnderExcludedFolder(string filePath, IReadOnlyList<string> excludedFolders)
+        private static bool IsUnderExcludedFolder(string filePath, IReadOnlyList<string> excludedFolders)
     {
         var fullFilePath = Path.GetFullPath(filePath);
 
@@ -946,14 +933,7 @@ public sealed class DocumentIndexer
         return false;
     }
 
-    /// <summary>
-    /// For every path in <paramref name="freshlyIndexedPaths"/>, computes its average chunk
-    /// embedding and compares it (cosine similarity) against the average embedding of every
-    /// other document currently in <see cref="_vectorStore"/>. Pairs at/above
-    /// <paramref name="threshold"/> are appended to <see cref="IndexStats.NearDuplicates"/> —
-    /// informational only, nothing is removed (see <see cref="NearDuplicateFile"/>).
-    /// </summary>
-    private void DetectNearDuplicates(HashSet<string> freshlyIndexedPaths, double threshold, IndexStats stats)
+        private void DetectNearDuplicates(HashSet<string> freshlyIndexedPaths, double threshold, IndexStats stats)
     {
         var entries = _vectorStore!.GetAllEntries();
         if (entries.Count == 0) return;
@@ -962,10 +942,10 @@ public sealed class DocumentIndexer
             .GroupBy(e => e.Item.SourcePath)
             .ToDictionary(g => g.Key, g => Embeddings.EmbeddingMath.Average(g.Select(e => e.Embedding).ToList()));
 
-        // Every path considered exactly once as the "new" side of a pair, compared against every
-        // other path (both other fresh paths and pre-existing ones) — avoids symmetric duplicate
-        // reports (A~B and B~A) only for pairs where both sides are fresh, by only ever emitting
-        // the pair once (ordinal comparison breaks the tie).
+        
+        
+        
+        
         var reportedPairs = new HashSet<(string, string)>();
 
         foreach (var path in freshlyIndexedPaths)
@@ -979,7 +959,7 @@ public sealed class DocumentIndexer
                 var isFreshPair = freshlyIndexedPaths.Contains(otherPath);
                 if (isFreshPair && string.CompareOrdinal(path, otherPath) >= 0)
                 {
-                    // Only report fresh-fresh pairs once (from the lexicographically smaller path).
+                    
                     continue;
                 }
 
@@ -1000,14 +980,7 @@ public sealed class DocumentIndexer
         }
     }
 
-    /// <summary>
-    /// Reindexes a single file (item 12) without touching the rest of the index: deletes its
-    /// existing Lucene documents (delete-by-<c>Term("path", filePath)</c>), re-extracts/chunks/
-    /// embeds it, re-adds fresh documents, and — when <paramref name="incrementalIndexingEnabled"/>
-    /// is set — updates just that file's entry in <c>index-manifest.json</c>. Returns the number
-    /// of chunks written.
-    /// </summary>
-    public async Task<int> ReindexSingleFileAsync(
+        public async Task<int> ReindexSingleFileAsync(
         string filePath,
         string indexPath,
         int chunkSize = 1000,
@@ -1080,7 +1053,7 @@ public sealed class DocumentIndexer
                 }
                 catch
                 {
-                    // Best-effort, same as IndexFolderAsync.
+                    
                 }
             }
 
@@ -1171,17 +1144,7 @@ public sealed class DocumentIndexer
         return chunkCount;
     }
 
-    /// <summary>
-    /// Removes documents from <paramref name="indexPath"/> whose source file no longer exists on
-    /// disk (item 14). Reads the Lucene index directly (<see cref="DirectoryReader"/>) to discover
-    /// every distinct "path" value currently stored, checks which no longer exist, and deletes
-    /// their chunks from the Lucene index, the vector store (text + image embeddings) and the
-    /// incremental-indexing manifest, if present. Returns the number of orphaned files removed.
-    /// Unlike the automatic cleanup that happens during a normal delta-mode
-    /// <see cref="IndexFolderAsync"/> run, this works standalone (e.g. for a full-rebuild index,
-    /// which doesn't do this automatically, or without triggering a full re-index at all).
-    /// </summary>
-    public Task<int> CleanOrphansAsync(string indexPath, CancellationToken cancellationToken = default)
+        public Task<int> CleanOrphansAsync(string indexPath, CancellationToken cancellationToken = default)
     {
         if (!IODirectory.Exists(indexPath))
         {
@@ -1200,10 +1163,10 @@ public sealed class DocumentIndexer
             using var reader = DirectoryReader.Open(directory);
             var paths = new HashSet<string>();
 
-            // MaxDoc includes documents already marked deleted by a previous DeleteDocuments call
-            // that haven't been physically purged yet (no merge/forceMerge happened) — skip them
-            // via the live-docs bitset, otherwise a second CleanOrphansAsync run over the same
-            // (uncommitted-merge) index would re-report already-removed files as still orphaned.
+            
+            
+            
+            
             var liveDocs = MultiFields.GetLiveDocs(reader);
 
             for (var i = 0; i < reader.MaxDoc; i++)
@@ -1271,8 +1234,7 @@ public sealed class DocumentIndexer
         return Task.FromResult(orphanPaths.Count);
     }
 
-    /// <summary>Computes the SHA-256 hash of a file's contents, used to detect duplicate files.</summary>
-    private static async Task<string> ComputeFileHashAsync(string filePath, CancellationToken cancellationToken)
+        private static async Task<string> ComputeFileHashAsync(string filePath, CancellationToken cancellationToken)
     {
         using var stream = File.OpenRead(filePath);
         var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
@@ -1281,17 +1243,7 @@ public sealed class DocumentIndexer
 
     private const string SwapMarkerFileName = "_swap_pending.marker";
 
-    /// <summary>
-    /// Replaces the Lucene index files in <paramref name="indexPath"/> with the freshly built
-    /// ones from <paramref name="tempIndexDir"/>, leaving <see cref="VectorStore.DatabaseFileName"/>,
-    /// <see cref="TagStore.FileName"/>, and <see cref="AuditLog.FileName"/> untouched.
-    ///
-    /// Writes a <c>_swap_pending.marker</c> file before deleting anything and removes it after
-    /// the move completes. If the process is killed between those two points, the next call to
-    /// <see cref="IndexFolderAsync"/> detects the marker and removes it, then proceeds with a
-    /// clean rebuild — safe because a full re-index is about to overwrite the index anyway.
-    /// </summary>
-    private static void SwapIndexDirectory(string indexPath, string tempIndexDir)
+        private static void SwapIndexDirectory(string indexPath, string tempIndexDir)
     {
         var markerPath = Path.Combine(indexPath, SwapMarkerFileName);
         File.WriteAllText(markerPath, string.Empty);
@@ -1300,35 +1252,35 @@ public sealed class DocumentIndexer
         {
             var fileName = Path.GetFileName(file);
 
-            // Skip vectors.db and its WAL/SHM/journal side-files (e.g. "vectors.db-wal"),
-            // which remain open via VectorStore's connection.
+            
+            
             if (fileName.StartsWith(VectorStore.DatabaseFileName, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            // User-assigned tags are keyed by source file path, not by index content, so they
-            // must survive a re-index.
+            
+            
             if (fileName == TagStore.FileName)
             {
                 continue;
             }
 
-            // The incremental-indexing manifest is written directly to indexPath (not the temp
-            // build dir) before the swap and must survive it, same as tags.json.
+            
+            
             if (fileName == IndexManifest.FileName)
             {
                 continue;
             }
 
-            // Audit log records question history across re-indexes; deleting it on every
-            // re-index silently loses that history (audit item A3).
+            
+            
             if (fileName == AuditLog.FileName)
             {
                 continue;
             }
 
-            // The marker itself must not be deleted mid-swap.
+            
             if (fileName == SwapMarkerFileName)
             {
                 continue;
@@ -1356,13 +1308,13 @@ public sealed class DocumentIndexer
             new StoredField("chunkIndex", chunk.ChunkIndex.ToString()),
             new TextField("content", content, Field.Store.YES),
             new StringField("modifiedUtc", chunk.ModifiedUtc.Ticks.ToString(), Field.Store.YES),
-            // Indexed both as a sortable numeric doc-value field and stored for filtering/display.
+            
             new Int64Field("modifiedUtcTicks", chunk.ModifiedUtc.Ticks, Field.Store.NO),
             new NumericDocValuesField("modifiedUtcTicks", chunk.ModifiedUtc.Ticks),
             new StoredField("sizeBytes", sizeBytes),
             new Int64Field("sizeBytesIndexed", sizeBytes, Field.Store.NO),
-            // Idioma detectado do documento (item 2, ver LanguageDetector) — indexado como campo
-            // exato para permitir filtro por idioma em SearchFilters.Language.
+            
+            
             new StringField("language", language ?? LanguageDetector.Unknown, Field.Store.YES)
         };
 
@@ -1373,26 +1325,16 @@ public sealed class DocumentIndexer
 
         if (!string.IsNullOrEmpty(chunk.ParentText))
         {
-            // Stored only (not indexed/searched) — parent-child chunking (item 6) searches over
-            // the small "content" field above, but SearchService.Search substitutes this larger
-            // parent text back in as ChunkText for display/LLM-prompt purposes.
+            
+            
+            
             doc.Add(new StoredField("parentText", chunk.ParentText));
         }
 
         return doc;
     }
 
-    /// <summary>
-    /// Chunking semântico (<see cref="Configuration.AppOptions.SemanticChunkingEnabled"/>): quebra
-    /// o texto em sentenças, calcula o embedding de cada uma, e agrupa sentenças consecutivas no
-    /// mesmo chunk enquanto a similaridade de cosseno entre elas permanecer acima de
-    /// <paramref name="threshold"/> — assim, sentenças semanticamente coesas ficam no mesmo chunk
-    /// em vez de serem cortadas por tamanho fixo. Um novo chunk também é iniciado se o acumulado
-    /// ultrapassaria <paramref name="chunkSize"/>. Requer <see cref="_embeddingService"/> — só
-    /// deve ser chamado quando embeddings estão disponíveis (ver chamador em
-    /// <see cref="IndexFolderAsync"/>).
-    /// </summary>
-    private async Task<IReadOnlyList<TextChunk>> SemanticChunkAsync(
+        private async Task<IReadOnlyList<TextChunk>> SemanticChunkAsync(
         ExtractedDocument document, double threshold, int chunkSize, CancellationToken cancellationToken)
     {
         var sentences = TextChunker.SplitSentences(document.Text);
