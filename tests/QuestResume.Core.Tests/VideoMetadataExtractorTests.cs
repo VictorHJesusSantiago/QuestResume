@@ -57,20 +57,15 @@ public class VideoMetadataExtractorTests
         }
     }
 
-    /// <summary>
-    /// Builds a minimal ISO-BMFF file with a top-level "moov" atom containing a version-0
-    /// "mvhd" atom, enough for <see cref="VideoMetadataExtractor"/>'s lightweight reader to
-    /// compute duration = durationUnits / timescale.
-    /// </summary>
-    private static byte[] BuildMinimalMp4WithMvhd(uint timescale, uint durationUnits)
+        private static byte[] BuildMinimalMp4WithMvhd(uint timescale, uint durationUnits)
     {
         using var stream = new MemoryStream();
 
-        // mvhd (version 0): size(4) + "mvhd"(4) + version/flags(4) + creation(4) + modification(4) + timescale(4) + duration(4)
+        
         var mvhdBody = new List<byte>();
-        mvhdBody.AddRange(new byte[4]); // version(1)+flags(3)
-        mvhdBody.AddRange(new byte[4]); // creation time
-        mvhdBody.AddRange(new byte[4]); // modification time
+        mvhdBody.AddRange(new byte[4]); 
+        mvhdBody.AddRange(new byte[4]); 
+        mvhdBody.AddRange(new byte[4]); 
         mvhdBody.AddRange(BitConverterBigEndian(timescale));
         mvhdBody.AddRange(BitConverterBigEndian(durationUnits));
 

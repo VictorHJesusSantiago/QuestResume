@@ -3,11 +3,6 @@ using SkiaSharp;
 
 namespace QuestResume.Core.Tests.Integration;
 
-/// <summary>
-/// Opt-in tests that exercise <see cref="ImageOcrExtractor"/> against a real Tesseract
-/// installation. Skipped (pass trivially) unless <c>QUESTRESUME_TEST_TESSDATA_PATH</c> points to
-/// an existing <c>tessdata</c> folder.
-/// </summary>
 public class ImageOcrExtractorIntegrationTests
 {
     [Fact]
@@ -39,8 +34,7 @@ public class ImageOcrExtractorIntegrationTests
         }
     }
 
-    /// <summary>Renders <paramref name="text"/> on a white background and saves it as a PNG.</summary>
-    private static void CreateTextImage(string path, string text)
+        private static void CreateTextImage(string path, string text)
     {
         using var bitmap = new SKBitmap(400, 100);
         using var canvas = new SKCanvas(bitmap);

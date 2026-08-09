@@ -5,12 +5,6 @@ using SkiaSharp;
 
 namespace QuestResume.Core.Tests.Integration;
 
-/// <summary>
-/// Opt-in tests that exercise item 17 (OCR of images embedded in .docx) against a real
-/// Tesseract installation. Skipped (pass trivially) unless
-/// <c>QUESTRESUME_TEST_TESSDATA_PATH</c> points to an existing <c>tessdata</c> folder — same
-/// convention as <see cref="ImageOcrExtractorIntegrationTests"/>.
-/// </summary>
 public class OpenXmlExtractorOcrIntegrationTests
 {
     [Fact]

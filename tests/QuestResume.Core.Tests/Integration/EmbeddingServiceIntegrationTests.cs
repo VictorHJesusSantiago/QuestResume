@@ -2,11 +2,6 @@ using QuestResume.Core.Embeddings;
 
 namespace QuestResume.Core.Tests.Integration;
 
-/// <summary>
-/// Opt-in tests that exercise <see cref="EmbeddingService"/> against a real ONNX model and
-/// tokenizer. Skipped (pass trivially) unless <c>QUESTRESUME_TEST_EMBEDDING_MODEL</c> and
-/// <c>QUESTRESUME_TEST_EMBEDDING_TOKENIZER</c> point to existing files.
-/// </summary>
 public class EmbeddingServiceIntegrationTests
 {
     [Fact]

@@ -2,11 +2,6 @@ using QuestResume.Core.Extraction.Extractors;
 
 namespace QuestResume.Core.Tests.Integration;
 
-/// <summary>
-/// Opt-in tests that exercise <see cref="AudioTranscriptionExtractor"/> against a real Whisper
-/// model. Skipped (pass trivially) unless <c>QUESTRESUME_TEST_WHISPER_MODEL</c> points to an
-/// existing ggml model file.
-/// </summary>
 public class AudioTranscriptionExtractorIntegrationTests
 {
     [Fact]
@@ -36,8 +31,7 @@ public class AudioTranscriptionExtractorIntegrationTests
         }
     }
 
-    /// <summary>Writes a minimal PCM 16-bit mono WAV file containing silence.</summary>
-    private static void WriteSilentWav(string path, int seconds, int sampleRate)
+        private static void WriteSilentWav(string path, int seconds, int sampleRate)
     {
         var dataSize = seconds * sampleRate * sizeof(short);
 
@@ -49,12 +43,12 @@ public class AudioTranscriptionExtractorIntegrationTests
         writer.Write("WAVE"u8);
         writer.Write("fmt "u8);
         writer.Write(16);
-        writer.Write((short)1); // PCM
-        writer.Write((short)1); // mono
+        writer.Write((short)1); 
+        writer.Write((short)1); 
         writer.Write(sampleRate);
-        writer.Write(sampleRate * sizeof(short)); // byte rate
-        writer.Write((short)sizeof(short)); // block align
-        writer.Write((short)16); // bits per sample
+        writer.Write(sampleRate * sizeof(short)); 
+        writer.Write((short)sizeof(short)); 
+        writer.Write((short)16); 
         writer.Write("data"u8);
         writer.Write(dataSize);
         writer.Write(new byte[dataSize]);
