@@ -4,19 +4,12 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>Uma entidade nomeada extraída de um documento.</summary>
 public sealed class ExtractedEntity
 {
-    /// <summary>Tipo: pessoa, empresa, data, valor, local, etc.</summary>
-    public string Type { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Extrai entidades nomeadas (pessoas, empresas, datas, valores) de um documento usando o LLM,
-/// com parse defensivo. Usado como etapa pós-indexação opcional
-/// (<see cref="Configuration.AppOptions.EntityExtractionEnabled"/>).
-/// </summary>
 public sealed class EntityExtractionService
 {
     private const int MaxInputChars = 6000;
@@ -30,8 +23,7 @@ public sealed class EntityExtractionService
         _llmProvider = llmProvider;
     }
 
-    /// <summary>Extrai entidades a partir do texto já disponível (usado na pós-indexação).</summary>
-    public async Task<List<ExtractedEntity>> ExtractAsync(string text, CancellationToken cancellationToken = default)
+        public async Task<List<ExtractedEntity>> ExtractAsync(string text, CancellationToken cancellationToken = default)
     {
         var truncated = text.Length > MaxInputChars ? text[..MaxInputChars] : text;
 

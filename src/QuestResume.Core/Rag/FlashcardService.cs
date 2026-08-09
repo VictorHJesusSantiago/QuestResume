@@ -4,10 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Usa o LLM configurado para gerar flashcards (pergunta/resposta) e quizzes de múltipla
-/// escolha a partir do conteúdo de um documento já indexado.
-/// </summary>
 public sealed class FlashcardService
 {
     private readonly Func<string, IReadOnlyList<SearchResultItem>> _getChunksByPath;
@@ -19,8 +15,7 @@ public sealed class FlashcardService
         _llmProvider = llmProvider;
     }
 
-    /// <exception cref="LlmJsonParseException">Se a resposta do modelo não for um JSON válido.</exception>
-    public async Task<List<Flashcard>> GenerateFlashcardsAsync(string documentPath, int count, CancellationToken cancellationToken = default)
+        public async Task<List<Flashcard>> GenerateFlashcardsAsync(string documentPath, int count, CancellationToken cancellationToken = default)
     {
         var content = GetDocumentContent(documentPath);
 
@@ -63,8 +58,7 @@ public sealed class FlashcardService
         return cards;
     }
 
-    /// <exception cref="LlmJsonParseException">Se a resposta do modelo não for um JSON válido.</exception>
-    public async Task<List<QuizQuestion>> GenerateQuizAsync(string documentPath, int count, CancellationToken cancellationToken = default)
+        public async Task<List<QuizQuestion>> GenerateQuizAsync(string documentPath, int count, CancellationToken cancellationToken = default)
     {
         var content = GetDocumentContent(documentPath);
 

@@ -3,11 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Gera um sumário/índice (lista plana de tópicos principais em ordem, como o sumário de um livro)
-/// de um documento indexado usando o LLM. Mais simples que o mapa mental (<see cref="MindMapService"/>):
-/// saída é uma lista de linhas, com parse defensivo linha a linha.
-/// </summary>
 public sealed class DocumentOutlineService
 {
     private readonly Func<string, IReadOnlyList<SearchResultItem>> _getChunksByPath;
