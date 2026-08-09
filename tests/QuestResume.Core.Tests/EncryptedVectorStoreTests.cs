@@ -48,8 +48,8 @@ public class EncryptedVectorStoreTests
                 store.Add("doc.txt", "doc.txt", 0, "SEGREDO-QUE-NAO-PODE-VAZAR", new float[] { 1f, 0f, 0f, 0f });
             }
 
-            // Read the raw bytes directly from vectors.db, bypassing both VectorStore and
-            // EncryptedVectorStore, the way an attacker with filesystem access would.
+            
+            
             string rawText;
             var dbPath = Path.Combine(indexPath, VectorStore.DatabaseFileName);
             using (var connection = new SqliteConnection($"Data Source={dbPath}"))

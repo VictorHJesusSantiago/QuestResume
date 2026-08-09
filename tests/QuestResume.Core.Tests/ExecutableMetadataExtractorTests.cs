@@ -16,8 +16,8 @@ public class ExecutableMetadataExtractorTests
     [Fact]
     public async Task ExtractAsync_RealManagedAssembly_ReadsCoffTimestampAndFlagsAsManaged()
     {
-        // QuestResume.Core.dll itself is a real, currently-built .NET assembly (PE + CLR
-        // metadata) — using it avoids depending on an external test fixture binary.
+        
+        
         var path = typeof(ExecutableMetadataExtractor).Assembly.Location;
 
         var extractor = new ExecutableMetadataExtractor();
