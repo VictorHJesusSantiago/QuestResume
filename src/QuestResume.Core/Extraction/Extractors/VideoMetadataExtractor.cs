@@ -3,15 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extrai metadados pesquisáveis de arquivos de vídeo (.mp4, .mkv, .avi, .mov).
-///
-/// LIMITAÇÃO TÉCNICA: não há parsing completo de contêineres MKV/AVI nesta implementação
-/// (exigiria bibliotecas pesadas como FFmpeg/MediaInfo, fora do escopo de um extrator leve
-/// sem dependências nativas). Para .mkv e .avi apenas metadados do sistema de arquivos
-/// (tamanho, datas) são extraídos. Para .mp4/.mov, os átomos ISO-BMFF <c>moov/mvhd</c> são
-/// lidos manualmente para obter duração e timescale, sem depender de bibliotecas externas.
-/// </summary>
 public sealed class VideoMetadataExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } =
@@ -66,12 +57,7 @@ public sealed class VideoMetadataExtractor : IFileExtractor
         return Task.FromResult(document);
     }
 
-    /// <summary>
-    /// Lê o átomo ISO-BMFF <c>moov/mvhd</c> de um arquivo MP4/MOV para calcular a duração,
-    /// sem depender de bibliotecas externas. Retorna <c>null</c> se o átomo não for encontrado
-    /// ou o arquivo não seguir a estrutura esperada.
-    /// </summary>
-    private static TimeSpan? TryReadMp4Duration(string path)
+        private static TimeSpan? TryReadMp4Duration(string path)
     {
         try
         {
@@ -86,19 +72,19 @@ public sealed class VideoMetadataExtractor : IFileExtractor
 
             moovStream.Seek(inner.Value.Start, SeekOrigin.Begin);
             var version = moovStream.ReadByte();
-            moovStream.Seek(3, SeekOrigin.Current); // flags
+            moovStream.Seek(3, SeekOrigin.Current); 
 
             uint timescale;
             ulong duration;
             if (version == 1)
             {
-                moovStream.Seek(16, SeekOrigin.Current); // creation+modification (64-bit each)
+                moovStream.Seek(16, SeekOrigin.Current); 
                 timescale = ReadUInt32BE(moovStream);
                 duration = ReadUInt64BE(moovStream);
             }
             else
             {
-                moovStream.Seek(8, SeekOrigin.Current); // creation+modification (32-bit each)
+                moovStream.Seek(8, SeekOrigin.Current); 
                 timescale = ReadUInt32BE(moovStream);
                 duration = ReadUInt32BE(moovStream);
             }
@@ -125,7 +111,7 @@ public sealed class VideoMetadataExtractor : IFileExtractor
             if (stream.Read(typeBytes, 0, 4) != 4) return null;
             var type = Encoding.ASCII.GetString(typeBytes);
 
-            if (size < 8) return null; // extended/zero-size atoms not handled by this lightweight reader
+            if (size < 8) return null; 
 
             if (type == fourCc)
             {

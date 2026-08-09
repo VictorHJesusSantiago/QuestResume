@@ -5,12 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from .zip archives by running every supported entry through the standard
-/// extractor registry and concatenating the results, each prefixed with the entry's path
-/// inside the archive. Nested archives are skipped (the inner registry is built with
-/// <c>includeArchives: false</c>) to avoid unbounded recursion on zip bombs/zip-of-zips.
-/// </summary>
 public sealed class ZipArchiveExtractor : IFileExtractor
 {
     private readonly ExtractorRegistry _innerRegistry;
@@ -34,7 +28,7 @@ public sealed class ZipArchiveExtractor : IFileExtractor
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Directory entries have an empty Name (only FullName ends with '/').
+                
                 if (string.IsNullOrEmpty(entry.Name))
                 {
                     continue;
