@@ -2,7 +2,6 @@ using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Services;
 
-/// <summary>Uso de disco (em bytes) de uma coleção.</summary>
 public sealed class CollectionDiskUsage
 {
     public required string Name { get; init; }
@@ -11,11 +10,6 @@ public sealed class CollectionDiskUsage
     public double SizeMb => Math.Round(SizeBytes / (1024d * 1024d), 2);
 }
 
-/// <summary>
-/// Calcula o tamanho em disco de cada coleção (<see cref="CollectionStore.List"/> + soma recursiva
-/// de <see cref="FileInfo.Length"/> por pasta de coleção), reaproveitando a mesma lógica que o
-/// dashboard já usa para o índice inteiro. Usado pelo endpoint <c>GET /api/collections/disk-usage</c>.
-/// </summary>
 public sealed class CollectionDiskUsageService
 {
     private readonly ICollectionStore _collectionStore;

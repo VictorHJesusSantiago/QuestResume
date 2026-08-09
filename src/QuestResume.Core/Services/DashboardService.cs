@@ -4,11 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Services;
 
-/// <summary>
-/// Computes aggregated dashboard statistics from the Lucene index, audit log and index report.
-/// Extracted from <see cref="DashboardStats"/> to keep the model class a pure data container
-/// (Active Record anti-pattern removal).
-/// </summary>
 public static class DashboardService
 {
     public static DashboardStats Compute(string indexPath, AppOptions? options = null, LuceneIndexManager? indexManager = null)

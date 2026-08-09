@@ -7,11 +7,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Core.Services;
 
-/// <summary>
-/// Coleta informações de diagnóstico (versão da app, SO, config com segredos redigidos, últimas
-/// linhas do log Serilog e resultado do health-check do índice) e as empacota num <c>.zip</c>.
-/// Usado pela CLI <c>diagnostics export</c> e pela API <c>GET /api/diagnostics/export</c>.
-/// </summary>
 public sealed class DiagnosticsService
 {
     private readonly ConfigService _configService;
@@ -21,8 +16,7 @@ public sealed class DiagnosticsService
         _configService = configService;
     }
 
-    /// <summary>Monta um resumo textual do diagnóstico (sem segredos).</summary>
-    public string BuildSummary()
+        public string BuildSummary()
     {
         var options = _configService.Load();
         var sb = new StringBuilder();
@@ -37,8 +31,7 @@ public sealed class DiagnosticsService
         return sb.ToString();
     }
 
-    /// <summary>Retorna as últimas <paramref name="maxLines"/> linhas do arquivo de log mais recente.</summary>
-    public IReadOnlyList<string> GetRecentLogLines(int maxLines = 200)
+        public IReadOnlyList<string> GetRecentLogLines(int maxLines = 200)
     {
         try
         {
@@ -57,15 +50,14 @@ public sealed class DiagnosticsService
         catch { return Array.Empty<string>(); }
     }
 
-    /// <summary>Gera o pacote .zip de diagnóstico em memória.</summary>
-    public byte[] BuildDiagnosticsZip()
+        public byte[] BuildDiagnosticsZip()
     {
         var options = _configService.Load();
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, "resumo.txt", BuildSummary());
-            // Config com segredos redigidos (reaproveita item 17).
+            
             WriteEntry(archive, "config-redigida.json", _configService.ExportConfig());
 
             var health = new IndexHealthCheckService().Check(options.IndexPath);
@@ -77,8 +69,7 @@ public sealed class DiagnosticsService
         return stream.ToArray();
     }
 
-    /// <summary>Escreve o zip de diagnóstico no caminho informado.</summary>
-    public void ExportToFile(string zipPath)
+        public void ExportToFile(string zipPath)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(zipPath));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
