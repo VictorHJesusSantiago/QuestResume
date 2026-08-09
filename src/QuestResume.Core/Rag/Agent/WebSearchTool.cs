@@ -3,15 +3,6 @@ using System.Text.Json.Serialization;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Ferramenta de busca web opt-in. NÃO chama nenhum provedor de busca embutido/hardcoded —
-/// o usuário deve apontar <see cref="Configuration.AppOptions.WebSearchEndpointUrl"/> para um
-/// serviço HTTP de busca de sua escolha (ex.: um SearXNG self-hosted rodando com
-/// <c>?format=json</c>, ou qualquer outro endpoint que aceite <c>?q=&lt;consulta&gt;</c> e
-/// devolva JSON no formato <c>{"results":[{"title":..,"url":..,"snippet":..}]}</c>).
-/// Só é usada quando <see cref="Configuration.AppOptions.AgentToolsEnabled"/> está habilitado,
-/// já que envolve chamadas de rede externas fora do funcionamento offline-first padrão.
-/// </summary>
 public sealed class WebSearchTool : ITool
 {
     private readonly HttpClient _httpClient;

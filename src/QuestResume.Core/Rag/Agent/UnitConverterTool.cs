@@ -3,11 +3,6 @@ using System.Text.RegularExpressions;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Converte unidades comuns (item 11): distância (km↔milhas, m↔pés), massa (kg↔libras) e
-/// temperatura (°C↔°F). Aceita entradas em linguagem natural simples como "10 km em milhas" ou
-/// "100 f para c". Parser deliberadamente simples e sem execução dinâmica.
-/// </summary>
 public sealed class UnitConverterTool : ITool
 {
     public string Name => "unit_converter";
@@ -26,9 +21,7 @@ public sealed class UnitConverterTool : ITool
         return Task.FromResult(result);
     }
 
-    /// <summary>Converte a expressão e devolve um texto com o resultado.</summary>
-    /// <exception cref="UnitConverterException">Quando a expressão ou as unidades são inválidas.</exception>
-    public static string Convert(string input)
+        public static string Convert(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
         {
@@ -53,14 +46,14 @@ public sealed class UnitConverterTool : ITool
 
     private static double ConvertValue(double value, string from, string to)
     {
-        // Temperatura (não é conversão por fator linear simples).
+        
         if (IsTemperature(from) && IsTemperature(to))
         {
             if (from == to) return value;
             return from == "c" ? value * 9d / 5d + 32d : (value - 32d) * 5d / 9d;
         }
 
-        // Distância: converte para metros e depois para o destino.
+        
         var distanceToMeters = new Dictionary<string, double>
         {
             ["km"] = 1000, ["m"] = 1, ["mi"] = 1609.344, ["ft"] = 0.3048,
@@ -70,7 +63,7 @@ public sealed class UnitConverterTool : ITool
             return value * distanceToMeters[from] / distanceToMeters[to];
         }
 
-        // Massa: converte para gramas.
+        
         var massToGrams = new Dictionary<string, double>
         {
             ["kg"] = 1000, ["g"] = 1, ["lb"] = 453.59237,
@@ -104,7 +97,6 @@ public sealed class UnitConverterTool : ITool
     }
 }
 
-/// <summary>Lançada quando <see cref="UnitConverterTool"/> não consegue interpretar/converter a entrada.</summary>
 public sealed class UnitConverterException : Exception
 {
     public UnitConverterException(string message) : base(message)
