@@ -11,37 +11,6 @@ using IODirectory = System.IO.Directory;
 
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Optional metadata filters applied alongside the full-text query in
-/// <see cref="SearchService.Search"/>.
-/// </summary>
-/// <param name="Extension">
-/// File extension to restrict results to (e.g. <c>".pdf"</c> or <c>"pdf"</c>), case-insensitive.
-/// </param>
-/// <param name="FolderPath">
-/// Restricts results to files whose indexed path starts with this prefix.
-/// </param>
-/// <param name="Tag">
-/// Restricts results to files that have this user-assigned tag (see <see cref="TagStore"/>),
-/// case-insensitive. Applied as a post-filter since tags aren't stored in the Lucene index.
-/// </param>
-/// <param name="Fuzzy">
-/// When true, each term of <c>queryText</c> is matched with Lucene's <c>FuzzyQuery</c>
-/// (tolerant to typos) instead of an exact term match. Ignored for explicit phrase queries
-/// (<c>"..."</c>) and boolean/field syntax typed by the user — see
-/// <see cref="SearchService.Search"/> for how raw query syntax is detected.
-/// </param>
-/// <param name="DateFrom">Restricts results to chunks whose file <c>ModifiedUtc</c> is on/after this date (inclusive).</param>
-/// <param name="DateTo">Restricts results to chunks whose file <c>ModifiedUtc</c> is on/before this date (inclusive).</param>
-/// <param name="MinSizeBytes">Restricts results to files whose size in bytes is at least this value.</param>
-/// <param name="MaxSizeBytes">Restricts results to files whose size in bytes is at most this value.</param>
-/// <param name="SortBy">
-/// <c>"relevance"</c> (default, BM25 score order), <c>"date"</c> (most recently modified
-/// file first) or <c>"name"</c> (file name, alphabetical).
-/// </param>
-/// <param name="SortDescending">Reverses the sort order for <c>"date"</c>/<c>"name"</c>; ignored for <c>"relevance"</c>.</param>
-/// <param name="Page">1-based page number for pagination (see <see cref="SearchService.Search"/> for the pagination approach chosen). 0/negative = page 1.</param>
-/// <param name="PageSize">Results per page; 0 = no pagination (return up to <c>topK</c> as before).</param>
 public sealed record SearchFilters(
     string? Extension = null,
     string? FolderPath = null,
@@ -63,7 +32,6 @@ public sealed record SearchFilters(
         || !string.IsNullOrWhiteSpace(Language);
 }
 
-/// <summary>Thrown when a raw Lucene query string typed by the user has invalid syntax (e.g. unbalanced quotes).</summary>
 public sealed class SearchQuerySyntaxException : Exception
 {
     public SearchQuerySyntaxException(string message) : base(message)
@@ -71,23 +39,9 @@ public sealed class SearchQuerySyntaxException : Exception
     }
 }
 
-/// <summary>
-/// Runs BM25 full-text queries against the Lucene.NET index produced by
-/// <see cref="DocumentIndexer"/>.
-///
-/// Accepts an optional <see cref="LuceneIndexManager"/> (inject via DI in the API). When
-/// provided, the underlying <see cref="DirectoryReader"/> is shared across requests and
-/// refreshed via <c>OpenIfChanged</c> instead of being opened and closed per call — removes
-/// O(requests × endpoints) file-descriptor pressure and recovers the Lucene segment cache.
-/// When not provided (Desktop/CLI) the existing per-call open/close behaviour is preserved.
-/// </summary>
 public sealed class SearchService : ISearchService
 {
-    /// <summary>
-    /// When a tag filter is applied, fetch this many times <c>topK</c> BM25 candidates before
-    /// filtering by tag, since tags aren't stored in the Lucene index.
-    /// </summary>
-    private const int TagFilterCandidateMultiplier = 5;
+        private const int TagFilterCandidateMultiplier = 5;
 
     private readonly string _indexPath;
     private readonly LuceneIndexManager? _indexManager;
@@ -101,12 +55,7 @@ public sealed class SearchService : ISearchService
     {
     }
 
-    /// <summary>
-    /// Overload usado quando busca por similaridade de imagem (CLIP) está disponível. Sem
-    /// <paramref name="vectorStore"/>/<paramref name="clipService"/>, <see cref="SearchByImageAsync"/>
-    /// lança <see cref="QuestResume.Core.Embeddings.ClipNotConfiguredException"/>.
-    /// </summary>
-    public SearchService(
+        public SearchService(
         string indexPath,
         LuceneIndexManager? indexManager,
         QuestResume.Core.Embeddings.IVectorStore? vectorStore,
@@ -117,14 +66,7 @@ public sealed class SearchService : ISearchService
         _clipService = clipService;
     }
 
-    /// <summary>
-    /// Overload used when the index at <paramref name="indexPath"/> is protected by a master
-    /// password (<c>AppOptions.EncryptionEnabled</c>). ON OPEN: if an <c>index.enc</c> file
-    /// exists and plain Lucene segment files aren't already present, it is decrypted in-place
-    /// into <paramref name="indexPath"/> before any read below. Call <see cref="SealAsync"/>
-    /// explicitly once done searching to re-encrypt and remove the plaintext again.
-    /// </summary>
-    public SearchService(string indexPath, LuceneIndexManager? indexManager, string? masterPassword, string? masterKeyVerifier)
+        public SearchService(string indexPath, LuceneIndexManager? indexManager, string? masterPassword, string? masterKeyVerifier)
     {
         _indexPath = indexPath;
         _indexManager = indexManager;
@@ -137,12 +79,7 @@ public sealed class SearchService : ISearchService
         }
     }
 
-    /// <summary>
-    /// Explicit close/seal point for callers that constructed this <see cref="SearchService"/>
-    /// with a master password: re-encrypts <see cref="_indexPath"/> back into <c>index.enc</c>
-    /// and deletes the plaintext Lucene files. No-op if encryption wasn't configured.
-    /// </summary>
-    public Task SealAsync()
+        public Task SealAsync()
     {
         if (_encryptionSalt is not null && !string.IsNullOrEmpty(_masterPassword))
         {
@@ -152,15 +89,11 @@ public sealed class SearchService : ISearchService
         return Task.CompletedTask;
     }
 
-    // -------------------------------------------------------------------------
-    // Reader acquisition helpers
-    // -------------------------------------------------------------------------
+    
+    
+    
 
-    /// <summary>
-    /// Returns a reader handle: either a borrowed shared reader (from the manager, must NOT
-    /// be disposed) or a freshly opened owned reader (must be disposed after use).
-    /// </summary>
-    private ReaderHandle OpenReader()
+        private ReaderHandle OpenReader()
     {
         if (_indexManager is not null)
         {
@@ -189,11 +122,7 @@ public sealed class SearchService : ISearchService
         }
     }
 
-    /// <summary>
-    /// Lightweight disposable wrapper that tracks whether this service owns the reader
-    /// (must dispose) or merely borrowed it from <see cref="LuceneIndexManager"/> (must not).
-    /// </summary>
-    private readonly struct ReaderHandle : IDisposable
+        private readonly struct ReaderHandle : IDisposable
     {
         public readonly DirectoryReader? Reader;
         private readonly FSDirectory? _ownedDir;
@@ -219,9 +148,9 @@ public sealed class SearchService : ISearchService
         }
     }
 
-    // -------------------------------------------------------------------------
-    // TagStore access — uses manager cache when available
-    // -------------------------------------------------------------------------
+    
+    
+    
 
     private TagStore LoadTagStore()
     {
@@ -237,9 +166,9 @@ public sealed class SearchService : ISearchService
         _indexManager?.InvalidateTagStore();
     }
 
-    // -------------------------------------------------------------------------
-    // Public API
-    // -------------------------------------------------------------------------
+    
+    
+    
 
     public bool IndexExists()
     {
@@ -260,12 +189,7 @@ public sealed class SearchService : ISearchService
         return handle.Reader.NumDocs;
     }
 
-    /// <summary>
-    /// Returns every indexed chunk for the given source file path, ordered by chunk index.
-    /// Used by <see cref="QuestResume.Core.Rag.RagQueryEngine.CompareAsync"/> to retrieve a
-    /// whole document's content rather than just the chunks matching a query.
-    /// </summary>
-    public IReadOnlyList<SearchResultItem> GetChunksByPath(string path)
+        public IReadOnlyList<SearchResultItem> GetChunksByPath(string path)
     {
         if (!IndexExists()) return Array.Empty<SearchResultItem>();
 
@@ -294,12 +218,7 @@ public sealed class SearchService : ISearchService
         return results.OrderBy(r => r.ChunkIndex).ToList();
     }
 
-    /// <summary>
-    /// Lists source files currently present in the index with chunk counts and tags.
-    /// </summary>
-    /// <param name="skip">Number of files to skip (for pagination). 0 = start from the beginning.</param>
-    /// <param name="take">Maximum files to return. 0 = return all.</param>
-    public IReadOnlyList<IndexedFileInfo> GetIndexedFiles(int skip = 0, int take = 0)
+        public IReadOnlyList<IndexedFileInfo> GetIndexedFiles(int skip = 0, int take = 0)
     {
         if (!IndexExists()) return Array.Empty<IndexedFileInfo>();
 
@@ -307,7 +226,7 @@ public sealed class SearchService : ISearchService
         if (handle.Reader is null) return Array.Empty<IndexedFileInfo>();
 
         var searcher = new IndexSearcher(handle.Reader);
-        // Cap to MaxDoc so MatchAllDocsQuery doesn't silently truncate on very large indexes.
+        
         var hits = searcher.Search(new MatchAllDocsQuery(), Math.Max(handle.Reader.MaxDoc, 1));
         var tagStore = LoadTagStore();
         var summaryStore = new Persistence.SummaryStoreRepository(_indexPath).Load();
@@ -341,33 +260,25 @@ public sealed class SearchService : ISearchService
         return paged.ToList();
     }
 
-    /// <summary>Returns the tags currently assigned to <paramref name="sourcePath"/>.</summary>
-    public IReadOnlyList<string> GetTags(string sourcePath) => LoadTagStore().GetTags(sourcePath);
+        public IReadOnlyList<string> GetTags(string sourcePath) => LoadTagStore().GetTags(sourcePath);
 
-    /// <summary>Replaces the tags assigned to <paramref name="sourcePath"/>.</summary>
-    public void SetTags(string sourcePath, IEnumerable<string> tags)
+        public void SetTags(string sourcePath, IEnumerable<string> tags)
     {
         var store = LoadTagStore();
         store.SetTags(sourcePath, tags);
         SaveTagStoreAndInvalidate(store);
     }
 
-    /// <summary>Returns every distinct tag assigned to any document, for building filter UIs.</summary>
-    public IReadOnlyList<string> GetAllTags() => LoadTagStore().GetAllTags();
+        public IReadOnlyList<string> GetAllTags() => LoadTagStore().GetAllTags();
 
-    /// <summary>
-    /// Removes every indexed chunk for <paramref name="sourcePath"/> in place (without
-    /// rebuilding the whole index). Returns the number of chunks removed (0 if the path wasn't
-    /// indexed).
-    /// </summary>
-    public int RemoveDocument(string sourcePath)
+        public int RemoveDocument(string sourcePath)
     {
         if (!IndexExists()) return 0;
 
         var chunkCount = GetChunksByPath(sourcePath).Count;
         if (chunkCount == 0) return 0;
 
-        // Open an owned writer (always needs its own FSDirectory with write lock).
+        
         using var directory = FSDirectory.Open(_indexPath);
         using var analyzer = new BrazilianAnalyzer(DocumentIndexer.MatchVersion);
         var config = new IndexWriterConfig(DocumentIndexer.MatchVersion, analyzer)
@@ -379,20 +290,13 @@ public sealed class SearchService : ISearchService
         writer.DeleteDocuments(new Term("path", sourcePath));
         writer.Commit();
 
-        // The shared reader in LuceneIndexManager will pick up the deletion via
-        // DirectoryReader.OpenIfChanged on the next AcquireReader call.
+        
+        
 
         return chunkCount;
     }
 
-    /// <summary>
-    /// Syntax characters that, when present in the raw query, signal the user is deliberately
-    /// using Lucene query syntax (phrase, boolean operators, field queries, wildcards) rather
-    /// than typing plain keywords. In that case the query is parsed as-is (unescaped) so that
-    /// syntax works; otherwise every special character is escaped so accidental syntax
-    /// characters in plain text (e.g. a question mark) don't throw <see cref="ParseException"/>.
-    /// </summary>
-    private static readonly char[] LuceneSyntaxChars = { '"', '+', '-', '(', ')', ':', '*', '~', '^' };
+        private static readonly char[] LuceneSyntaxChars = { '"', '+', '-', '(', ')', ':', '*', '~', '^' };
 
     private static bool LooksLikeQuerySyntax(string queryText)
     {
@@ -402,27 +306,10 @@ public sealed class SearchService : ISearchService
             || queryText.Contains(" NOT ", StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Appends <c>~</c> (Lucene fuzzy-match operator) to each plain-text term of
-    /// <paramref name="queryText"/>, used for <see cref="SearchFilters.Fuzzy"/>. Applying fuzzy
-    /// matching to raw syntax queries (phrases, field queries) rarely does what the user
-    /// intends, so this is only called when <see cref="LooksLikeQuerySyntax"/> is false.
-    /// </summary>
-    private static string MakeFuzzy(string queryText) =>
+        private static string MakeFuzzy(string queryText) =>
         string.Join(' ', queryText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(term => $"{term}~"));
 
-    /// <summary>
-    /// Runs a BM25 full-text query. Supports Lucene query syntax typed deliberately by the
-    /// user — exact phrases (<c>"frase exata"</c>) and boolean operators
-    /// (<c>AND</c>/<c>OR</c>/<c>NOT</c>/<c>-termo</c>/field queries) — by parsing the raw text
-    /// as-is instead of escaping it, whenever <see cref="LooksLikeQuerySyntax"/> detects such
-    /// syntax; plain keyword queries are still escaped so incidental punctuation can't break
-    /// parsing. Invalid user syntax (e.g. unbalanced quotes) is caught and surfaced as
-    /// <see cref="SearchQuerySyntaxException"/> instead of propagating a raw Lucene
-    /// <see cref="ParseException"/>.
-    /// </summary>
-    /// <exception cref="SearchQuerySyntaxException">When <paramref name="queryText"/> contains invalid Lucene query syntax.</exception>
-    public IReadOnlyList<SearchResultItem> Search(string queryText, int topK = 5, SearchFilters? filters = null)
+        public IReadOnlyList<SearchResultItem> Search(string queryText, int topK = 5, SearchFilters? filters = null)
     {
         if (string.IsNullOrWhiteSpace(queryText) || !IndexExists())
         {
@@ -460,12 +347,12 @@ public sealed class SearchService : ISearchService
         var page = filters is { PageSize: > 0 } ? Math.Max(1, filters.Page) : 1;
         var pageSize = filters?.PageSize ?? 0;
 
-        // Pagination approach: fetch (page * pageSize) — or topK when unpaginated — candidates
-        // from Lucene and slice the requested page in memory, rather than IndexSearcher.SearchAfter.
-        // Simpler to reason about alongside the existing tag post-filter and score/date/name
-        // sort variants, and acceptable for the moderate per-collection document counts this
-        // desktop-oriented tool targets; SearchAfter would be worth revisiting if collections grow
-        // into the millions of chunks.
+        
+        
+        
+        
+        
+        
         var effectiveTopK = pageSize > 0 ? page * pageSize : topK;
         var fetchCount = hasTagFilter
             ? Math.Min(effectiveTopK * TagFilterCandidateMultiplier, Math.Max(handle.Reader.MaxDoc, 1))
@@ -485,9 +372,9 @@ public sealed class SearchService : ISearchService
             var doc = searcher.Doc(scoreDoc.Doc);
             var content = doc.Get("content") ?? string.Empty;
 
-            // Parent-child chunking (AppOptions.ParentChildChunkingEnabled): matching happens on
-            // the small "content" (child) field above, but the text returned/used in the LLM
-            // prompt should be the larger parent chunk — see DocumentIndexer.ToLuceneDocument.
+            
+            
+            
             var parentText = doc.Get("parentText");
             var displayText = !string.IsNullOrEmpty(parentText) ? parentText : content;
 
@@ -499,8 +386,8 @@ public sealed class SearchService : ISearchService
             }
             catch
             {
-                // Highlighting is a nice-to-have; fall back to no highlight rather than
-                // failing the whole search if the highlighter can't process this content.
+                
+                
             }
 
             results.Add(new SearchResultItem
@@ -537,11 +424,7 @@ public sealed class SearchService : ISearchService
         return final.ToList();
     }
 
-    /// <summary>
-    /// Builds a Lucene <see cref="Sort"/> for <see cref="SearchFilters.SortBy"/>, or <c>null</c>
-    /// to keep the default relevance (BM25 score) order.
-    /// </summary>
-    private static Sort? BuildSort(SearchFilters? filters)
+        private static Sort? BuildSort(SearchFilters? filters)
     {
         if (filters is null) return null;
 
@@ -553,17 +436,7 @@ public sealed class SearchService : ISearchService
         };
     }
 
-    /// <summary>
-    /// Busca imagens indexadas visualmente similares a <paramref name="imagePath"/>, gerando um
-    /// embedding CLIP da imagem de consulta e comparando por similaridade de cosseno contra os
-    /// embeddings armazenados em <c>image_embeddings</c> (ver <see cref="DocumentIndexer"/>/
-    /// <see cref="QuestResume.Core.Embeddings.VectorStore"/>).
-    /// </summary>
-    /// <exception cref="QuestResume.Core.Embeddings.ClipNotConfiguredException">
-    /// Quando nenhum modelo CLIP ONNX válido foi configurado (<see cref="Configuration.AppOptions.ClipModelPath"/>).
-    /// Comportamento esperado sem um modelo real fornecido pelo usuário.
-    /// </exception>
-    public async Task<IReadOnlyList<ImageSearchResultItem>> SearchByImageAsync(string imagePath, int topK = 5, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<ImageSearchResultItem>> SearchByImageAsync(string imagePath, int topK = 5, CancellationToken cancellationToken = default)
     {
         if (_clipService is null)
         {
@@ -580,16 +453,7 @@ public sealed class SearchService : ISearchService
         return _vectorStore.SearchImages(queryEmbedding, topK);
     }
 
-    /// <summary>
-    /// Sentence-window retrieval (<see cref="Configuration.AppOptions.SentenceWindowChunkingEnabled"/>):
-    /// given search results whose chunks are individual sentences (see
-    /// <see cref="TextChunker.ChunkBySentences"/>), replaces each result's <see cref="SearchResultItem.ChunkText"/>
-    /// with that sentence plus <paramref name="windowSize"/> sibling sentences before/after,
-    /// reconstructed from the other chunks of the same source document (already indexed
-    /// contiguously by <see cref="TextChunk.ChunkIndex"/>). Falls back to the original chunk
-    /// text if the source document's chunks can't be found.
-    /// </summary>
-    public IReadOnlyList<SearchResultItem> ExpandSentenceWindow(IReadOnlyList<SearchResultItem> results, int windowSize)
+        public IReadOnlyList<SearchResultItem> ExpandSentenceWindow(IReadOnlyList<SearchResultItem> results, int windowSize)
     {
         if (windowSize <= 0 || results.Count == 0) return results;
 
@@ -632,20 +496,7 @@ public sealed class SearchService : ISearchService
         return expanded;
     }
 
-    /// <summary>
-    /// Corretor ortográfico (item 11): for each whitespace-separated term of
-    /// <paramref name="queryText"/>, asks Lucene's <see cref="DirectSpellChecker"/> — which
-    /// compares directly against the live index's term dictionary, so no separate spellcheck
-    /// index needs to be built/maintained, unlike the classic <c>Lucene.Net.Search.Spell.SpellChecker</c>
-    /// this item names — for the closest indexed terms and returns the flattened, de-duplicated
-    /// list of suggestions. Intended to be called by API/CLI callers when a search returns no or
-    /// few results, exposed as <c>didYouMean</c>.
-    /// Note: suggestions are compared against already-analyzed (lowercased/stemmed by
-    /// <see cref="BrazilianAnalyzer"/>) indexed terms, so a suggestion may be a word stem rather
-    /// than a full natural-language word — an accepted limitation of spellchecking against an
-    /// analyzed field instead of a dedicated unanalyzed "raw terms" field.
-    /// </summary>
-    public IReadOnlyList<string> SuggestSpelling(string queryText, int maxSuggestionsPerTerm = 3)
+        public IReadOnlyList<string> SuggestSpelling(string queryText, int maxSuggestionsPerTerm = 3)
     {
         if (string.IsNullOrWhiteSpace(queryText) || !IndexExists()) return Array.Empty<string>();
 
@@ -654,9 +505,9 @@ public sealed class SearchService : ISearchService
 
         try
         {
-            // Lower than the Lucene default (0.5f): indexed terms are post-stemming (see the
-            // BrazilianAnalyzer applied at index time), so a raw typo can differ from its
-            // stemmed match more than the default accuracy threshold tolerates.
+            
+            
+            
             var spellChecker = new DirectSpellChecker { Accuracy = 0.3f };
             var suggestions = new List<string>();
 
@@ -673,22 +524,13 @@ public sealed class SearchService : ISearchService
         }
         catch
         {
-            // Best-effort: spellcheck is a secondary feature of the search endpoint — a Lucene
-            // failure here shouldn't be surfaced as a search error.
+            
+            
             return Array.Empty<string>();
         }
     }
 
-    /// <summary>
-    /// Autocomplete/sugestões (item 12): returns up to <paramref name="maxSuggestions"/> indexed
-    /// terms starting with <paramref name="prefix"/> (case-insensitive), ordered by document
-    /// frequency (most common first). Built directly from the live index's term dictionary via
-    /// <see cref="TermsEnum.SeekCeil(BytesRef)"/> — a lighter-weight alternative to building and
-    /// persisting a separate <c>Lucene.Net.Search.Suggest.Analyzing.AnalyzingSuggester</c>
-    /// structure, at the cost of not supporting multi-word/whole-phrase suggestions (only single
-    /// indexed terms). Used by <c>GET /api/search/suggest</c>.
-    /// </summary>
-    public IReadOnlyList<string> Suggest(string prefix, int maxSuggestions = 10)
+        public IReadOnlyList<string> Suggest(string prefix, int maxSuggestions = 10)
     {
         if (string.IsNullOrWhiteSpace(prefix) || !IndexExists()) return Array.Empty<string>();
 
@@ -705,8 +547,8 @@ public sealed class SearchService : ISearchService
             var results = new List<(string Term, int DocFreq)>();
             var prefixBytes = new BytesRef(lowerPrefix);
 
-            // Cap how many terms we scan past the prefix so a very common prefix (e.g. a single
-            // letter) can't turn an autocomplete request into a full term-dictionary scan.
+            
+            
             const int maxTermsScanned = 500;
             var scanned = 0;
 
@@ -735,15 +577,7 @@ public sealed class SearchService : ISearchService
         }
     }
 
-    /// <summary>
-    /// "Mais como este" (item 17): given an already-indexed document, computes the average
-    /// embedding of its chunks and returns other documents ranked by cosine similarity between
-    /// average embeddings, excluding the reference document itself.
-    /// </summary>
-    /// <exception cref="QuestResume.Core.Embeddings.EmbeddingsNotConfiguredException">
-    /// When embeddings aren't configured (no <see cref="QuestResume.Core.Embeddings.IVectorStore"/> available).
-    /// </exception>
-    public Task<IReadOnlyList<SimilarDocumentResult>> FindSimilarAsync(string sourcePath, int topK = 5, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SimilarDocumentResult>> FindSimilarAsync(string sourcePath, int topK = 5, CancellationToken cancellationToken = default)
     {
         if (_vectorStore is null)
         {
@@ -777,20 +611,7 @@ public sealed class SearchService : ISearchService
         return Task.FromResult<IReadOnlyList<SimilarDocumentResult>>(results);
     }
 
-    /// <summary>
-    /// Clustering automático de documentos por tema (item 1): computes the average chunk
-    /// embedding of every indexed document and groups them with a simple k-means (Lloyd's
-    /// algorithm, Euclidean distance, k-means++-style seeding) into <paramref name="k"/> clusters.
-    /// When <paramref name="k"/> is omitted, uses the heuristic <c>ceil(sqrt(N / 2))</c> (at least
-    /// 1, capped at document count) commonly used for a first pass at an unknown number of topics.
-    /// When <paramref name="llmProvider"/> is supplied, asks it for a short label summarizing each
-    /// cluster's apparent topic from a sample of its documents' text — best-effort, a label stays
-    /// <c>null</c> if no provider is given or generation fails.
-    /// </summary>
-    /// <exception cref="QuestResume.Core.Embeddings.EmbeddingsNotConfiguredException">
-    /// When embeddings aren't configured (no <see cref="QuestResume.Core.Embeddings.IVectorStore"/> available).
-    /// </exception>
-    public async Task<IReadOnlyList<DocumentCluster>> ClusterDocumentsAsync(
+        public async Task<IReadOnlyList<DocumentCluster>> ClusterDocumentsAsync(
         int? k = null, Rag.ILlmProvider? llmProvider = null, CancellationToken cancellationToken = default)
     {
         if (_vectorStore is null)
@@ -850,18 +671,12 @@ public sealed class SearchService : ISearchService
         return clusters;
     }
 
-    /// <summary>
-    /// Simple Lloyd's-algorithm k-means over Euclidean distance, with k-means++-style seeding
-    /// (each successive centroid chosen with probability proportional to its squared distance
-    /// from the nearest already-chosen centroid) for more stable results than pure random
-    /// initialization. Returns the cluster index (0..k-1) assigned to each input vector, in order.
-    /// </summary>
-    private static int[] KMeans(IReadOnlyList<float[]> vectors, int k, int maxIterations = 50)
+        private static int[] KMeans(IReadOnlyList<float[]> vectors, int k, int maxIterations = 50)
     {
         var n = vectors.Count;
         k = Math.Max(1, Math.Min(k, n));
 
-        var random = new Random(42); // deterministic seeding keeps repeated calls stable
+        var random = new Random(42); 
         var centroids = new List<float[]>(k);
         centroids.Add(vectors[random.Next(n)]);
 
@@ -871,7 +686,7 @@ public sealed class SearchService : ISearchService
             var total = distances.Sum();
             if (total <= 0)
             {
-                // All remaining points coincide with an existing centroid; pick any point left.
+                
                 centroids.Add(vectors[random.Next(n)]);
                 continue;
             }
@@ -973,12 +788,7 @@ public sealed class SearchService : ISearchService
         return sum;
     }
 
-    /// <summary>
-    /// Best-effort LLM label for a cluster: samples up to 3 documents' first ~500 characters of
-    /// chunk text and asks for a short (few words) topic summary. Returns null (never throws) on
-    /// any failure, so a broken/unavailable LLM never breaks clustering itself.
-    /// </summary>
-    private static async Task<string?> TryGenerateClusterLabelAsync(
+        private static async Task<string?> TryGenerateClusterLabelAsync(
         Rag.ILlmProvider llmProvider,
         IReadOnlyList<string> clusterPaths,
         IReadOnlyList<(SearchResultItem Item, float[] Embedding)> entries,

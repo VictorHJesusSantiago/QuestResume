@@ -4,47 +4,21 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Splits the text of an <see cref="ExtractedDocument"/> into overlapping chunks small
-/// enough to fit comfortably in the LLM context window alongside the prompt and other chunks.
-/// </summary>
 public static class TextChunker
 {
-    /// <summary>
-    /// File extensions that get function/class-aware chunking via <see cref="ChunkCode"/>
-    /// instead of the plain sliding-window <see cref="Chunk"/>.
-    /// </summary>
-    public static readonly IReadOnlyCollection<string> CodeExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        public static readonly IReadOnlyCollection<string> CodeExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         ".cs", ".py", ".java", ".ts", ".tsx", ".jsx", ".js", ".go", ".rb", ".php",
         ".c", ".cpp", ".h", ".hpp", ".rs", ".kt", ".swift"
     };
 
-    /// <summary>
-    /// Matches lines that commonly start a top-level declaration (class/interface/struct/
-    /// function/method) across mainstream languages. Used as a forced chunk boundary so a
-    /// declaration's body stays together with its signature whenever it fits in
-    /// <c>chunkSize</c>.
-    /// </summary>
-    private static readonly Regex CodeBoundary = new(
+        private static readonly Regex CodeBoundary = new(
         @"^\s*(?:(?:public|private|protected|internal|static|async|export|default|abstract|override|virtual|readonly|final|sealed|pub)\s+)*(?:class|interface|struct|enum|record|trait|impl|namespace|module|def|func|fn|function)\b",
         RegexOptions.Compiled);
 
-    /// <summary>
-    /// Form-feed character used by <see cref="QuestResume.Core.Extraction.Extractors.PdfExtractor"/>
-    /// to mark page boundaries in the extracted text before chunking. Stripped out of the text
-    /// used for chunking/searching — only used here to compute <see cref="TextChunk.PageNumber"/>.
-    /// </summary>
-    private const char PageMarker = '\f';
+        private const char PageMarker = '\f';
 
-    /// <summary>
-    /// Removes every <see cref="PageMarker"/> from <paramref name="text"/> and returns the
-    /// cleaned text alongside a list of <c>(Offset, Page)</c> pairs (sorted by <c>Offset</c>,
-    /// ascending) recording, for the cleaned text, the character offset where each page begins
-    /// (1-based page numbers). Returns an empty list when <paramref name="text"/> has no markers
-    /// at all, signalling the source document has no page information.
-    /// </summary>
-    private static (string CleanText, List<(int Offset, int Page)> PageBreaks) StripPageMarkers(string text)
+        private static (string CleanText, List<(int Offset, int Page)> PageBreaks) StripPageMarkers(string text)
     {
         if (text.IndexOf(PageMarker) < 0)
         {
@@ -70,12 +44,7 @@ public static class TextChunker
         return (sb.ToString(), breaks);
     }
 
-    /// <summary>
-    /// Returns the page number of the last entry in <paramref name="pageBreaks"/> whose
-    /// <c>Offset</c> is at or before <paramref name="position"/>, or <c>null</c> when
-    /// <paramref name="pageBreaks"/> is empty (source has no page markers).
-    /// </summary>
-    private static int? GetPageNumber(List<(int Offset, int Page)> pageBreaks, int position)
+        private static int? GetPageNumber(List<(int Offset, int Page)> pageBreaks, int position)
     {
         if (pageBreaks.Count == 0)
         {
@@ -153,12 +122,7 @@ public static class TextChunker
         return chunks;
     }
 
-    /// <summary>
-    /// Looks backwards from <paramref name="end"/> for a whitespace character so the chunk
-    /// doesn't split a word/sentence mid-way, but doesn't search past the midpoint of the
-    /// chunk to avoid producing tiny fragments.
-    /// </summary>
-    private static int FindBreakPoint(string text, int start, int end)
+        private static int FindBreakPoint(string text, int start, int end)
     {
         var minBreak = start + (end - start) / 2;
 
@@ -173,13 +137,7 @@ public static class TextChunker
         return end;
     }
 
-    /// <summary>
-    /// Chunks source code by grouping lines into blocks that start at a top-level declaration
-    /// (<see cref="CodeBoundary"/>), so a function/class body stays in one chunk whenever it
-    /// fits. Blocks are then greedily merged up to <paramref name="chunkSize"/>, and any block
-    /// still too big is split with the regular sliding-window <see cref="Chunk"/>.
-    /// </summary>
-    public static IReadOnlyList<TextChunk> ChunkCode(ExtractedDocument document, int chunkSize = 1000, int overlap = 150)
+        public static IReadOnlyList<TextChunk> ChunkCode(ExtractedDocument document, int chunkSize = 1000, int overlap = 150)
     {
         var text = document.Text.Trim();
         if (text.Length == 0)
@@ -270,19 +228,9 @@ public static class TextChunker
         return chunks;
     }
 
-    /// <summary>
-    /// Matches sentence-ending punctuation followed by whitespace, used to split text into
-    /// individual sentences for <see cref="ChunkBySentences"/> and semantic chunking. Deliberately
-    /// simple (no abbreviation handling) — good enough for retrieval purposes where an occasional
-    /// over-split sentence is harmless.
-    /// </summary>
-    private static readonly Regex SentenceBoundary = new(@"(?<=[.!?])\s+", RegexOptions.Compiled);
+        private static readonly Regex SentenceBoundary = new(@"(?<=[.!?])\s+", RegexOptions.Compiled);
 
-    /// <summary>
-    /// Splits <paramref name="text"/> into non-empty, trimmed sentences using
-    /// <see cref="SentenceBoundary"/>.
-    /// </summary>
-    public static IReadOnlyList<string> SplitSentences(string text)
+        public static IReadOnlyList<string> SplitSentences(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return Array.Empty<string>();
 
@@ -292,16 +240,7 @@ public static class TextChunker
             .ToList();
     }
 
-    /// <summary>
-    /// Sentence-window chunking (<see cref="Configuration.AppOptions.SentenceWindowChunkingEnabled"/>):
-    /// each chunk is a single sentence, indexed/embedded individually for precise matching.
-    /// The surrounding context (<c>SentenceWindowSize</c> sentences before/after) is reconstructed
-    /// at retrieval time by <see cref="SearchService.ExpandSentenceWindow"/> from sibling chunks
-    /// of the same document, rather than stored redundantly in every chunk.
-    /// Sentences longer than <paramref name="chunkSize"/> are further split by the regular
-    /// sliding-window <see cref="Chunk"/>.
-    /// </summary>
-    public static IReadOnlyList<TextChunk> ChunkBySentences(ExtractedDocument document, int chunkSize = 1000)
+        public static IReadOnlyList<TextChunk> ChunkBySentences(ExtractedDocument document, int chunkSize = 1000)
     {
         var sentences = SplitSentences(document.Text);
         if (sentences.Count == 0) return Array.Empty<TextChunk>();
@@ -349,27 +288,15 @@ public static class TextChunker
         return chunks;
     }
 
-    /// <summary>
-    /// Matches a Markdown ATX heading (<c>#</c> .. <c>######</c>) at the start of a line, or an
-    /// HTML <c>&lt;h1&gt;</c>-<c>&lt;h6&gt;</c> opening tag, used by <see cref="ChunkByHeadings"/>.
-    /// </summary>
-    private static readonly Regex MarkdownHeading = new(@"^(#{1,6})\s+.*$", RegexOptions.Compiled | RegexOptions.Multiline);
+        private static readonly Regex MarkdownHeading = new(@"^(#{1,6})\s+.*$", RegexOptions.Compiled | RegexOptions.Multiline);
     private static readonly Regex HtmlHeading = new(@"<h([1-6])[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>File extensions eligible for heading-aware chunking (<see cref="ChunkByHeadings"/>).</summary>
-    public static readonly IReadOnlyCollection<string> HeadingAwareExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        public static readonly IReadOnlyCollection<string> HeadingAwareExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         ".md", ".markdown", ".html", ".htm"
     };
 
-    /// <summary>
-    /// Heading-hierarchy chunking (<see cref="Configuration.AppOptions.HeadingAwareChunkingEnabled"/>):
-    /// for Markdown/HTML documents, splits the text at heading boundaries (<c>#</c>-<c>######</c>
-    /// or <c>&lt;h1&gt;</c>-<c>&lt;h6&gt;</c>) so each chunk stays within a single section. Sections
-    /// still bigger than <paramref name="chunkSize"/> are further subdivided by the regular
-    /// sliding-window <see cref="Chunk"/>.
-    /// </summary>
-    public static IReadOnlyList<TextChunk> ChunkByHeadings(ExtractedDocument document, int chunkSize = 1000, int overlap = 150)
+        public static IReadOnlyList<TextChunk> ChunkByHeadings(ExtractedDocument document, int chunkSize = 1000, int overlap = 150)
     {
         var text = document.Text;
         if (string.IsNullOrWhiteSpace(text)) return Array.Empty<TextChunk>();
@@ -453,16 +380,7 @@ public static class TextChunker
         return chunks;
     }
 
-    /// <summary>
-    /// Parent-child chunking (<see cref="Configuration.AppOptions.ParentChildChunkingEnabled"/>):
-    /// first splits the document into non-overlapping "parent" windows of
-    /// <paramref name="parentChunkSize"/> characters, then splits each parent window further into
-    /// "child" windows of <paramref name="childChunkSize"/> characters. Returns the child chunks
-    /// (used for search/embedding), each carrying its parent's full text in
-    /// <see cref="TextChunk.ParentText"/> for the caller to substitute back in at retrieval time
-    /// (see <see cref="SearchService.Search"/>).
-    /// </summary>
-    public static IReadOnlyList<TextChunk> ChunkParentChild(ExtractedDocument document, int parentChunkSize = 1500, int childChunkSize = 200)
+        public static IReadOnlyList<TextChunk> ChunkParentChild(ExtractedDocument document, int parentChunkSize = 1500, int childChunkSize = 200)
     {
         var text = document.Text.Trim();
         if (text.Length == 0) return Array.Empty<TextChunk>();
