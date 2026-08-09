@@ -3,21 +3,9 @@ using IODirectory = System.IO.Directory;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Backs up and restores an entire index folder (Lucene segments, <c>vectors.db</c>,
-/// <c>tags.json</c>, <c>index-manifest.json</c>, <c>index-report.json</c>, <c>audit.jsonl</c>,
-/// etc.) as a single .zip file, so a user can move or recover a full index without re-indexing
-/// the original documents.
-/// </summary>
 public sealed class IndexBackupService
 {
-    /// <summary>
-    /// Compacts every file directly under <paramref name="indexPath"/> into
-    /// <paramref name="backupZipPath"/>. Any existing file at <paramref name="backupZipPath"/> is
-    /// overwritten. Files still open for writing (e.g. <c>vectors.db-wal</c>) are copied with
-    /// <see cref="FileShare.ReadWrite"/> so an in-progress SQLite connection doesn't block the backup.
-    /// </summary>
-    public async Task CreateBackupAsync(string indexPath, string backupZipPath, CancellationToken cancellationToken = default)
+        public async Task CreateBackupAsync(string indexPath, string backupZipPath, CancellationToken cancellationToken = default)
     {
         if (!IODirectory.Exists(indexPath))
         {
@@ -30,8 +18,8 @@ public sealed class IndexBackupService
             IODirectory.CreateDirectory(destinationDir);
         }
 
-        // Build into a temp file first and move into place at the end, so a crash or
-        // cancellation mid-write never leaves a truncated/corrupt .zip at the requested path.
+        
+        
         var tempZipPath = backupZipPath + ".tmp";
         if (File.Exists(tempZipPath))
         {
@@ -72,13 +60,7 @@ public sealed class IndexBackupService
         }
     }
 
-    /// <summary>
-    /// Restores <paramref name="backupZipPath"/> into <paramref name="indexPath"/>, replacing its
-    /// current contents. Extracts to a temporary sibling directory first and only swaps it into
-    /// place once extraction succeeds fully, so a failed/cancelled restore never leaves
-    /// <paramref name="indexPath"/> half-overwritten.
-    /// </summary>
-    public async Task RestoreBackupAsync(string backupZipPath, string indexPath, CancellationToken cancellationToken = default)
+        public async Task RestoreBackupAsync(string backupZipPath, string indexPath, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(backupZipPath))
         {
@@ -103,7 +85,7 @@ public sealed class IndexBackupService
 
                     if (string.IsNullOrEmpty(entry.Name))
                     {
-                        // Directory entry.
+                        
                         continue;
                     }
 
@@ -120,11 +102,11 @@ public sealed class IndexBackupService
                 }
             }
 
-            // Atomic-ish swap: remove current index contents, then move every restored file in.
-            // Mirrors DocumentIndexer.SwapIndexDirectory's crash-safety intent, but since restore
-            // is an explicit, infrequent user action a marker file isn't warranted here — worst
-            // case of an interruption is an empty/partial indexPath, recoverable by re-running
-            // restore or re-indexing.
+            
+            
+            
+            
+            
             foreach (var existingFile in IODirectory.GetFiles(indexPath, "*", SearchOption.AllDirectories))
             {
                 File.Delete(existingFile);

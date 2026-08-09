@@ -3,10 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// File-backed implementation of <see cref="IIndexReportRepository"/> using a JSON sidecar
-/// alongside the Lucene index. Returns an empty report when the file is missing or corrupt.
-/// </summary>
 public sealed class IndexReportRepository : IIndexReportRepository
 {
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };

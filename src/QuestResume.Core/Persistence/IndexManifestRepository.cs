@@ -3,10 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// File-backed implementation of <see cref="IIndexManifestRepository"/>. Returns an empty
-/// manifest when the JSON sidecar is missing or corrupt.
-/// </summary>
 public sealed class IndexManifestRepository : IIndexManifestRepository
 {
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
