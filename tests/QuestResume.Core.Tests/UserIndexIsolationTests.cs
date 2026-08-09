@@ -3,12 +3,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Proves that resolving a per-user index path via <see cref="UserIndexPathResolver"/> (as done
-/// end-to-end by the API in Program.cs for every authenticated request) actually isolates search
-/// results between two different users: indexing distinct content into each user's resolved
-/// subfolder must never let one user's <see cref="SearchService"/> see the other's documents.
-/// </summary>
 public class UserIndexIsolationTests
 {
     [Fact]
@@ -53,13 +47,13 @@ public class UserIndexIsolationTests
             Assert.Single(resultsBFromB);
             Assert.Contains("segredo-do-usuario-b.txt", resultsBFromB[0].FileName);
 
-            // The core isolation guarantee: user A's search service, backed by user A's resolved
-            // index path, must never surface user B's file (and vice-versa).
+            
+            
             Assert.DoesNotContain(resultsAFromA, r => r.FileName.Contains("usuario-b", StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(resultsBFromB, r => r.FileName.Contains("usuaria-a", StringComparison.OrdinalIgnoreCase));
 
-            // Also confirm at the filesystem level that the two indexes physically live in
-            // different folders under the shared base path.
+            
+            
             Assert.True(Directory.Exists(indexPathA));
             Assert.True(Directory.Exists(indexPathB));
             Assert.NotEqual(Path.GetFullPath(indexPathA), Path.GetFullPath(indexPathB));

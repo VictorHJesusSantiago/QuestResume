@@ -43,8 +43,8 @@ public class TextChunkerTests
         Assert.True(chunks.Count > 1);
         Assert.Equal(Enumerable.Range(0, chunks.Count), chunks.Select(c => c.ChunkIndex));
 
-        // Consecutive chunks should overlap: the last word of one chunk should reappear
-        // near the start of the next chunk.
+        
+        
         var lastWordOfFirstChunk = chunks[0].Text.Split(' ')[^1];
         Assert.Contains(lastWordOfFirstChunk, chunks[1].Text);
     }
@@ -138,10 +138,10 @@ public class TextChunkerTests
     [Fact]
     public void Chunk_WithPageMarkers_AssignsPageNumberPerPage()
     {
-        // '\f' (form feed) is the page-boundary marker PdfExtractor inserts between pages. Each
-        // page is a uniform run of one letter with no whitespace, and chunkSize exactly matches
-        // each page's length, so FindBreakPoint (which only looks for whitespace) can't nudge
-        // the chunk boundary off the page boundary — each chunk lines up exactly with one page.
+        
+        
+        
+        
         var text = new string('A', 100) + "\f" + new string('B', 100) + "\f" + new string('C', 100);
 
         var chunks = TextChunker.Chunk(MakeDocument(text), chunkSize: 100, overlap: 0);
@@ -151,7 +151,7 @@ public class TextChunkerTests
         Assert.Equal(2, chunks[1].PageNumber);
         Assert.Equal(3, chunks[2].PageNumber);
 
-        // The form-feed marker itself must not leak into the visible chunk text.
+        
         Assert.DoesNotContain('\f', chunks[0].Text);
         Assert.DoesNotContain('\f', chunks[1].Text);
         Assert.DoesNotContain('\f', chunks[2].Text);
@@ -160,7 +160,7 @@ public class TextChunkerTests
     [Fact]
     public void Chunk_MultiplePagesInOneChunk_PageNumberIsWhereChunkStarts()
     {
-        // A single chunk spanning two pages should report the page it *starts* on.
+        
         var text = "A" + "\f" + "B";
 
         var chunks = TextChunker.Chunk(MakeDocument(text), chunkSize: 1000, overlap: 0);
@@ -261,7 +261,7 @@ public class TextChunkerTests
         Assert.All(chunks, c => Assert.True(c.ParentText!.Length <= 1000));
         Assert.All(chunks, c => Assert.True(c.Text.Length <= 100 || c.ParentText!.Length <= 100));
 
-        // Every child's text must be a substring of its parent's text.
+        
         Assert.All(chunks, c => Assert.Contains(c.Text, c.ParentText!));
     }
 

@@ -7,8 +7,8 @@ public class TableHeuristicsTests
     [Fact]
     public void DetectAndFormatTables_GridWithConsistentColumns_BecomesMarkdownTable()
     {
-        // Item 16: linhas consecutivas com o mesmo número de "colunas" (separadas por 2+
-        // espaços ou tab) devem virar uma tabela Markdown com cabeçalho + separador.
+        
+        
         var pageText = "Nome        Idade       Cidade\nAna         30          Recife\nBruno       25          Natal";
 
         var result = TableHeuristics.DetectAndFormatTables(pageText);
@@ -44,8 +44,8 @@ public class TableHeuristicsTests
     [Fact]
     public void DetectAndFormatTables_SingleTableLikeLine_IsNotEnoughToFormAsTable()
     {
-        // Uma única linha com colunas não é suficiente (mínimo de 2 linhas consecutivas
-        // com a mesma contagem de colunas) — evita falsos positivos em texto isolado.
+        
+        
         var pageText = "Chave        Valor";
 
         var result = TableHeuristics.DetectAndFormatTables(pageText);

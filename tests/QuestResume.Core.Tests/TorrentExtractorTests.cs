@@ -10,7 +10,7 @@ public class TorrentExtractorTests
     {
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.torrent");
 
-        // d8:announce20:http://tracker.test4:infod6:lengthi12345e4:name8:teste.txtee
+        
         const string bencode =
             "d8:announce20:http://tracker.test/4:infod6:lengthi12345e4:name9:teste.txtee";
 
