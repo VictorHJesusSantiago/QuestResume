@@ -4,18 +4,12 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>Um evento datado extraído de um documento.</summary>
 public sealed class TimelineEvent
 {
     public string Date { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Extrai uma linha do tempo de eventos (data + descrição) de um documento indexado usando o LLM.
-/// Retorna os eventos ordenados cronologicamente (parse de data defensivo; datas não parseáveis vão
-/// para o fim). Parse de JSON defensivo.
-/// </summary>
 public sealed class TimelineExtractionService
 {
     private readonly Func<string, IReadOnlyList<SearchResultItem>> _getChunksByPath;

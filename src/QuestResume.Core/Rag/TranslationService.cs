@@ -2,10 +2,6 @@ using System.Text;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Usa o LLM configurado para traduzir texto livre (ou o conteúdo de um documento indexado,
-/// já concatenado pelo chamador) sob demanda.
-/// </summary>
 public sealed class TranslationService
 {
     private readonly ILlmProvider _llmProvider;
@@ -15,11 +11,7 @@ public sealed class TranslationService
         _llmProvider = llmProvider;
     }
 
-    /// <summary>
-    /// Traduz <paramref name="text"/> para <paramref name="targetLanguage"/> (ex.: "en", "es",
-    /// "inglês"). Retorna apenas o texto traduzido, sem comentários adicionais do modelo.
-    /// </summary>
-    public async Task<string> TranslateAsync(string text, string targetLanguage, CancellationToken cancellationToken = default)
+        public async Task<string> TranslateAsync(string text, string targetLanguage, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
