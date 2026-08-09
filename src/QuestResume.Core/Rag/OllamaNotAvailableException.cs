@@ -1,10 +1,5 @@
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Thrown when the Ollama LLM provider is selected but the local Ollama server could not be
-/// reached. Full-text search keeps working without an LLM; this exception only affects the
-/// "ask a question in natural language" flow.
-/// </summary>
 public sealed class OllamaNotAvailableException : Exception
 {
     public OllamaNotAvailableException(string baseUrl, Exception? innerException = null)

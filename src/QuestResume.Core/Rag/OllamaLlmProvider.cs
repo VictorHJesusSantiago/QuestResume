@@ -5,11 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// <see cref="ILlmProvider"/> backed by a local Ollama server
-/// (<c>POST {baseUrl}/api/generate</c>). Ollama runs entirely on the user's machine; no data
-/// leaves the host.
-/// </summary>
 public sealed class OllamaLlmProvider : ILlmProvider
 {
     private readonly HttpClient _httpClient;
@@ -18,13 +13,7 @@ public sealed class OllamaLlmProvider : ILlmProvider
     private readonly string _model;
     private readonly LlmSamplingOptions _sampling;
 
-    /// <param name="baseUrl">Ex.: "http://localhost:11434".</param>
-    /// <param name="model">Nome do modelo Ollama (ex.: "llama3.2").</param>
-    /// <param name="httpClient">
-    /// Cliente HTTP opcional, útil para testes (injetar <see cref="HttpMessageHandler"/> fake).
-    /// Quando omitido, um cliente próprio é criado e descartado junto com o provider.
-    /// </param>
-    public OllamaLlmProvider(string baseUrl, string model, HttpClient? httpClient = null, LlmSamplingOptions? sampling = null)
+        public OllamaLlmProvider(string baseUrl, string model, HttpClient? httpClient = null, LlmSamplingOptions? sampling = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
         _model = model;
@@ -63,12 +52,7 @@ public sealed class OllamaLlmProvider : ILlmProvider
         return result?.Response?.Trim() ?? string.Empty;
     }
 
-    /// <summary>
-    /// Streams the completion via Ollama's <c>"stream": true</c> mode, which returns one JSON
-    /// object per line (NDJSON) — each with a <c>response</c> fragment, until a final object
-    /// with <c>"done": true</c>.
-    /// </summary>
-    public async IAsyncEnumerable<string> CompleteStreamAsync(string prompt, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        public async IAsyncEnumerable<string> CompleteStreamAsync(string prompt, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var request = new OllamaGenerateRequest(_model, prompt, true, BuildOptions());
 
@@ -131,11 +115,7 @@ public sealed class OllamaLlmProvider : ILlmProvider
         [property: JsonPropertyName("stream")] bool Stream,
         [property: JsonPropertyName("options")] OllamaOptions Options);
 
-    /// <summary>
-    /// Subconjunto do objeto <c>options</c> da API do Ollama (<c>POST /api/generate</c>) usado
-    /// para amostragem (item 1). <c>seed</c> é omitido do JSON quando <c>null</c> (semente aleatória).
-    /// </summary>
-    private sealed record OllamaOptions(
+        private sealed record OllamaOptions(
         [property: JsonPropertyName("temperature")] double Temperature,
         [property: JsonPropertyName("top_p")] double TopP,
         [property: JsonPropertyName("seed")]
