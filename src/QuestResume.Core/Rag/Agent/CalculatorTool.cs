@@ -2,11 +2,6 @@ using System.Globalization;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Avalia expressões aritméticas simples (+ - * / e parênteses, números decimais) usando um
-/// parser recursivo-descendente escrito à mão — deliberadamente SEM <c>eval</c>,
-/// <c>DataTable.Compute</c> ou reflection dinâmica, para evitar execução de código arbitrário.
-/// </summary>
 public sealed class CalculatorTool : ITool
 {
     public string Name => "calculator";
@@ -21,9 +16,7 @@ public sealed class CalculatorTool : ITool
         return Task.FromResult(result.ToString(CultureInfo.InvariantCulture));
     }
 
-    /// <summary>Avalia uma expressão aritmética e retorna o resultado numérico.</summary>
-    /// <exception cref="CalculatorException">Quando a expressão é inválida (sintaxe, parêntese não fechado, divisão por zero etc.).</exception>
-    public static double Evaluate(string expression)
+        public static double Evaluate(string expression)
     {
         if (string.IsNullOrWhiteSpace(expression))
         {
@@ -41,13 +34,7 @@ public sealed class CalculatorTool : ITool
         return value;
     }
 
-    /// <summary>
-    /// Parser recursivo-descendente clássico para gramática de expressões aritméticas:
-    /// expression := term (('+' | '-') term)*
-    /// term       := factor (('*' | '/') factor)*
-    /// factor     := number | '(' expression ')' | ('+' | '-') factor
-    /// </summary>
-    private sealed class Parser
+        private sealed class Parser
     {
         private readonly string _text;
         public int Position { get; private set; }
@@ -193,7 +180,6 @@ public sealed class CalculatorTool : ITool
     }
 }
 
-/// <summary>Lançada quando <see cref="CalculatorTool"/> não consegue avaliar a expressão informada.</summary>
 public sealed class CalculatorException : Exception
 {
     public CalculatorException(string message) : base(message)

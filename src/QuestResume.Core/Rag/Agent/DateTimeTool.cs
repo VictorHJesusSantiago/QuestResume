@@ -2,16 +2,11 @@ using System.Globalization;
 
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Ferramenta que retorna a data e hora atuais (item 11). Aceita opcionalmente "utc" na entrada
-/// para devolver o horário UTC; caso contrário devolve o horário local do sistema.
-/// </summary>
 public sealed class DateTimeTool : ITool
 {
     private readonly Func<DateTimeOffset> _now;
 
-    /// <param name="now">Fonte de tempo injetável (útil para testes determinísticos).</param>
-    public DateTimeTool(Func<DateTimeOffset>? now = null)
+        public DateTimeTool(Func<DateTimeOffset>? now = null)
     {
         _now = now ?? (() => DateTimeOffset.Now);
     }

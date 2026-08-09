@@ -1,23 +1,12 @@
 namespace QuestResume.Core.Rag.Agent;
 
-/// <summary>
-/// Lê o conteúdo de um arquivo de texto local pelo caminho (item 11), com validação de segurança:
-/// o caminho resolvido (canônico) deve estar DENTRO de uma das raízes permitidas
-/// (<c>AllowedDocumentRoots</c>/<c>DocumentsFolder</c>). Impede leitura de arquivos arbitrários do
-/// sistema (path traversal, caminhos absolutos fora das raízes). Limita o tamanho lido para não
-/// estourar o contexto do LLM.
-/// </summary>
 public sealed class FileReaderTool : ITool
 {
     private const int MaxChars = 8000;
 
     private readonly IReadOnlyList<string> _allowedRoots;
 
-    /// <param name="allowedRoots">
-    /// Raízes permitidas (ex.: <c>AppOptions.DocumentsFolder</c> + <c>AllowedDocumentRoots</c>).
-    /// Um arquivo só é lido se estiver dentro de uma delas.
-    /// </param>
-    public FileReaderTool(IEnumerable<string> allowedRoots)
+        public FileReaderTool(IEnumerable<string> allowedRoots)
     {
         _allowedRoots = allowedRoots
             .Where(r => !string.IsNullOrWhiteSpace(r))
@@ -88,7 +77,6 @@ public sealed class FileReaderTool : ITool
     }
 }
 
-/// <summary>Lançada quando <see cref="FileReaderTool"/> não pode ler o arquivo (inválido, negado, inexistente).</summary>
 public sealed class FileReaderToolException : Exception
 {
     public FileReaderToolException(string message) : base(message)
