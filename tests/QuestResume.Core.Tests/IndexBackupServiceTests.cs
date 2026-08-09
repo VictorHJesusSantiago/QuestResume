@@ -57,7 +57,7 @@ public class IndexBackupServiceTests
             var backupService = new IndexBackupService();
             await backupService.CreateBackupAsync(indexPath, zipPath);
 
-            // Simulate the index having changed since the backup was taken.
+            
             File.Delete(Path.Combine(indexPath, "original.txt"));
             await File.WriteAllTextAsync(Path.Combine(indexPath, "stale.txt"), "deve ser removido");
 

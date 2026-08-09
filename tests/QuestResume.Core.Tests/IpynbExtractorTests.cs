@@ -62,7 +62,7 @@ public class IpynbExtractorTests
             var extractor = new IpynbExtractor();
             var document = await extractor.ExtractAsync(path);
 
-            // Only two non-empty cells should produce a "[code]"/"[markdown]" marker each.
+            
             var codeMarkers = document.Text.Split("[code]").Length - 1;
             Assert.Equal(1, codeMarkers);
         }
