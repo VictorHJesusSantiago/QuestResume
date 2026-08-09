@@ -4,11 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts a Markdown representation (schema + up to <see cref="MaxRowsPerTable"/> sample rows)
-/// of every user table in a SQLite database (.sqlite, .db). Uses Microsoft.Data.Sqlite, already a
-/// project dependency (see <see cref="QuestResume.Core.Embeddings.VectorStore"/>).
-/// </summary>
 public sealed class SqliteExtractor : IFileExtractor
 {
     private const int MaxRowsPerTable = 100;
@@ -55,8 +50,8 @@ public sealed class SqliteExtractor : IFileExtractor
                 try
                 {
                     using var cmd = connection.CreateCommand();
-                    // Nomes de tabela não podem ser parametrizados; escapadas entre aspas duplas
-                    // (identificador SQLite) para evitar SQL injection via nome de tabela malicioso.
+                    
+                    
                     var safeName = table.Replace("\"", "\"\"");
                     cmd.CommandText = $"SELECT * FROM \"{safeName}\" LIMIT {MaxRowsPerTable};";
                     using var reader = cmd.ExecuteReader();

@@ -4,10 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts the spoken/displayed text from subtitle files (.srt, .vtt), discarding cue
-/// sequence numbers, timestamps and markup so only the dialogue remains searchable.
-/// </summary>
 public sealed class SubtitleExtractor : IFileExtractor
 {
     private static readonly Regex SequenceNumberLine = new(@"^\d+$", RegexOptions.Compiled);
@@ -39,8 +35,8 @@ public sealed class SubtitleExtractor : IFileExtractor
 
             var text = HtmlTag.Replace(line, string.Empty).Trim();
 
-            // Subtitle cues frequently repeat the same line across consecutive timestamps
-            // (e.g. karaoke-style captions); skip immediate duplicates to avoid noise.
+            
+            
             if (text.Length > 0 && !string.Equals(text, lastLine, StringComparison.Ordinal))
             {
                 builder.AppendLine(text);
