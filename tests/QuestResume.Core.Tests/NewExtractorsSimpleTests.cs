@@ -3,17 +3,12 @@ using QuestResume.Core.Extraction.Extractors;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Testes reais para os novos extratores cujo conteúdo de entrada pode ser construído
-/// diretamente em texto/binário simples: .reg (PlainText), .dxf/.dwg, .fb2, .torrent, .lnk,
-/// .psd, .chm/.djvu, .mobi, .apk, .pst.
-/// </summary>
 public class NewExtractorsSimpleTests
 {
     private static string TempFile(string extension)
         => Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{extension}");
 
-    // ---------- .reg (item 1) ----------
+    
 
     [Fact]
     public void PlainTextExtractor_SupportsReg()
@@ -37,7 +32,7 @@ public class NewExtractorsSimpleTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .dxf / .dwg (item 5) ----------
+    
 
     [Fact]
     public async Task DwgDxfExtractor_ExtractsTextEntitiesFromDxf()
@@ -45,7 +40,7 @@ public class NewExtractorsSimpleTests
         var path = TempFile(".dxf");
         try
         {
-            // Entidade TEXT com conteúdo no grupo de código 1.
+            
             var dxf = "0\nSECTION\n2\nENTITIES\n0\nTEXT\n8\n0\n1\nOla Mundo CAD\n0\nMTEXT\n1\nSegundo texto\n0\nENDSEC\n0\nEOF\n";
             await File.WriteAllTextAsync(path, dxf);
             var doc = await new DwgDxfExtractor().ExtractAsync(path);
@@ -69,7 +64,7 @@ public class NewExtractorsSimpleTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .fb2 (item 7) ----------
+    
 
     [Fact]
     public async Task Fb2Extractor_ExtractsTitleAndBody()
@@ -102,7 +97,7 @@ public class NewExtractorsSimpleTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .torrent (item 3) ----------
+    
 
     [Fact]
     public async Task TorrentExtractor_ParsesNameSizeAndTracker()
@@ -110,7 +105,7 @@ public class NewExtractorsSimpleTests
         var path = TempFile(".torrent");
         try
         {
-            // Bencode: d 8:announce 20:http://tracker.test/ 4:info d 6:length i12345e 4:name 9:meu_video e e
+            
             var bencode = "d8:announce20:http://tracker.test/4:infod6:lengthi12345e4:name9:meu_videoee";
             await File.WriteAllBytesAsync(path, Encoding.ASCII.GetBytes(bencode));
             var doc = await new TorrentExtractor().ExtractAsync(path);
@@ -121,7 +116,7 @@ public class NewExtractorsSimpleTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .lnk (item 2) ----------
+    
 
     [Fact]
     public async Task LnkExtractor_ExtractsTargetPath()
@@ -142,38 +137,38 @@ public class NewExtractorsSimpleTests
         var targetBytes = Encoding.ASCII.GetBytes(target);
         var buffer = new List<byte>();
 
-        // ShellLinkHeader: HeaderSize = 0x4C.
+        
         buffer.AddRange(BitConverter.GetBytes(0x0000004Cu));
-        // LinkCLSID.
+        
         buffer.AddRange(new byte[]
         {
             0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
             0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
         });
-        // LinkFlags: HasLinkInfo (0x2) only.
+        
         buffer.AddRange(BitConverter.GetBytes(0x00000002u));
-        // Restante do header ate 76 bytes.
+        
         while (buffer.Count < 76) buffer.Add(0);
 
-        // LinkInfo (comeca em 76, sem IDList).
+        
         const int headerSize = 28;
         var localBasePathOffset = headerSize;
         var linkInfoSize = headerSize + targetBytes.Length + 1;
 
-        buffer.AddRange(BitConverter.GetBytes((uint)linkInfoSize));       // 0: LinkInfoSize
-        buffer.AddRange(BitConverter.GetBytes((uint)headerSize));         // 4: LinkInfoHeaderSize
-        buffer.AddRange(BitConverter.GetBytes(0x00000001u));             // 8: LinkInfoFlags (VolumeIDAndLocalBasePath)
-        buffer.AddRange(BitConverter.GetBytes(0x00000000u));             // 12: VolumeIDOffset
-        buffer.AddRange(BitConverter.GetBytes((uint)localBasePathOffset)); // 16: LocalBasePathOffset
-        buffer.AddRange(BitConverter.GetBytes(0x00000000u));             // 20: CommonNetworkRelativeLinkOffset
-        buffer.AddRange(BitConverter.GetBytes(0x00000000u));             // 24: CommonPathSuffixOffset
-        buffer.AddRange(targetBytes);                                     // 28: LocalBasePath
-        buffer.Add(0);                                                    // terminador nulo
+        buffer.AddRange(BitConverter.GetBytes((uint)linkInfoSize));       
+        buffer.AddRange(BitConverter.GetBytes((uint)headerSize));         
+        buffer.AddRange(BitConverter.GetBytes(0x00000001u));             
+        buffer.AddRange(BitConverter.GetBytes(0x00000000u));             
+        buffer.AddRange(BitConverter.GetBytes((uint)localBasePathOffset)); 
+        buffer.AddRange(BitConverter.GetBytes(0x00000000u));             
+        buffer.AddRange(BitConverter.GetBytes(0x00000000u));             
+        buffer.AddRange(targetBytes);                                     
+        buffer.Add(0);                                                    
 
         return buffer.ToArray();
     }
 
-    // ---------- .psd (item 4) ----------
+    
 
     [Fact]
     public async Task PsdExtractor_ExtractsDimensionsAndColorMode()
@@ -194,15 +189,15 @@ public class NewExtractorsSimpleTests
     private static byte[] BuildPsdHeader(uint width, uint height, ushort channels, ushort depth, ushort colorMode)
     {
         var buffer = new List<byte>();
-        buffer.AddRange(Encoding.ASCII.GetBytes("8BPS"));      // signature
-        buffer.AddRange(Be16(1));                              // version
-        buffer.AddRange(new byte[6]);                          // reserved
+        buffer.AddRange(Encoding.ASCII.GetBytes("8BPS"));      
+        buffer.AddRange(Be16(1));                              
+        buffer.AddRange(new byte[6]);                          
         buffer.AddRange(Be16(channels));
         buffer.AddRange(Be32(height));
         buffer.AddRange(Be32(width));
         buffer.AddRange(Be16(depth));
         buffer.AddRange(Be16(colorMode));
-        // Color Mode Data (0), Image Resources (0), Layer/Mask (0) length sections.
+        
         buffer.AddRange(Be32(0));
         buffer.AddRange(Be32(0));
         buffer.AddRange(Be32(0));
@@ -212,7 +207,7 @@ public class NewExtractorsSimpleTests
     private static byte[] Be16(ushort v) => new[] { (byte)(v >> 8), (byte)(v & 0xFF) };
     private static byte[] Be32(uint v) => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)(v & 0xFF) };
 
-    // ---------- .chm / .djvu (item 14) ----------
+    
 
     [Fact]
     public async Task ChmDjvuExtractor_ReportsLimitedSupport()
@@ -230,7 +225,7 @@ public class NewExtractorsSimpleTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .mobi (item 12) ----------
+    
 
     [Fact]
     public async Task MobiExtractor_ExtractsUncompressedText()
@@ -248,26 +243,26 @@ public class NewExtractorsSimpleTests
     private static byte[] BuildUncompressedMobi(string text)
     {
         var textBytes = Encoding.ASCII.GetBytes(text);
-        const int record0Offset = 94;   // 78 header + 16 record-info table (2 entries)
-        const int record1Offset = 110;  // 94 + 16-byte palmdoc header
+        const int record0Offset = 94;   
+        const int record1Offset = 110;  
 
         var buffer = new byte[record1Offset + textBytes.Length];
 
-        // recordCount = 2 em BE no offset 76.
+        
         buffer[76] = 0x00;
         buffer[77] = 0x02;
 
-        // record info table (offset 78): entry0, entry1 (cada 8 bytes: 4 offset + 4 attrib).
+        
         WriteBe32(buffer, 78, record0Offset);
         WriteBe32(buffer, 86, record1Offset);
 
-        // record0 = cabecalho PalmDOC (16 bytes). compression=1 em [0..1], textRecordCount=1 em [8..9].
+        
         buffer[record0Offset + 0] = 0x00;
         buffer[record0Offset + 1] = 0x01;
         buffer[record0Offset + 8] = 0x00;
         buffer[record0Offset + 9] = 0x01;
 
-        // record1 = texto.
+        
         Array.Copy(textBytes, 0, buffer, record1Offset, textBytes.Length);
 
         return buffer;
@@ -281,7 +276,7 @@ public class NewExtractorsSimpleTests
         buffer[offset + 3] = (byte)(value & 0xFF);
     }
 
-    // ---------- .pst (item 13) - caminho de degradacao graciosa ----------
+    
 
     [Fact]
     public async Task PstOstExtractor_InvalidFile_ReturnsWarningWithoutThrowing()

@@ -27,7 +27,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
             Score = 1f
         }).ToList();
 
-    // ---- Item 1: Anki export ----
+    
     [Fact]
     public void AnkiExporter_ProducesTabDelimitedLines_AndNeutralizesNewlines()
     {
@@ -43,7 +43,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Equal("Q2\tA2", lines[1]);
     }
 
-    // ---- Item 2: SM-2 ----
+    
     [Fact]
     public void SpacedRepetition_GoodAnswers_IncreaseIntervalAndRepetitions()
     {
@@ -75,7 +75,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
     public void SpacedRepetition_InvalidQuality_Throws() =>
         Assert.Throws<ArgumentOutOfRangeException>(() => SpacedRepetition.Apply(new SpacedRepetitionCard(), 6));
 
-    // ---- Item 2/3: StudyProgressStore ----
+    
     [Fact]
     public void StudyProgressStore_RecordReview_UpdatesScheduleAndDueCards_AndStats()
     {
@@ -86,7 +86,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
 
         var today = DateTime.UtcNow.Date;
         store.RecordReview(card.CardId, 5, today);
-        // Após acerto o card sai da lista de vencidos de hoje.
+        
         Assert.DoesNotContain(store.GetDueCards(today), c => c.CardId == card.CardId);
 
         var stats = store.ComputeStats(30, today);
@@ -95,12 +95,12 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Equal(1.0, stats.OverallAccuracy);
         Assert.Equal(30, stats.Daily.Count);
 
-        // Persistência.
+        
         var reloaded = new StudyProgressStore(dir);
         Assert.Single(reloaded.GetAllCards());
     }
 
-    // ---- Item 9: Knowledge graph ----
+    
     [Fact]
     public void KnowledgeGraph_BuildsCoOccurrenceNodesAndEdges()
     {
@@ -112,22 +112,22 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         var g = KnowledgeGraph.Build(map);
         Assert.Equal(3, g.Nodes.Count);
         Assert.Equal(2, g.Nodes.First(n => n.Label == "Ana").DocumentCount);
-        // Ana-Acme co-ocorrem em a.txt; Ana-Beta em b.txt.
+        
         Assert.Contains(g.Edges, e => (e.Source == "Ana" || e.Target == "Ana") && (e.Source == "Acme" || e.Target == "Acme"));
     }
 
-    // ---- Item 20: Document versions + diff ----
+    
     [Fact]
     public void DocumentVersionStore_SavesVersions_AppliesRetention_AndDiffs()
     {
         var dir = TempDir();
         var store = new DocumentVersionStore(dir, maxVersionsPerDocument: 2);
         Assert.True(store.SaveVersion("d.txt", "linha1\nlinha2"));
-        Assert.False(store.SaveVersion("d.txt", "linha1\nlinha2")); // hash igual -> ignora
+        Assert.False(store.SaveVersion("d.txt", "linha1\nlinha2")); 
         Assert.True(store.SaveVersion("d.txt", "linha1\nlinha3"));
         Assert.True(store.SaveVersion("d.txt", "linha1\nlinha4"));
         var versions = store.GetVersions("d.txt");
-        Assert.Equal(2, versions.Count); // retenção
+        Assert.Equal(2, versions.Count); 
         Assert.Equal(1, versions[0].VersionNumber);
 
         var diff = DocumentVersionStore.DiffLines("a\nb\nc", "a\nx\nc");
@@ -136,7 +136,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Contains("+ x", diff);
     }
 
-    // ---- Item 11: Annotations ----
+    
     [Fact]
     public void AnnotationStore_AddGetRemove_PersistsAndFilters()
     {
@@ -150,7 +150,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Empty(new AnnotationStore(dir).GetForDocument("d.txt"));
     }
 
-    // ---- Item 13: Search result export ----
+    
     [Fact]
     public void SearchResultExporter_Csv_EscapesAndHeaders_Xlsx_NonEmpty()
     {
@@ -161,12 +161,12 @@ public sealed class NewStudyAndAnalysisFeaturesTests
 
         var xlsx = SearchResultExporter.ToXlsx(results);
         Assert.True(xlsx.Length > 0);
-        // PK zip header.
+        
         Assert.Equal(0x50, xlsx[0]);
         Assert.Equal(0x4B, xlsx[1]);
     }
 
-    // ---- Item 12: chat exporters ----
+    
     [Fact]
     public void ChatExporters_ProduceExpectedFormats()
     {
@@ -181,10 +181,10 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Contains("R1", html);
         var docx = ChatDocxExporter.Export("Conversa", turns);
         Assert.True(docx.Length > 0);
-        Assert.Equal(0x50, docx[0]); // zip (docx é OOXML zip)
+        Assert.Equal(0x50, docx[0]); 
     }
 
-    // ---- Item 14: Backup scheduler retention ----
+    
     [Fact]
     public async Task BackupScheduler_RunOnce_CreatesBackup_AndAppliesRetention()
     {
@@ -195,7 +195,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
 
         for (var i = 0; i < 4; i++)
         {
-            // Nomes usam timestamp em segundos; garanta unicidade criando arquivos manualmente.
+            
             var name = $"{BackupScheduler.BackupPrefix}2026010{i}-000000.zip";
             File.WriteAllText(Path.Combine(backupDir, name), "z");
         }
@@ -204,7 +204,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Equal(2, backups.Length);
     }
 
-    // ---- Item 15: index health check ----
+    
     [Fact]
     public void IndexHealthCheck_MissingIndex_ReportsUnhealthy()
     {
@@ -214,7 +214,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.False(report.IndexExists);
     }
 
-    // ---- Item 16: collection disk usage ----
+    
     [Fact]
     public void CollectionDiskUsage_SumsFileSizes()
     {
@@ -226,7 +226,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.True(usage.Sum(u => u.SizeBytes) >= 100);
     }
 
-    // ---- Item 17: config export/import ----
+    
     [Fact]
     public void ConfigService_ExportRedactsSecrets_ImportValidatesAndPreservesRedacted()
     {
@@ -240,12 +240,12 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.DoesNotContain("segredo-123", exported);
         Assert.Contains("_aviso", exported);
 
-        // Import de volta não deve apagar o segredo (placeholder é ignorado).
+        
         var imported = svc.ImportConfig(exported);
         Assert.Equal("segredo-123", imported.GoogleDriveClientId);
     }
 
-    // ---- Item 8: entity extraction + store ----
+    
     [Fact]
     public async Task EntityExtraction_ParsesJson_AndStoreSupportsReverseLookup()
     {
@@ -261,7 +261,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
         Assert.Empty(store.GetDocumentsMentioning("inexistente"));
     }
 
-    // ---- Item 4/5/10: LLM analysis services ----
+    
     [Fact]
     public async Task MindMap_Timeline_Outline_ParseLlmOutput()
     {
@@ -275,7 +275,7 @@ public sealed class NewStudyAndAnalysisFeaturesTests
 
         var tl = new TimelineExtractionService(Getter, new FakeLlmProvider(_ => "[{\"date\":\"2020-05-01\",\"description\":\"B\"},{\"date\":\"2019-01-01\",\"description\":\"A\"}]"));
         var events = await tl.ExtractAsync("d.txt");
-        Assert.Equal("A", events[0].Description); // ordenado cronologicamente
+        Assert.Equal("A", events[0].Description); 
 
         var ol = new DocumentOutlineService(Getter, new FakeLlmProvider(_ => "1. Intro\n2. Meio\n- Fim"));
         var outline = await ol.GenerateAsync("d.txt");

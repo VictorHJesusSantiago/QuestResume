@@ -8,13 +8,9 @@ using Xunit;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Testes das funcionalidades novas (itens 1, 2, 3, 6, 7, 11): amostragem configurável, prompt de
-/// sistema customizável, personas, detecção de hardware, benchmark e ferramentas do agente.
-/// </summary>
 public sealed class NewLlmFeaturesTests
 {
-    // --- Item 1: amostragem configurável ---
+    
 
     [Fact]
     public void AppOptions_SamplingDefaults_AreExpected()
@@ -43,7 +39,7 @@ public sealed class NewLlmFeaturesTests
         Assert.Null(LlmSamplingOptions.Default.Seed);
     }
 
-    // --- Item 2: prompt de sistema customizável ---
+    
 
     [Fact]
     public void PromptBuilder_WithoutOverride_UsesDefaultSystemPrompt()
@@ -59,11 +55,11 @@ public sealed class NewLlmFeaturesTests
         var prompt = PromptBuilder.BuildPrompt("qual a capital?", Array.Empty<SearchResultItem>(), null, custom);
         Assert.Contains(custom, prompt);
         Assert.DoesNotContain("assistente que responde perguntas", prompt);
-        // A estrutura (pergunta) é mantida.
+        
         Assert.Contains("PERGUNTA_DO_USUARIO: qual a capital?", prompt);
     }
 
-    // --- Item 3: personas ---
+    
 
     [Fact]
     public void PromptPersonaStore_WithoutFile_ReturnsDefaults()
@@ -92,7 +88,7 @@ public sealed class NewLlmFeaturesTests
         Assert.Null(store.Find("Teste"));
     }
 
-    // --- Item 6: detecção de hardware ---
+    
 
     [Fact]
     public void HardwareDetection_ReportsRamAndSuggestsLayers()
@@ -100,22 +96,22 @@ public sealed class NewLlmFeaturesTests
         var info = HardwareDetectionService.Detect();
         Assert.True(info.TotalRamMb > 0);
         Assert.True(info.ProcessorCount >= 1);
-        Assert.Null(info.VramMb); // limitação honesta documentada
+        Assert.Null(info.VramMb); 
         Assert.True(info.SuggestedGpuLayerCount >= 0);
         Assert.False(string.IsNullOrWhiteSpace(info.Notes));
     }
 
     [Theory]
-    [InlineData(4096, 0)]     // < 8GB
-    [InlineData(12288, 10)]   // < 16GB
-    [InlineData(24576, 20)]   // < 32GB
-    [InlineData(131072, 50)]  // muita RAM
+    [InlineData(4096, 0)]     
+    [InlineData(12288, 10)]   
+    [InlineData(24576, 20)]   
+    [InlineData(131072, 50)]  
     public void HardwareDetection_SuggestGpuLayerCount_Heuristic(double ramMb, int expected)
     {
         Assert.Equal(expected, HardwareDetectionService.SuggestGpuLayerCount(ramMb));
     }
 
-    // --- Item 7: benchmark ---
+    
 
     [Fact]
     public async Task ModelBenchmark_ComputesTokensPerSecond()
@@ -125,12 +121,12 @@ public sealed class NewLlmFeaturesTests
         var result = await service.RunAsync(new[] { "p1", "p2" });
 
         Assert.Equal(2, result.PromptCount);
-        Assert.Equal(8, result.TotalTokens); // 4 tokens x 2 prompts
+        Assert.Equal(8, result.TotalTokens); 
         Assert.True(result.TotalTimeMs >= 0);
         Assert.True(result.TokensPerSecond >= 0);
     }
 
-    // --- Item 11: ferramentas do agente ---
+    
 
     [Fact]
     public async Task DateTimeTool_ReturnsInjectedTime()
@@ -174,7 +170,7 @@ public sealed class NewLlmFeaturesTests
         var content = await tool.InvokeAsync(file);
         Assert.Contains("conteúdo secreto", content);
 
-        // Fora da raiz permitida.
+        
         var outside = Path.Combine(dir.Path, "outside.txt");
         await File.WriteAllTextAsync(outside, "x");
         await Assert.ThrowsAsync<FileReaderToolException>(() => tool.InvokeAsync(outside));
@@ -198,7 +194,7 @@ public sealed class NewLlmFeaturesTests
         Assert.Contains(tools, t => t.Name == "calculator");
         Assert.Contains(tools, t => t.Name == "datetime");
         Assert.Contains(tools, t => t.Name == "unit_converter");
-        // Sem DocumentsFolder nem endpoint web, essas não entram.
+        
         Assert.DoesNotContain(tools, t => t.Name == "file_reader");
         Assert.DoesNotContain(tools, t => t.Name == "web_search");
     }
@@ -211,7 +207,7 @@ public sealed class NewLlmFeaturesTests
 
         public void Dispose()
         {
-            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
+            try { Directory.Delete(Path, recursive: true); } catch {  }
         }
     }
 }

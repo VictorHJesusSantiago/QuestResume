@@ -11,16 +11,12 @@ using SharpCompress.Writers;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Testes reais para os novos extratores que dependem de bibliotecas para gerar a entrada:
-/// .sqlite/.db, .xls (NPOI/HSSF), .apk (ZIP), .tgz (SharpCompress) e .parquet (Parquet.Net).
-/// </summary>
 public class NewExtractorsLibraryTests
 {
     private static string TempFile(string extension)
         => Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{extension}");
 
-    // ---------- .sqlite / .db (item 6) ----------
+    
 
     [Fact]
     public async Task SqliteExtractor_ExtractsSchemaAndSampleRows()
@@ -51,7 +47,7 @@ public class NewExtractorsLibraryTests
         }
     }
 
-    // ---------- .xls (item 9) ----------
+    
 
     [Fact]
     public async Task LegacyOfficeExtractor_ExtractsXlsCells()
@@ -90,7 +86,7 @@ public class NewExtractorsLibraryTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .apk (item 11) ----------
+    
 
     [Fact]
     public async Task ApkExtractor_ListsPackageEntries()
@@ -120,7 +116,7 @@ public class NewExtractorsLibraryTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .tgz (item 8) ----------
+    
 
     [Fact]
     public async Task ArchiveExtractor_ExtractsTextFromTarGz()
@@ -143,7 +139,7 @@ public class NewExtractorsLibraryTests
         finally { File.Delete(path); }
     }
 
-    // ---------- .parquet (item 10) ----------
+    
 
     [Fact]
     public async Task ParquetExtractor_ExtractsSchemaAndRows()
