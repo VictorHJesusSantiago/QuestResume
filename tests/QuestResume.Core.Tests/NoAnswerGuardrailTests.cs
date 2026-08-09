@@ -13,8 +13,8 @@ public class NoAnswerGuardrailTests
         try
         {
             var search = new SearchService(indexPath);
-            // A threshold of 1.0 (max possible) can never be met by real BM25 scores, so the
-            // guardrail must always trip and the LLM must never be called.
+            
+            
             var llm = new FakeLlmProvider(new InvalidOperationException("O LLM não deveria ser chamado quando o guardrail está ativo."));
 
             using var engine = new RagQueryEngine(search, modelPath: string.Empty, llmProviderOverride: llm, minRelevanceThreshold: 1.0);
@@ -46,7 +46,7 @@ public class NoAnswerGuardrailTests
             var result = await engine.AskAsync("pergunta de teste sobre conteúdo indexado");
 
             Assert.Equal("Resposta principal.", result.Answer);
-            Assert.True(llm.CompleteCallCount > 0); // sanity: the LLM was actually invoked
+            Assert.True(llm.CompleteCallCount > 0); 
         }
         finally
         {
@@ -73,8 +73,8 @@ public class NoAnswerGuardrailTests
 
             using var engine = new RagQueryEngine(search, modelPath: string.Empty, llmProviderOverride: llm, minRelevanceThreshold: 0.1);
 
-            // A query with no term overlap with the indexed content should retrieve nothing or
-            // near-nothing relevant, tripping the guardrail.
+            
+            
             var result = await engine.AskAsync("xyzabc123 termo completamente ausente do índice");
 
             Assert.Equal(RagQueryEngine.InsufficientContextAnswer, result.Answer);
