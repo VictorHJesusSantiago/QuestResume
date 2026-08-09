@@ -10,11 +10,6 @@ using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Combines full-text retrieval (<see cref="HybridSearchService"/>) with a local LLM
-/// (<see cref="LocalLlmService"/>) to answer natural-language questions about the
-/// indexed documents.
-/// </summary>
 public sealed class RagQueryEngine : IDisposable
 {
     private readonly HybridSearchService _searchService;
@@ -42,34 +37,16 @@ public sealed class RagQueryEngine : IDisposable
     private readonly SemaphoreSlim _auxLlmInitLock = new(1, 1);
     private ILlmProvider? _auxLlm;
 
-    /// <summary>Resposta padrão em PT-BR devolvida pelo guardrail de "não sei" (<see cref="_minRelevanceThreshold"/>).</summary>
-    public const string InsufficientContextAnswer =
+        public const string InsufficientContextAnswer =
         "Não encontrei informação suficiente nos documentos indexados para responder com confiança a essa pergunta.";
 
-    /// <summary>
-    /// Caches answers for repeated questions (same question + topK, no conversation history),
-    /// keyed by <see cref="BuildCacheKey"/>. Cleared by <see cref="InvalidateVectorCache"/> so
-    /// answers don't go stale after a re-index.
-    /// </summary>
-    private readonly ConcurrentDictionary<string, AskResult> _answerCache = new();
+        private readonly ConcurrentDictionary<string, AskResult> _answerCache = new();
 
-    /// <summary>
-    /// Guards the lazy initialization of <see cref="_llm"/>. This engine can be shared (e.g.
-    /// via a cached singleton in <c>RagQueryEngineFactory</c>) across concurrent
-    /// <see cref="AskAsync"/> calls — without this, two concurrent first requests could both
-    /// pass the null-check and construct (and leak) two <see cref="ILlmProvider"/> instances,
-    /// each loading the full GGUF model into memory.
-    /// </summary>
-    private readonly SemaphoreSlim _llmInitLock = new(1, 1);
+        private readonly SemaphoreSlim _llmInitLock = new(1, 1);
 
     private ILlmProvider? _llm;
 
-    /// <summary>
-    /// Quando informado (via <see cref="RagQueryEngineFactory"/>, ex.: <see cref="RoutingLlmProvider"/>
-    /// quando <see cref="Configuration.AppOptions.LlmFallbackEnabled"/> está ativo), este provedor
-    /// é usado no lugar de construir um a partir de <see cref="_llmProviderKind"/>.
-    /// </summary>
-    private readonly ILlmProvider? _llmProviderOverride;
+        private readonly ILlmProvider? _llmProviderOverride;
 
     public RagQueryEngine(
         ISearchService searchService,
@@ -134,25 +111,12 @@ public sealed class RagQueryEngine : IDisposable
         _maxAuditLogLines = maxAuditLogLines;
     }
 
-    /// <summary>
-    /// Searches the index for chunks relevant to <paramref name="question"/> and asks the
-    /// configured LLM provider to answer using only that context.
-    /// </summary>
-    /// <exception cref="ModelNotConfiguredException">
-    /// Thrown if the LLamaSharp provider is selected but no valid .gguf model path is configured.
-    /// </exception>
-    /// <exception cref="OllamaNotAvailableException">
-    /// Thrown if the Ollama provider is selected but the local Ollama server is unreachable.
-    /// </exception>
-    /// <remarks>
-    /// Use <see cref="SearchService"/> directly for keyword search without an LLM.
-    /// </remarks>
-    public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null, string? userId = null, string? username = null)
+        public async Task<AskResult> AskAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null, string? userId = null, string? username = null)
     {
         var systemPromptOverride = ResolveSystemPrompt(personaName);
 
-        // Only cache standalone questions: a follow-up's correct answer depends on the
-        // conversation history, so it can't reuse an answer computed without it.
+        
+        
         var useCache = history is null || history.Count == 0;
         var cacheKey = useCache ? BuildCacheKey(question, topK ?? _defaultTopK, systemPromptOverride) : null;
 
@@ -165,9 +129,9 @@ public sealed class RagQueryEngine : IDisposable
 
         var sources = await _searchService.SearchAsync(question, topK ?? _defaultTopK, cancellationToken).ConfigureAwait(false);
 
-        // Guardrail de "não sei" (AppOptions.MinRelevanceThreshold): checado ANTES de chamar o
-        // LLM para economizar a chamada quando os trechos recuperados claramente não são
-        // relevantes o suficiente para sustentar uma resposta.
+        
+        
+        
         if (_minRelevanceThreshold > 0 && RelevanceScoring.AverageNormalizedScore(sources) < _minRelevanceThreshold)
         {
             stopwatch.Stop();
@@ -246,13 +210,7 @@ public sealed class RagQueryEngine : IDisposable
         return result;
     }
 
-    /// <summary>
-    /// Pede ao LLM 3 perguntas relacionadas curtas à pergunta/resposta recém-geradas, em formato
-    /// de lista simples (uma por linha), com parse defensivo linha a linha. Best-effort: qualquer
-    /// falha (LLM indisponível, timeout, resposta malformada) é engolida e resulta em lista vazia
-    /// — nunca deve comprometer a resposta principal já obtida.
-    /// </summary>
-    private async Task<IReadOnlyList<string>> TryGenerateRelatedQuestionsAsync(
+        private async Task<IReadOnlyList<string>> TryGenerateRelatedQuestionsAsync(
         ILlmProvider llm, string question, string answer, CancellationToken cancellationToken)
     {
         try
@@ -286,14 +244,7 @@ public sealed class RagQueryEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Same retrieval/prompt-building as <see cref="AskAsync"/>, but returns the LLM's answer as
-    /// a token stream for ChatGPT-style incremental rendering. Sources are available
-    /// immediately (retrieval happens before this method returns); the answer text is cached
-    /// and audit-logged once the returned <see cref="StreamingAskResult.Tokens"/> stream is
-    /// fully enumerated.
-    /// </summary>
-    public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null, string? userId = null, string? username = null)
+        public async Task<StreamingAskResult> AskStreamAsync(string question, int? topK = null, IReadOnlyList<ChatTurn>? history = null, CancellationToken cancellationToken = default, string? personaName = null, string? userId = null, string? username = null)
     {
         var systemPromptOverride = ResolveSystemPrompt(personaName);
         var useCache = history is null || history.Count == 0;
@@ -327,8 +278,8 @@ public sealed class RagQueryEngine : IDisposable
 
         var prompt = PromptBuilder.BuildPrompt(question, sources, history, systemPromptOverride);
 
-        // Timeout is enforced inside StreamAndRecordAsync via a linked CTS so the semaphore
-        // held by RagEngineProvider is released when the stream times out.
+        
+        
         return new StreamingAskResult
         {
             Sources = sources,
@@ -342,12 +293,7 @@ public sealed class RagQueryEngine : IDisposable
         yield return text;
     }
 
-    /// <summary>
-    /// Streams tokens from <paramref name="llm"/> and, once exhausted, caches (if
-    /// <paramref name="cacheKey"/> is set) and audit-logs the assembled answer — mirroring the
-    /// post-processing <see cref="AskAsync"/> does after a non-streaming completion.
-    /// </summary>
-    private async IAsyncEnumerable<string> StreamAndRecordAsync(
+        private async IAsyncEnumerable<string> StreamAndRecordAsync(
         ILlmProvider llm,
         string prompt,
         string question,
@@ -360,7 +306,7 @@ public sealed class RagQueryEngine : IDisposable
         var stopwatch = Stopwatch.StartNew();
         var builder = new StringBuilder();
 
-        // Apply the same per-inference timeout used in the non-streaming path.
+        
         using var cts = _llmTimeoutSeconds > 0
             ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
             : null;
@@ -417,15 +363,7 @@ public sealed class RagQueryEngine : IDisposable
         });
     }
 
-    /// <summary>
-    /// Pede ao LLM uma segunda avaliação curta ("responda apenas SIM ou NÃO") sobre se
-    /// <paramref name="answer"/> é sustentada pelos trechos recuperados, para
-    /// <see cref="Configuration.AppOptions.FaithfulnessCheckEnabled"/>. Parse defensivo: procura
-    /// os tokens "sim"/"não" (ou "nao") na resposta, priorizando o que aparece primeiro. Nunca
-    /// lança — qualquer falha (LLM indisponível, timeout, resposta ambígua) resulta em
-    /// <c>null</c>, sem comprometer a resposta principal já obtida.
-    /// </summary>
-    private async Task<bool?> TryCheckFaithfulnessAsync(
+        private async Task<bool?> TryCheckFaithfulnessAsync(
         ILlmProvider llm, IReadOnlyList<SearchResultItem> sources, string answer, CancellationToken cancellationToken)
     {
         try
@@ -458,12 +396,7 @@ public sealed class RagQueryEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Defensive SIM/NÃO parser for <see cref="TryCheckFaithfulnessAsync"/>: takes whichever of
-    /// the two tokens appears first in the (possibly verbose, despite the prompt) LLM response.
-    /// Returns <c>null</c> when neither token is found.
-    /// </summary>
-    internal static bool? ParseFaithfulnessResponse(string response)
+        internal static bool? ParseFaithfulnessResponse(string response)
     {
         if (string.IsNullOrWhiteSpace(response))
         {
@@ -497,20 +430,10 @@ public sealed class RagQueryEngine : IDisposable
     private static string BuildCacheKey(string question, int topK, string? systemPromptOverride = null) =>
         $"{topK}|{(systemPromptOverride ?? string.Empty).GetHashCode()}|{question.Trim().ToLowerInvariant()}";
 
-    /// <summary>
-    /// Answers <paramref name="question"/> about two specific indexed files, e.g. "what
-    /// changed between these two contracts?". Retrieves every indexed chunk for each file
-    /// (via <see cref="HybridSearchService.GetChunksByPath"/>) rather than ranking by
-    /// relevance, since both documents are explicitly chosen by the caller.
-    /// </summary>
-    public Task<AskResult> CompareAsync(string pathA, string pathB, string question, CancellationToken cancellationToken = default) =>
+        public Task<AskResult> CompareAsync(string pathA, string pathB, string question, CancellationToken cancellationToken = default) =>
         CompareAsync(new[] { pathA, pathB }, question, cancellationToken);
 
-    /// <summary>
-    /// Versão generalizada de <see cref="CompareAsync(string,string,string,CancellationToken)"/>
-    /// para 2 ou mais documentos.
-    /// </summary>
-    public async Task<AskResult> CompareAsync(IReadOnlyList<string> paths, string question, CancellationToken cancellationToken = default)
+        public async Task<AskResult> CompareAsync(IReadOnlyList<string> paths, string question, CancellationToken cancellationToken = default)
     {
         if (paths is null || paths.Count < 2)
             throw new ArgumentException("Informe ao menos dois documentos para comparar.", nameof(paths));
@@ -534,12 +457,7 @@ public sealed class RagQueryEngine : IDisposable
         return new AskResult { Answer = answer, Sources = chunksPerDoc.SelectMany(c => c).ToList() };
     }
 
-    /// <summary>
-    /// Resumo executivo consolidado de vários documentos (item 6): junta os primeiros N caracteres
-    /// de cada documento (capado por documento, como <see cref="CompareAsync(IReadOnlyList{string},string,CancellationToken)"/>)
-    /// e pede ao LLM um único resumo executivo.
-    /// </summary>
-    public async Task<AskResult> SummarizeMultipleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
+        public async Task<AskResult> SummarizeMultipleAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
     {
         if (paths is null || paths.Count == 0)
             throw new ArgumentException("Informe ao menos um documento para resumir.", nameof(paths));
@@ -563,13 +481,7 @@ public sealed class RagQueryEngine : IDisposable
         return new AskResult { Answer = answer, Sources = chunksPerDoc.SelectMany(c => c).ToList() };
     }
 
-    /// <summary>
-    /// Drops the vector-search in-memory cache (<see cref="VectorStore.InvalidateCache"/>), so a
-    /// subsequent <see cref="AskAsync"/> on this (possibly cached/shared) engine picks up
-    /// embeddings written by a re-index that happened through a different
-    /// <see cref="VectorStore"/> instance pointed at the same database file.
-    /// </summary>
-    public void InvalidateVectorCache()
+        public void InvalidateVectorCache()
     {
         _vectorStore?.InvalidateCache();
         _answerCache.Clear();
@@ -607,13 +519,7 @@ public sealed class RagQueryEngine : IDisposable
         };
     }
 
-    /// <summary>
-    /// Resolve o prompt de sistema efetivo para uma pergunta (item 2/3): uma persona nomeada
-    /// (<paramref name="personaName"/>) tem precedência; na ausência dela, usa-se
-    /// <see cref="Configuration.AppOptions.CustomSystemPrompt"/>; e por fim o prompt padrão do
-    /// projeto. Retorna <c>null</c> (prompt padrão) quando nada é configurado.
-    /// </summary>
-    private string? ResolveSystemPrompt(string? personaName)
+        private string? ResolveSystemPrompt(string? personaName)
     {
         if (!string.IsNullOrWhiteSpace(personaName) && _personaStore is not null)
         {
@@ -627,32 +533,18 @@ public sealed class RagQueryEngine : IDisposable
         return string.IsNullOrWhiteSpace(_customSystemPrompt) ? null : _customSystemPrompt;
     }
 
-    /// <summary>
-    /// Exposto para os serviços auxiliares (<see cref="StructuredExtractionService"/>,
-    /// <see cref="FlashcardService"/>, <see cref="TranslationService"/>) que precisam do mesmo
-    /// serviço de busca e provedor de LLM já configurados neste engine, sem duplicar a lógica de
-    /// construção de <see cref="RagQueryEngineFactory"/>.
-    /// </summary>
-    public HybridSearchService SearchService => _searchService;
+        public HybridSearchService SearchService => _searchService;
 
-    /// <summary>Obtém (inicializando se necessário) o provedor de LLM deste engine.</summary>
-    public Task<ILlmProvider> GetLlmProviderAsync(CancellationToken cancellationToken = default) =>
+        public Task<ILlmProvider> GetLlmProviderAsync(CancellationToken cancellationToken = default) =>
         GetOrCreateLlmAsync(cancellationToken);
 
-    /// <summary>
-    /// Obtém o provedor de LLM para tarefas auxiliares baratas (sumarização, expansão de consulta,
-    /// HyDE) — item 5. Quando <see cref="Configuration.AppOptions.SummarizationModelPath"/> está
-    /// configurado (e o provedor principal é o LLamaSharp embutido), carrega um segundo modelo
-    /// menor apontado por esse caminho; caso contrário, reaproveita o provedor principal para não
-    /// carregar dois modelos na memória.
-    /// </summary>
-    public Task<ILlmProvider> GetAuxiliaryLlmProviderAsync(CancellationToken cancellationToken = default) =>
+        public Task<ILlmProvider> GetAuxiliaryLlmProviderAsync(CancellationToken cancellationToken = default) =>
         GetOrCreateAuxLlmAsync(cancellationToken);
 
     private async Task<ILlmProvider> GetOrCreateAuxLlmAsync(CancellationToken cancellationToken)
     {
-        // Opt-in: só usa modelo auxiliar separado com o provedor LLamaSharp embutido e um caminho
-        // configurado que exista em disco. Caso contrário, reaproveita o provedor principal.
+        
+        
         if (string.IsNullOrWhiteSpace(_summarizationModelPath)
             || !File.Exists(_summarizationModelPath)
             || _llmProviderKind != LlmProviderKind.LlamaSharp

@@ -1,18 +1,5 @@
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// LLM-backed query/document enhancement helpers used by the "search &amp; RAG quality" opt-in
-/// features: query expansion (<see cref="ExpandQueryAsync"/>), HyDE (<see cref="GenerateHypotheticalAnswerAsync"/>),
-/// multi-query retrieval (<see cref="GenerateQueryVariationsAsync"/>) and contextual retrieval
-/// (<see cref="GenerateShortDocumentContextAsync"/>).
-///
-/// Every method here follows the same best-effort contract used elsewhere in the codebase (e.g.
-/// <see cref="RagQueryEngine.TryGenerateRelatedQuestionsAsync"/>, <see cref="SummarizationService"/>):
-/// prompts are short, responses are parsed defensively line-by-line, and callers are expected to
-/// wrap calls in try/catch so an LLM failure (timeout, malformed output, model unavailable) never
-/// breaks the underlying search/indexing operation — it should just fall back to the
-/// non-enhanced behaviour.
-/// </summary>
 public sealed class QueryEnhancementService
 {
     private readonly ILlmProvider _llmProvider;
@@ -22,12 +9,7 @@ public sealed class QueryEnhancementService
         _llmProvider = llmProvider;
     }
 
-    /// <summary>
-    /// Gera 2-3 sinônimos/termos relacionados a <paramref name="question"/>, um por linha, sem
-    /// numeração/markdown. Usados como termos OU adicionais na consulta Lucene (não substituem os
-    /// termos originais) — ver <see cref="Indexing.HybridSearchService"/>.
-    /// </summary>
-    public async Task<IReadOnlyList<string>> ExpandQueryAsync(string question, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<string>> ExpandQueryAsync(string question, CancellationToken cancellationToken = default)
     {
         var prompt =
             "Sugira de 2 a 3 sinônimos ou termos relacionados à consulta de busca abaixo, que " +
@@ -40,14 +22,7 @@ public sealed class QueryEnhancementService
         return ParseLines(response, maxLines: 3);
     }
 
-    /// <summary>
-    /// HyDE: gera uma resposta hipotética curta (1 parágrafo) para <paramref name="question"/>,
-    /// como se fosse um trecho de documento respondendo a pergunta. O embedding dessa resposta
-    /// hipotética costuma se aproximar mais, no espaço vetorial, dos chunks reais relevantes do
-    /// que o embedding da pergunta crua (perguntas e respostas tendem a ter formas linguísticas
-    /// diferentes).
-    /// </summary>
-    public async Task<string?> GenerateHypotheticalAnswerAsync(string question, CancellationToken cancellationToken = default)
+        public async Task<string?> GenerateHypotheticalAnswerAsync(string question, CancellationToken cancellationToken = default)
     {
         var prompt =
             "Escreva um parágrafo curto (2-4 frases) que poderia ser a resposta à pergunta " +
@@ -60,13 +35,7 @@ public sealed class QueryEnhancementService
         return trimmed.Length > 0 ? trimmed : null;
     }
 
-    /// <summary>
-    /// Gera até <paramref name="count"/> reformulações da pergunta original, cada uma buscando o
-    /// mesmo objetivo por um ângulo/vocabulário diferente. A pergunta original é sempre incluída
-    /// pelo chamador (ver <see cref="Indexing.HybridSearchService"/>) — este método só retorna as
-    /// variações adicionais.
-    /// </summary>
-    public async Task<IReadOnlyList<string>> GenerateQueryVariationsAsync(string question, int count, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<string>> GenerateQueryVariationsAsync(string question, int count, CancellationToken cancellationToken = default)
     {
         if (count <= 0) return Array.Empty<string>();
 
@@ -81,13 +50,7 @@ public sealed class QueryEnhancementService
         return ParseLines(response, maxLines: count);
     }
 
-    /// <summary>
-    /// Contextual retrieval: gera um resumo curtíssimo (1-2 frases) de <paramref name="text"/>
-    /// (documento inteiro, truncado para caber no prompt) para ser prefixado ao texto de cada
-    /// chunk antes de gerar o embedding — ajuda a recuperar chunks que fazem sentido isolados só
-    /// com o contexto do documento (ex.: "este trecho é do relatório financeiro de 2023...").
-    /// </summary>
-    public async Task<string?> GenerateShortDocumentContextAsync(string fileName, string text, CancellationToken cancellationToken = default)
+        public async Task<string?> GenerateShortDocumentContextAsync(string fileName, string text, CancellationToken cancellationToken = default)
     {
         const int maxInputChars = 4000;
         var truncated = text.Length > maxInputChars ? text[..maxInputChars] : text;
@@ -106,8 +69,7 @@ public sealed class QueryEnhancementService
         return trimmed.Length > 0 ? trimmed : null;
     }
 
-    /// <summary>Splits an LLM list response into up to <paramref name="maxLines"/> clean, non-empty lines, stripping bullets/numbering.</summary>
-    private static IReadOnlyList<string> ParseLines(string response, int maxLines)
+        private static IReadOnlyList<string> ParseLines(string response, int maxLines)
     {
         return response
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

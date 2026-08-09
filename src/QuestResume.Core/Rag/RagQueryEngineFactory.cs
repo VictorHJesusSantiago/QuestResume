@@ -6,13 +6,6 @@ using QuestResume.Core.Persistence;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// The subset of <see cref="AppOptions"/> (plus an optional per-request <c>topK</c> override)
-/// that determines how a <see cref="RagQueryEngine"/> is constructed. Front-ends that cache an
-/// engine instance (API, Desktop) can compare a previously captured key against a freshly
-/// loaded one — via record equality — to decide whether the cached engine can be reused or
-/// must be rebuilt.
-/// </summary>
 public sealed record RagEngineKey(
     string ModelPath,
     string IndexPath,
@@ -70,12 +63,6 @@ public sealed record RagEngineKey(
         options.SummarizationModelPath);
 }
 
-/// <summary>
-/// Builds a <see cref="RagQueryEngine"/> (and its <see cref="SearchService"/>, optional
-/// <see cref="VectorStore"/> and <see cref="EmbeddingService"/>) from <see cref="AppOptions"/>.
-/// Used by the CLI, API and Desktop front-ends so the wiring lives in one place instead of
-/// being copy-pasted three times.
-/// </summary>
 public static class RagQueryEngineFactory
 {
     public static RagQueryEngine Create(AppOptions options, int? topK = null, HttpClient? httpClient = null)
@@ -93,7 +80,7 @@ public static class RagQueryEngineFactory
         if (options.EmbeddingsEnabled)
         {
             vectorStore = new VectorStore(options.IndexPath, options.MaxVectorCacheSize, options.VectorQuantizationEnabled, options.AnnSearchEnabled);
-            // Cache de embeddings de consultas repetidas (item 15): decora o serviço de embeddings.
+            
             embeddingService = new CachingEmbeddingService(
                 new EmbeddingService(options.EmbeddingModelPath, options.EmbeddingTokenizerPath));
         }
@@ -104,19 +91,19 @@ public static class RagQueryEngineFactory
             crossEncoderService = new CrossEncoderService(options.RerankingModelPath, options.RerankingTokenizerPath);
         }
 
-        // AuditLogRepository is injected (not newed inside the engine) so tests can substitute
-        // IAuditLogRepository without touching the filesystem, and so the interface is actually
-        // used as a dependency rather than existing only as dead abstraction.
+        
+        
+        
         IAuditLogRepository auditLog = new AuditLogRepository(options.IndexPath);
 
-        // WebhookNotifier is always constructed (cheap, no I/O until Notify() is called) so
-        // question.asked notifications work whenever the user has registered webhooks for it,
-        // without needing a separate config toggle.
+        
+        
+        
         var webhookNotifier = new WebhookNotifier(options.IndexPath, httpClient);
 
-        // When fallback routing is enabled and both LLamaSharp and Ollama are configured, wrap
-        // both in a RoutingLlmProvider (Ollama first, LLamaSharp local as fallback) instead of
-        // picking a single provider via LlmProviderKind.
+        
+        
+        
         ILlmProvider? llmProviderOverride = null;
         if (options.LlmFallbackEnabled && IsLlamaSharpConfigured(options.ModelPath) && IsOllamaConfigured(options))
         {
