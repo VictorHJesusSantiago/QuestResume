@@ -2,14 +2,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts basic metadata (dimensions, color mode, channel/layer count) from Photoshop (.psd)
-/// files by reading the publicly documented fixed-size PSD file header (26 bytes) plus the
-/// layer count from the following Layer and Mask Information section. No pixel/image data or
-/// text layers are extracted — this is a metadata-only extractor, matching the project's
-/// existing pattern for complex proprietary binary formats (see
-/// <see cref="ExecutableMetadataExtractor"/>).
-/// </summary>
 public sealed class PsdExtractor : IFileExtractor
 {
     private static readonly string[] ColorModeNames =
@@ -40,7 +32,7 @@ public sealed class PsdExtractor : IFileExtractor
             else
             {
                 var version = ReadUInt16BE(reader);
-                reader.ReadBytes(6); // reserved
+                reader.ReadBytes(6); 
                 var channels = ReadUInt16BE(reader);
                 var height = ReadUInt32BE(reader);
                 var width = ReadUInt32BE(reader);
@@ -93,24 +85,24 @@ public sealed class PsdExtractor : IFileExtractor
     {
         try
         {
-            // Color Mode Data section: 4-byte length + data.
+            
             var colorModeDataLength = ReadUInt32BE(reader);
             reader.ReadBytes((int)colorModeDataLength);
 
-            // Image Resources section: 4-byte length + data.
+            
             var imageResourcesLength = ReadUInt32BE(reader);
             reader.ReadBytes((int)imageResourcesLength);
 
-            // Layer and Mask Information section: 4-byte length, then (within it) a 4-byte
-            // Layer Info length, then a 2-byte signed layer count.
+            
+            
             var layerMaskInfoLength = ReadUInt32BE(reader);
             if (layerMaskInfoLength < 6) return null;
 
             var layerInfoLength = ReadUInt32BE(reader);
             var layerCountRaw = ReadUInt16BE(reader);
-            // A negative (per the spec, top bit set / value read as signed) layer count means the
-            // first alpha channel contains the merged result's transparency data — the *absolute*
-            // value is the actual layer count.
+            
+            
+            
             var layerCount = (short)layerCountRaw;
             return Math.Abs((int)layerCount);
         }

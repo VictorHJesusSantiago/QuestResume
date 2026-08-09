@@ -3,9 +3,6 @@ using RtfPipe;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts plain text from Rich Text Format (.rtf) files using RtfPipe.
-/// </summary>
 public sealed class RtfExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".rtf" };

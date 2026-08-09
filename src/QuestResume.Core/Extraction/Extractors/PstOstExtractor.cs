@@ -4,15 +4,6 @@ using XstReader;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts e-mails from Outlook data files (.pst, .ost) via the XstReader.Api NuGet library.
-/// The whole file is treated as a single "container" document (matching the pattern used by
-/// <see cref="ZipArchiveExtractor"/> for other multi-item containers): every message across
-/// every folder is concatenated, each separated by a clear header with subject/sender/date, so
-/// downstream chunking still finds each e-mail's content contiguous. If the file can't be
-/// opened or parsed (corrupt file, unsupported PST variant, password-protected, etc.), falls
-/// back to basic file metadata with a clear PT-BR warning rather than throwing.
-/// </summary>
 public sealed class PstOstExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".pst", ".ost" };
@@ -72,7 +63,7 @@ public sealed class PstOstExtractor : IFileExtractor
             }
             catch
             {
-                // Best-effort: some messages (e.g. encrypted/odd formats) may fail to decode the body.
+                
             }
 
             builder.AppendLine("--- E-mail ---");
