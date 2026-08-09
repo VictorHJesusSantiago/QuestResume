@@ -1,17 +1,5 @@
 namespace QuestResume.Core.Indexing;
 
-/// <summary>
-/// Runs a given async callback (typically <see cref="DocumentIndexer.IndexFolderAsync"/> wired
-/// up by the caller) on a fixed interval using <see cref="PeriodicTimer"/> — the simplest
-/// built-in .NET mechanism for a periodic background job, chosen over a raw
-/// <see cref="System.Threading.Timer"/> because it awaits cleanly (no re-entrant tick callbacks
-/// to guard against) and over a cron-style library because a single fixed interval is all
-/// <see cref="Configuration.AppOptions.ScheduledIndexingEnabled"/> needs.
-///
-/// Wired into a host via a small <c>IHostedService</c> in each front-end (see
-/// <c>ScheduledIndexingHostedService</c> in QuestResume.Api) rather than living here directly,
-/// since Core has no dependency on Microsoft.Extensions.Hosting.
-/// </summary>
 public sealed class IndexScheduler : IDisposable
 {
     private readonly TimeSpan _interval;
@@ -32,8 +20,7 @@ public sealed class IndexScheduler : IDisposable
         _log = log;
     }
 
-    /// <summary>Starts the periodic loop. A no-op if already started.</summary>
-    public void Start()
+        public void Start()
     {
         if (_loopTask is not null) return;
 
@@ -41,8 +28,7 @@ public sealed class IndexScheduler : IDisposable
         _loopTask = RunLoopAsync(_cts.Token);
     }
 
-    /// <summary>Stops the periodic loop and waits for any in-flight run to observe cancellation.</summary>
-    public void Stop()
+        public void Stop()
     {
         _cts?.Cancel();
         try
@@ -51,7 +37,7 @@ public sealed class IndexScheduler : IDisposable
         }
         catch (AggregateException)
         {
-            // Expected when the loop task ends via OperationCanceledException.
+            
         }
         finally
         {
@@ -85,7 +71,7 @@ public sealed class IndexScheduler : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // Expected on Stop()/Dispose().
+            
         }
     }
 

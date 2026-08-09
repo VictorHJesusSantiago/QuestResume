@@ -5,7 +5,6 @@ using IODirectory = System.IO.Directory;
 
 namespace QuestResume.Core.Indexing;
 
-/// <summary>Relatório de saúde do índice Lucene.</summary>
 public sealed class IndexHealthReport
 {
     public bool IsHealthy { get; init; }
@@ -15,17 +14,9 @@ public sealed class IndexHealthReport
     public string Summary { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Verifica a integridade do índice Lucene rodando <see cref="CheckIndex"/> (utilitário do
-/// Lucene.Net) e, quando corrompido, oferece reparo via a própria API de reparo do
-/// <see cref="CheckIndex"/> (remove segmentos danificados — pode perder documentos, mas recupera
-/// um índice utilizável). Usado pela CLI <c>health-check [--repair]</c> e pela API
-/// <c>GET /api/health/index</c> / <c>POST /api/health/index/repair</c>.
-/// </summary>
 public sealed class IndexHealthCheckService
 {
-    /// <summary>Abre o índice e roda <see cref="CheckIndex"/> em modo somente-leitura (diagnóstico).</summary>
-    public IndexHealthReport Check(string indexPath)
+        public IndexHealthReport Check(string indexPath)
     {
         if (!IODirectory.Exists(indexPath) || !DirectoryReader.IndexExists(FSDirectory.Open(indexPath)))
         {
@@ -62,11 +53,7 @@ public sealed class IndexHealthCheckService
         };
     }
 
-    /// <summary>
-    /// Repara o índice removendo os segmentos danificados (API de reparo do <see cref="CheckIndex"/>).
-    /// Só age se o índice estiver realmente corrompido; retorna o relatório pós-reparo.
-    /// </summary>
-    public IndexHealthReport Repair(string indexPath)
+        public IndexHealthReport Repair(string indexPath)
     {
         if (!IODirectory.Exists(indexPath))
         {
@@ -85,7 +72,7 @@ public sealed class IndexHealthCheckService
             var status = checker.DoCheckIndex();
             if (!status.Clean)
             {
-                // FixIndex remove os segmentos danificados, tornando o índice utilizável de novo.
+                
                 checker.FixIndex(status);
             }
         }
