@@ -4,11 +4,6 @@ using Tesseract;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Shared lazy-initialized Tesseract 5 engine wrapper used by <see cref="ImageOcrExtractor"/>
-/// and the OCR fallback in <see cref="PdfExtractor"/>. The engine is only created on first
-/// use, so constructing it without a valid <c>tessdata</c> folder never throws.
-/// </summary>
 internal sealed class TesseractOcrHelper : IDisposable
 {
     private readonly string _tessDataPath;
@@ -23,23 +18,7 @@ internal sealed class TesseractOcrHelper : IDisposable
         _languages = string.IsNullOrWhiteSpace(languages) ? "por+eng" : languages;
     }
 
-    /// <summary>
-    /// Runs OCR over the given image bytes (PNG, JPEG, TIFF, BMP or GIF). Returns
-    /// <c>null</c> and sets <paramref name="warning"/> (PT-BR) if the Tesseract engine
-    /// could not be initialized.
-    ///
-    /// Two quality improvements over a bare <c>Process(pix).GetText()</c> call (item 13/14 of
-    /// Lote 4):
-    /// 1) Deskew: before OCR, <see cref="Pix.Deskew()"/> (Leptonica) detects and corrects small
-    ///    page rotation/inclination (scans/photographed documents). Best-effort — if deskewing
-    ///    fails or the image is already straight, the original pixels are used unchanged.
-    /// 2) Layout-aware text order: instead of Tesseract's default reading-order concatenation
-    ///    (which can interleave multi-column text), the word-level TSV output (with bounding
-    ///    boxes) is grouped by Tesseract's own block/paragraph/line numbering, and an extra
-    ///    blank line is inserted between blocks whose horizontal start differs enough to look
-    ///    like a column/section boundary — preserving column and block breaks in the output.
-    /// </summary>
-    public string? TryOcr(byte[] imageBytes, out string? warning)
+        public string? TryOcr(byte[] imageBytes, out string? warning)
     {
         if (!EnsureEngine(out warning))
         {
@@ -60,7 +39,7 @@ internal sealed class TesseractOcrHelper : IDisposable
         }
         catch
         {
-            // Best-effort: deskew failure just means we OCR the original (possibly skewed) image.
+            
         }
 
         try
@@ -76,16 +55,7 @@ internal sealed class TesseractOcrHelper : IDisposable
         }
     }
 
-    /// <summary>
-    /// Parses Tesseract's TSV output (level, page, block, par, line, word, left, top, width,
-    /// height, conf, text — tab-separated, one header line) and rebuilds the text preserving
-    /// column/block breaks: consecutive words on the same block/paragraph/line are joined with a
-    /// single space; a new line starts on block/paragraph/line change; and a blank line (\n\n) is
-    /// inserted between blocks whose left edge jumps by more than ~15% of the line width from the
-    /// previous block, a simple heuristic for a multi-column layout change. Returns null if the
-    /// TSV can't be parsed (falls back to the caller's default word-order text).
-    /// </summary>
-    private static string? TryBuildLayoutPreservingText(string tsv)
+        private static string? TryBuildLayoutPreservingText(string tsv)
     {
         if (string.IsNullOrWhiteSpace(tsv)) return null;
 
@@ -105,7 +75,7 @@ internal sealed class TesseractOcrHelper : IDisposable
             currentLineWords.Clear();
         }
 
-        // Skip header row (index 0).
+        
         for (var i = 1; i < lines.Length; i++)
         {
             var fields = lines[i].Split('\t');

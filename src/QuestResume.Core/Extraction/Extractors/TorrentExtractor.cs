@@ -3,12 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts metadata (name, total size, file list, trackers) from .torrent files via a minimal
-/// bencode parser (the format .torrent files are encoded in: byte strings as
-/// <c>&lt;length&gt;:&lt;bytes&gt;</c>, integers as <c>i&lt;n&gt;e</c>, lists as
-/// <c>l...e</c> and dictionaries as <c>d...e</c>).
-/// </summary>
 public sealed class TorrentExtractor : IFileExtractor
 {
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".torrent" };
@@ -108,7 +102,6 @@ public sealed class TorrentExtractor : IFileExtractor
     }
 }
 
-/// <summary>Minimal bencode decoder (strings as raw <c>byte[]</c>, integers as <c>long</c>).</summary>
 internal static class BencodeParser
 {
     public static object? Parse(byte[] data, ref int pos)
@@ -126,11 +119,11 @@ internal static class BencodeParser
 
     private static long ParseInteger(byte[] data, ref int pos)
     {
-        pos++; // skip 'i'
+        pos++; 
         var start = pos;
         while (data[pos] != 'e') pos++;
         var value = long.Parse(Encoding.ASCII.GetString(data, start, pos - start));
-        pos++; // skip 'e'
+        pos++; 
         return value;
     }
 
@@ -139,7 +132,7 @@ internal static class BencodeParser
         var start = pos;
         while (data[pos] != ':') pos++;
         var length = int.Parse(Encoding.ASCII.GetString(data, start, pos - start));
-        pos++; // skip ':'
+        pos++; 
         var result = data[pos..(pos + length)];
         pos += length;
         return result;
@@ -147,19 +140,19 @@ internal static class BencodeParser
 
     private static List<object?> ParseList(byte[] data, ref int pos)
     {
-        pos++; // skip 'l'
+        pos++; 
         var list = new List<object?>();
         while (data[pos] != 'e')
         {
             list.Add(Parse(data, ref pos));
         }
-        pos++; // skip 'e'
+        pos++; 
         return list;
     }
 
     private static Dictionary<string, object?> ParseDictionary(byte[] data, ref int pos)
     {
-        pos++; // skip 'd'
+        pos++; 
         var dict = new Dictionary<string, object?>();
         while (data[pos] != 'e')
         {
@@ -167,7 +160,7 @@ internal static class BencodeParser
             var value = Parse(data, ref pos);
             dict[Encoding.UTF8.GetString(key)] = value;
         }
-        pos++; // skip 'e'
+        pos++; 
         return dict;
     }
 }
