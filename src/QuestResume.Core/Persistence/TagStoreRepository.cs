@@ -3,10 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// File-backed implementation of <see cref="ITagStoreRepository"/>. Returns an empty store
-/// when the JSON sidecar is missing or corrupt.
-/// </summary>
 public sealed class TagStoreRepository : ITagStoreRepository
 {
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };

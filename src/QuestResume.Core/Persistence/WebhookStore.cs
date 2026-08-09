@@ -3,11 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Persists the list of registered <see cref="WebhookConfig"/> as a JSON sidecar
-/// (<c>webhooks.json</c>) inside the index folder, following the same pattern as
-/// <see cref="IndexManifestRepository"/> / <see cref="TagStoreRepository"/>.
-/// </summary>
 public sealed class WebhookStore
 {
     public const string FileName = "webhooks.json";
