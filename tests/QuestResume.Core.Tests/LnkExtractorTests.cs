@@ -32,28 +32,28 @@ public class LnkExtractorTests
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
 
-        writer.Write((uint)0x4C); // HeaderSize
+        writer.Write((uint)0x4C); 
         writer.Write(new byte[]
         {
             0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
-        }); // LinkCLSID
-        writer.Write((uint)0x2); // LinkFlags: HasLinkInfo only
+        }); 
+        writer.Write((uint)0x2); 
 
-        // Remaining header fields (offset 24 to 76 = 52 bytes) irrelevant to this test.
+        
         writer.Write(new byte[52]);
 
-        // LinkInfo structure.
+        
         var pathBytes = Encoding.ASCII.GetBytes(targetPath + "\0");
         const int fixedFieldsSize = 28;
         var linkInfoSize = (uint)(fixedFieldsSize + pathBytes.Length);
 
         writer.Write(linkInfoSize);
-        writer.Write((uint)fixedFieldsSize); // LinkInfoHeaderSize
-        writer.Write((uint)0x1); // LinkInfoFlags: HasLocalBasePath
-        writer.Write((uint)fixedFieldsSize); // VolumeIDOffset (unused by parser, points past fixed fields)
-        writer.Write((uint)fixedFieldsSize); // LocalBasePathOffset (relative to LinkInfo start)
-        writer.Write((uint)0); // CommonNetworkRelativeLinkOffset
-        writer.Write((uint)fixedFieldsSize); // CommonPathSuffixOffset
+        writer.Write((uint)fixedFieldsSize); 
+        writer.Write((uint)0x1); 
+        writer.Write((uint)fixedFieldsSize); 
+        writer.Write((uint)fixedFieldsSize); 
+        writer.Write((uint)0); 
+        writer.Write((uint)fixedFieldsSize); 
 
         writer.Write(pathBytes);
 

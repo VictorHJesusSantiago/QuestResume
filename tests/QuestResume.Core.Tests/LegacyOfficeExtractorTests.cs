@@ -40,8 +40,8 @@ public class LegacyOfficeExtractorTests
 
         try
         {
-            // Não é um .doc binário real (HWPF não está disponível na port .NET do NPOI) — o
-            // extrator deve degradar graciosamente com um aviso em PT-BR, em vez de lançar.
+            
+            
             await File.WriteAllTextAsync(path, "conteúdo qualquer");
 
             var extractor = new LegacyOfficeExtractor();

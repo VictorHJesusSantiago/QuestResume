@@ -50,7 +50,7 @@ public class LanguageDetectorTests
     [Fact]
     public void Detect_TooShortToDecide_ReturnsUnknown()
     {
-        // Only a single stopword match ("de") — below the minimum-matches threshold.
+        
         Assert.Equal(LanguageDetector.Unknown, LanguageDetector.Detect("QuestResume 12345 xyz de"));
     }
 }
