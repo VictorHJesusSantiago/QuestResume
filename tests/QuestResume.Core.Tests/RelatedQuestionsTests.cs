@@ -60,7 +60,7 @@ public class RelatedQuestionsTests
 
             Assert.Equal("Resposta principal.", result.Answer);
             Assert.Empty(result.RelatedQuestions);
-            Assert.Equal(2, callCount); // resposta principal + tentativa de sugestões
+            Assert.Equal(2, callCount); 
         }
         finally
         {

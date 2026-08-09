@@ -27,8 +27,8 @@ public class RelevanceScoringTests
     {
         var sources = new[]
         {
-            MakeSource(score: 10), // normalizes to 1.0
-            MakeSource(score: 0)   // normalizes to 0.0
+            MakeSource(score: 10), 
+            MakeSource(score: 0)   
         };
 
         Assert.Equal(0.5, RelevanceScoring.AverageNormalizedScore(sources), precision: 5);
@@ -50,18 +50,18 @@ public class RelevanceScoringTests
     [Fact]
     public void ComputeConfidenceScore_FaithfulTrue_BlendsInFavorOfHigherConfidence()
     {
-        var sources = new[] { MakeSource(score: 0) }; // relevance = 0
+        var sources = new[] { MakeSource(score: 0) }; 
         var confidence = RelevanceScoring.ComputeConfidenceScore(sources, isFaithful: true);
-        // relevance(0) * 0.6 + faithfulness(1) * 0.4 = 0.4
+        
         Assert.Equal(0.4, confidence!.Value, precision: 5);
     }
 
     [Fact]
     public void ComputeConfidenceScore_FaithfulFalse_LowersConfidenceEvenWithHighRelevance()
     {
-        var sources = new[] { MakeSource(score: 10) }; // relevance = 1.0
+        var sources = new[] { MakeSource(score: 10) }; 
         var confidence = RelevanceScoring.ComputeConfidenceScore(sources, isFaithful: false);
-        // relevance(1.0) * 0.6 + faithfulness(0) * 0.4 = 0.6
+        
         Assert.Equal(0.6, confidence!.Value, precision: 5);
     }
 
