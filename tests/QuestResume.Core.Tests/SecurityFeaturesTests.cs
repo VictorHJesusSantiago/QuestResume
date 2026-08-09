@@ -37,7 +37,7 @@ public class TotpServiceTests
     [Fact]
     public void KnownVector_Rfc6238_Sha1()
     {
-        // Segredo ASCII "12345678901234567890" -> Base32. Vetor de teste RFC 6238 para T=59s.
+        
         const string base32 = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
         var time = DateTimeOffset.FromUnixTimeSeconds(59);
         var code = TotpService.GenerateCode(base32, time);
@@ -56,9 +56,9 @@ public class TotpServiceTests
 public class PasswordPolicyTests
 {
     [Theory]
-    [InlineData("short1A")]      // < 8
-    [InlineData("lowercase1")]   // sem maiúscula
-    [InlineData("NoDigitsHere")] // sem número
+    [InlineData("short1A")]      
+    [InlineData("lowercase1")]   
+    [InlineData("NoDigitsHere")] 
     public void ValidatePasswordStrength_RejectsWeak(string password)
     {
         Assert.Throws<InvalidOperationException>(() => UserStore.ValidatePasswordStrength(password));
@@ -147,7 +147,7 @@ public class ReversibleAnonymizerTests
 
         Assert.DoesNotContain("joao@example.com", result.AnonymizedText);
         Assert.Contains("[EMAIL_1]", result.AnonymizedText);
-        Assert.Equal(2, result.ReplacedCount); // dois emails distintos
+        Assert.Equal(2, result.ReplacedCount); 
 
         var restored = ReversibleAnonymizer.Deanonymize(result.AnonymizedText, result.EncryptedMap, key);
         Assert.Equal(text, restored);
@@ -246,7 +246,7 @@ public class CachingEmbeddingServiceTests
         using var cache = new CachingEmbeddingService(inner, maxEntries: 10);
 
         await cache.EmbedAsync("Olá Mundo");
-        await cache.EmbedAsync("olá mundo"); // normalizado -> mesma chave
+        await cache.EmbedAsync("olá mundo"); 
         await cache.EmbedAsync("  OLÁ MUNDO  ");
 
         Assert.Equal(1, inner.Calls);

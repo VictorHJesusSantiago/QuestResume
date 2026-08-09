@@ -16,9 +16,9 @@ public class SearchServiceTests
             var results = search.Search("QuestResume", topK: 5);
 
             Assert.NotEmpty(results);
-            // The highlighter must produce a non-null result for the matched term; whether
-            // the fragment is shorter than ChunkText depends on document length vs. the
-            // SimpleFragmenter window, so we only assert non-null here.
+            
+            
+            
             Assert.Contains(results, r => r.Highlight is not null);
         }
         finally
@@ -263,9 +263,9 @@ public class SearchServiceTests
 
         try
         {
-            // "contrato" (singular) is indexed; a plural-form query "contratos" should still
-            // match because BrazilianAnalyzer stems both to the same root — StandardAnalyzer
-            // would not do this.
+            
+            
+            
             await File.WriteAllTextAsync(
                 Path.Combine(folder, "contrato.txt"),
                 "Este documento é um contrato de prestação de serviços.");
@@ -295,11 +295,11 @@ public class SearchServiceTests
         {
             var search = new SearchService(indexPath);
 
-            // "offlinee" (typo, extra letter) shouldn't match "offline" without fuzzy...
+            
             var exact = search.Search("offlinee", topK: 5);
             Assert.Empty(exact);
 
-            // ...but should match with Fuzzy enabled, tolerant to the extra letter.
+            
             var fuzzy = search.Search("offlinee", topK: 5, new SearchFilters(Fuzzy: true));
             Assert.NotEmpty(fuzzy);
         }
@@ -322,7 +322,7 @@ public class SearchServiceTests
             var results = search.Search("\"sistema de perguntas\"", topK: 5);
             Assert.NotEmpty(results);
 
-            // Reversed word order shouldn't match the exact phrase.
+            
             var noMatch = search.Search("\"perguntas de sistema\"", topK: 5);
             Assert.Empty(noMatch);
         }
@@ -520,8 +520,8 @@ public class SearchServiceTests
         {
             var search = new SearchService(indexPath);
 
-            // The indexed term is "document" (BrazilianAnalyzer stems "documentos" down to its
-            // root); "documenty" is a 1-edit typo of it (t -> y).
+            
+            
             var suggestions = search.SuggestSpelling("documenty");
 
             Assert.NotEmpty(suggestions);
@@ -553,8 +553,8 @@ public class SearchServiceTests
         {
             var search = new SearchService(indexPath);
 
-            // "documentos" is stemmed by BrazilianAnalyzer; whatever the stored term prefix is,
-            // it should start with "docu".
+            
+            
             var suggestions = search.Suggest("docu");
 
             Assert.NotEmpty(suggestions);

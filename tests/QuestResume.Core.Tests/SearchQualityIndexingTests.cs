@@ -3,10 +3,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Indexing-time "search &amp; RAG quality" features (Lote 2): contextual retrieval, parent-child
-/// chunking, semantic chunking, and semantic deduplication.
-/// </summary>
 public class SearchQualityIndexingTests
 {
     [Fact]
@@ -27,11 +23,11 @@ public class SearchQualityIndexingTests
             await indexer.IndexFolderAsync(
                 folder, indexPath, contextualRetrievalEnabled: true, llmProvider: llm);
 
-            // The LLM-generated document context must have been prefixed to the text sent for
-            // embedding...
+            
+            
             Assert.Contains(embeddingService.EmbeddedTexts, t => t.Contains("Contrato de prestação de serviços."));
 
-            // ...but the stored/searchable chunk text itself stays exactly the original text.
+            
             var search = new SearchService(indexPath);
             var chunks = search.GetChunksByPath(Path.Combine(folder, "doc.txt"));
             Assert.Single(chunks);
@@ -90,9 +86,9 @@ public class SearchQualityIndexingTests
             var results = search.Search("gatos", topK: 5);
 
             Assert.NotEmpty(results);
-            // The returned chunk text should be the larger parent window, not the tiny (50-char)
-            // child window used for matching — i.e. it should contain more than just the matched
-            // sentence.
+            
+            
+            
             Assert.True(results[0].ChunkText.Length > 50);
             Assert.Contains("enchimento", results[0].ChunkText);
         }
@@ -110,9 +106,9 @@ public class SearchQualityIndexingTests
         var indexPath = Path.Combine(Path.GetTempPath(), $"semantic-index-{Guid.NewGuid()}");
         Directory.CreateDirectory(folder);
 
-        // Two "gato" sentences followed by two "carro" sentences: with a keyword-based fake
-        // embedding, consecutive same-topic sentences are highly similar (cosine ~1) and the
-        // topic switch should trigger a new chunk.
+        
+        
+        
         var text = "O gato dorme muito. O gato caça ratos. O carro é rápido. O carro precisa de gasolina.";
         await File.WriteAllTextAsync(Path.Combine(folder, "doc.txt"), text);
 
@@ -128,7 +124,7 @@ public class SearchQualityIndexingTests
             var search = new SearchService(indexPath);
             var chunks = search.GetChunksByPath(Path.Combine(folder, "doc.txt"));
 
-            // Expect exactly 2 chunks: one for the "gato" sentences, one for the "carro" sentences.
+            
             Assert.Equal(2, chunks.Count);
             Assert.Contains("gato", chunks[0].ChunkText);
             Assert.DoesNotContain("carro", chunks[0].ChunkText);
@@ -149,8 +145,8 @@ public class SearchQualityIndexingTests
         var indexPath = Path.Combine(Path.GetTempPath(), $"dedup-index-{Guid.NewGuid()}");
         Directory.CreateDirectory(folder);
 
-        // Not byte-identical (so exact-hash dedup doesn't kick in), but both are purely about
-        // "gato" — the fake embedding service scores them as highly similar.
+        
+        
         await File.WriteAllTextAsync(Path.Combine(folder, "a.txt"), "O gato dorme. O gato caça. O gato brinca.");
         await File.WriteAllTextAsync(Path.Combine(folder, "b.txt"), "O gato dorme muito. O gato caça ratos também.");
 

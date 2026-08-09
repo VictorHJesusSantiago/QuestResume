@@ -30,8 +30,8 @@ public class SummarizationServiceTests
         await service.SummarizeAsync("doc.txt", longText);
 
         Assert.NotNull(capturedPrompt);
-        // O prompt inteiro (incluindo instruções) deve ser bem menor que o texto original de 10k
-        // caracteres, confirmando que apenas os primeiros caracteres do documento foram enviados.
+        
+        
         Assert.True(capturedPrompt!.Length < longText.Length);
     }
 
