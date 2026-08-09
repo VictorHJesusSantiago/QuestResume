@@ -8,14 +8,6 @@ using QuestResume.Core.Configuration;
 
 namespace QuestResume.Api.IntegrationTests;
 
-/// <summary>
-/// Fábrica de <see cref="WebApplicationFactory{TEntryPoint}"/> usada pelos testes de integração
-/// e2e da API. Isola cada instância de teste em uma pasta temporária própria (config.json,
-/// users.json e índice Lucene), substituindo os singletons <see cref="ConfigService"/> e
-/// <see cref="UserStore"/> registrados em Program.cs — que por padrão apontam para
-/// %LOCALAPPDATA%\QuestResume — para nunca tocar o ambiente real da máquina de desenvolvimento
-/// nem colidir com execuções paralelas de teste.
-/// </summary>
 public sealed class QuestResumeApiFactory : WebApplicationFactory<Program>
 {
     public string RootFolder { get; } = Path.Combine(Path.GetTempPath(), $"questresume-apitests-{Guid.NewGuid():N}");
@@ -31,9 +23,9 @@ public sealed class QuestResumeApiFactory : WebApplicationFactory<Program>
         Directory.CreateDirectory(IndexPath);
         Directory.CreateDirectory(DocumentsFolder);
 
-        // Grava um config.json inicial já apontando para as pastas temporárias deste teste —
-        // caso contrário ConfigService.LoadFromDisk() preencheria IndexPath com o caminho padrão
-        // em %LOCALAPPDATA%\QuestResume\index na primeira leitura.
+        
+        
+        
         var initialOptions = new AppOptions
         {
             IndexPath = IndexPath,
@@ -66,8 +58,8 @@ public sealed class QuestResumeApiFactory : WebApplicationFactory<Program>
         }
         catch (IOException)
         {
-            // Best-effort cleanup — arquivos do índice Lucene podem ainda estar sendo liberados
-            // pelo runtime; não falha o teste por causa disso.
+            
+            
         }
     }
 }

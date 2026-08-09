@@ -3,10 +3,6 @@ using QuestResume.Core.CloudSync;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Fake em memória de <see cref="ICloudProvider"/> usado para testar <see cref="CloudSyncService"/>
-/// sem depender de rede real ou de credenciais OAuth de um provedor de nuvem verdadeiro.
-/// </summary>
 internal sealed class FakeCloudProvider : ICloudProvider
 {
     public string Name { get; }

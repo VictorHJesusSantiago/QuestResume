@@ -29,8 +29,8 @@ public class AutoReindexWatcherTests
 
             watcher.Start();
 
-            // Simulate a batch of rapid changes (like a folder copy) — should still only
-            // trigger one reindex once things go quiet for the debounce window.
+            
+            
             for (var i = 0; i < 5; i++)
             {
                 await File.WriteAllTextAsync(Path.Combine(folder, $"file{i}.txt"), "conteúdo");
@@ -40,9 +40,9 @@ public class AutoReindexWatcherTests
             var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
             Assert.Same(tcs.Task, completed);
 
-            // Give generous extra quiet time (several debounce windows) to absorb any
-            // OS-delayed/duplicate FileSystemWatcher events under load, then confirm no
-            // second callback fired from the same batch.
+            
+            
+            
             await Task.Delay(TimeSpan.FromMilliseconds(debounce.TotalMilliseconds * 4));
             Assert.Equal(1, callCount);
         }
@@ -63,7 +63,7 @@ public class AutoReindexWatcherTests
         Assert.Null(exception);
     }
 
-    // --- Item 11: monitoramento de múltiplas pastas ---
+    
 
     [Fact]
     public async Task Watcher_ChangeInAdditionalFolder_TriggersSingleConsolidatedReindex()
@@ -93,8 +93,8 @@ public class AutoReindexWatcherTests
 
             watcher.Start();
 
-            // Changes spread across BOTH watched folders (like a batch edit touching more than
-            // one document root) should still only trigger a single consolidated reindex.
+            
+            
             for (var i = 0; i < 3; i++)
             {
                 await File.WriteAllTextAsync(Path.Combine(primaryFolder, $"p{i}.txt"), "conteúdo");
