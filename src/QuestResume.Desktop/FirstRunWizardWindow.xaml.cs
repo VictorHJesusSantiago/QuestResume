@@ -7,14 +7,6 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Desktop;
 
-/// <summary>
-/// Simple 3-step first-run wizard shown when <see cref="AppOptions.DocumentsFolder"/>,
-/// <see cref="AppOptions.IndexPath"/> and <see cref="AppOptions.ModelPath"/> are all empty at
-/// startup (see <see cref="App.Application_Startup"/>), mirroring the Web UI's onboarding flow.
-/// Step 1 picks the documents folder, step 2 the local .gguf model, and step 3 optionally runs
-/// the first indexing pass. Options are saved via the existing <see cref="ConfigService"/> when
-/// the wizard is completed.
-/// </summary>
 public partial class FirstRunWizardWindow : Window
 {
     private readonly AppOptions _options;
@@ -30,8 +22,8 @@ public partial class FirstRunWizardWindow : Window
         DocumentsFolderBox.Text = options.DocumentsFolder;
         ModelPathBox.Text = options.ModelPath;
 
-        // Index path is derived here (never asked explicitly) so the wizard stays to 3 steps as
-        // requested; falls back to a sensible default next to the documents folder.
+        
+        
         if (string.IsNullOrWhiteSpace(_options.IndexPath))
         {
             _options.IndexPath = Path.Combine(
@@ -78,7 +70,7 @@ public partial class FirstRunWizardWindow : Window
             return;
         }
 
-        // Step 3: save options and, optionally, run the first indexing pass before closing.
+        
         _options.DocumentsFolder = DocumentsFolderBox.Text.Trim();
         _options.ModelPath = ModelPathBox.Text.Trim();
         _configService.Save(_options);

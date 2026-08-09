@@ -14,7 +14,7 @@
                    Text="Passo 1 de 3 — Pasta de documentos"/>
 
         <Grid Grid.Row="1">
-            <!-- Passo 1: pasta de documentos -->
+            
             <StackPanel x:Name="Step1Panel">
                 <TextBlock TextWrapping="Wrap" Margin="0,0,0,10"
                            Text="Selecione a pasta onde estão os documentos (PDF, DOCX, TXT, etc.) que você quer poder pesquisar e perguntar."/>
@@ -28,7 +28,7 @@
                 </Grid>
             </StackPanel>
 
-            <!-- Passo 2: caminho do modelo -->
+            
             <StackPanel x:Name="Step2Panel" Visibility="Collapsed">
                 <TextBlock TextWrapping="Wrap" Margin="0,0,0,10"
                            Text="Selecione o modelo de linguagem local (.gguf) que será usado para responder às suas perguntas. Você pode baixar um modelo compatível com LLamaSharp e configurar este caminho depois, se preferir."/>
@@ -42,7 +42,7 @@
                 </Grid>
             </StackPanel>
 
-            <!-- Passo 3: primeira indexação -->
+            
             <StackPanel x:Name="Step3Panel" Visibility="Collapsed">
                 <TextBlock TextWrapping="Wrap" Margin="0,0,0,10"
                            Text="Tudo pronto! Ao concluir, suas configurações serão salvas. Você pode indexar a pasta de documentos agora, ou fazer isso depois na aba Perguntas."/>
