@@ -5,12 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from OpenDocument Presentation (.odp) files. Like .odt/.ods, an .odp is a zip
-/// archive containing a content.xml, whose body is a sequence of <c>draw:page</c> slides. Each
-/// slide contains <c>draw:frame</c> elements, some of which hold text boxes made up of
-/// <c>text:p</c> paragraphs. Text is read slide by slide, paragraph by paragraph.
-/// </summary>
 public sealed class OdpExtractor : IFileExtractor
 {
     private static readonly XNamespace DrawNs = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";

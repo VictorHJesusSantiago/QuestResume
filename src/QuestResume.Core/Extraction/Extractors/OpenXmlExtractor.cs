@@ -9,12 +9,6 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from Office Open XML documents: Word (.docx), PowerPoint (.pptx)
-/// and Excel (.xlsx). Also extracts OOXML core/extended document properties (autor, empresa,
-/// datas, revisão — item 15) and, when OCR is enabled, runs OCR over images embedded in
-/// .docx/.pptx (item 17), appending the recognized text.
-/// </summary>
 public sealed class OpenXmlExtractor : IFileExtractor, IDisposable
 {
     private readonly bool _ocrEnabled;
@@ -58,13 +52,7 @@ public sealed class OpenXmlExtractor : IFileExtractor, IDisposable
         return Task.FromResult(document);
     }
 
-    /// <summary>
-    /// Item 15: reads the OOXML core (dc:creator, dcterms:created/modified, cp:lastModifiedBy,
-    /// cp:revision) and extended (Company) properties, following the same
-    /// <c>[Metadados: ...]</c> prefix pattern used for EXIF data in <see cref="ImageOcrExtractor"/>.
-    /// Returns <c>null</c> when the document has none of these properties set.
-    /// </summary>
-    private static string? BuildMetadataSummary(OpenXmlPackage package, string? company)
+        private static string? BuildMetadataSummary(OpenXmlPackage package, string? company)
     {
         var props = package.PackageProperties;
         var parts = new List<string>();
@@ -180,13 +168,7 @@ public sealed class OpenXmlExtractor : IFileExtractor, IDisposable
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Item 17: runs OCR (via the shared <see cref="TesseractOcrHelper"/>) over every embedded
-    /// image part (media files under <c>word/media/</c> or <c>ppt/media/</c> inside the OOXML
-    /// zip package) and appends the recognized text, so scanned figures/screenshots pasted into
-    /// a Word/PowerPoint document become searchable too.
-    /// </summary>
-    private void AppendImageOcrText(StringBuilder builder, IEnumerable<ImagePart> imageParts, ref string? ocrWarning)
+        private void AppendImageOcrText(StringBuilder builder, IEnumerable<ImagePart> imageParts, ref string? ocrWarning)
     {
         foreach (var imagePart in imageParts)
         {

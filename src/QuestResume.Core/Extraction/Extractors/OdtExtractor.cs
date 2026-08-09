@@ -5,11 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts text from OpenDocument Text (.odt) files. An .odt is a zip archive containing
-/// a content.xml with the document body, using the ODF "text" namespace for paragraphs
-/// and headings.
-/// </summary>
 public sealed class OdtExtractor : IFileExtractor
 {
     private static readonly XNamespace TextNs = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
