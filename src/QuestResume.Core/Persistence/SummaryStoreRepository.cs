@@ -3,10 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Implementação em arquivo JSON de <see cref="ISummaryStoreRepository"/>. Retorna um store
-/// vazio quando o sidecar está ausente ou corrompido, mesmo padrão de <see cref="TagStoreRepository"/>.
-/// </summary>
 public sealed class SummaryStoreRepository : ISummaryStoreRepository
 {
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };

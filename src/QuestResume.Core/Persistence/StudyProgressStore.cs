@@ -3,12 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Progresso de estudo por flashcard (agendamento SM-2 e histórico de acertos/erros), persistido
-/// num sidecar JSON <c>study-progress.json</c> ao lado do índice. Cada card é keyed por
-/// <see cref="SpacedRepetitionCard.CardId"/> (hash de pergunta + documento), então o mesmo card
-/// mantém seu agendamento entre sessões e reindexações.
-/// </summary>
 public sealed class StudyProgressStore
 {
     public const string FileName = "study-progress.json";
@@ -40,8 +34,7 @@ public sealed class StudyProgressStore
         File.WriteAllText(_filePath, JsonSerializer.Serialize(_data, SerializerOptions));
     }
 
-    /// <summary>Registra (criando se necessário) um card para acompanhamento, sem revisá-lo.</summary>
-    public SpacedRepetitionCard GetOrCreate(string sourcePath, string question)
+        public SpacedRepetitionCard GetOrCreate(string sourcePath, string question)
     {
         var id = SpacedRepetitionCard.ComputeCardId(sourcePath, question);
         if (!_data.Cards.TryGetValue(id, out var card))
@@ -58,8 +51,7 @@ public sealed class StudyProgressStore
         return card;
     }
 
-    /// <summary>Aplica uma nota SM-2 a um card e registra a revisão no histórico diário.</summary>
-    public SpacedRepetitionCard RecordReview(string cardId, int quality, DateTime? today = null)
+        public SpacedRepetitionCard RecordReview(string cardId, int quality, DateTime? today = null)
     {
         if (!_data.Cards.TryGetValue(cardId, out var card))
             throw new KeyNotFoundException($"Nenhum flashcard com id '{cardId}' está sendo acompanhado.");
@@ -79,8 +71,7 @@ public sealed class StudyProgressStore
         return card;
     }
 
-    /// <summary>Cards vencidos (NextReviewDate &lt;= hoje), ordenados pelos mais atrasados primeiro.</summary>
-    public IReadOnlyList<SpacedRepetitionCard> GetDueCards(DateTime? today = null)
+        public IReadOnlyList<SpacedRepetitionCard> GetDueCards(DateTime? today = null)
     {
         var reference = (today ?? DateTime.UtcNow).Date;
         return _data.Cards.Values
@@ -91,11 +82,7 @@ public sealed class StudyProgressStore
 
     public IReadOnlyList<SpacedRepetitionCard> GetAllCards() => _data.Cards.Values.ToList();
 
-    /// <summary>
-    /// Estatísticas agregadas: contagem por dia dos últimos <paramref name="days"/> dias e taxa de
-    /// acerto geral.
-    /// </summary>
-    public StudyStats ComputeStats(int days = 30, DateTime? today = null)
+        public StudyStats ComputeStats(int days = 30, DateTime? today = null)
     {
         var reference = (today ?? DateTime.UtcNow).Date;
         var daily = new List<DailyStudyStatPoint>();
