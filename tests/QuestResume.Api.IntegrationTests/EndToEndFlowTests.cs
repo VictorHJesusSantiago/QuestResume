@@ -4,19 +4,6 @@ using System.Text.Json;
 
 namespace QuestResume.Api.IntegrationTests;
 
-/// <summary>
-/// Fluxo completo ponta a ponta contra a API em memória: criar usuário -&gt; login -&gt; indexar
-/// uma pasta com arquivos de amostra -&gt; buscar -&gt; perguntar.
-///
-/// LIMITAÇÃO CONHECIDA: não há nenhum LLM real (LLamaSharp/Ollama) disponível no ambiente de CI/
-/// desenvolvimento, e o projeto não expõe um provedor "stub"/"echo" plugável via HTTP (apenas
-/// FakeLlmProvider em QuestResume.Core.Tests, usado só em testes de unidade que instanciam o
-/// motor RAG diretamente — RagEngineProvider constrói o ILlmProvider internamente a partir de
-/// AppOptions.LlmProvider, que só aceita "LlamaSharp" ou "Ollama"). Por isso POST /api/ask é
-/// testado aqui pelo caminho de erro esperado (400 + ModelNotConfiguredException) quando nenhum
-/// ModelPath é configurado — o que já valida que a indexação/busca alimentou corretamente o
-/// pipeline até o ponto de invocar o LLM.
-/// </summary>
 public sealed class EndToEndFlowTests
 {
     [Fact]
@@ -25,7 +12,7 @@ public sealed class EndToEndFlowTests
         using var factory = new QuestResumeApiFactory();
         AuthenticationTests.SeedAdminUser(factory, "e2e-user", "SenhaForte123!");
 
-        // Arquivos de amostra a serem indexados.
+        
         var sampleFile = Path.Combine(factory.DocumentsFolder, "manual.txt");
         await File.WriteAllTextAsync(sampleFile,
             "O QuestResume é um sistema de indexação e busca de documentos totalmente offline. " +
@@ -35,7 +22,7 @@ public sealed class EndToEndFlowTests
         var token = await AuthenticationTests.LoginAsync(client, "e2e-user", "SenhaForte123!");
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-        // Indexar a pasta de amostra.
+        
         var indexResponse = await client.PostAsJsonAsync("/api/index", new { folderPath = factory.DocumentsFolder });
         var indexBody = await indexResponse.Content.ReadAsStringAsync();
         Assert.True(indexResponse.IsSuccessStatusCode, $"Indexação falhou ({indexResponse.StatusCode}): {indexBody}");
@@ -43,7 +30,7 @@ public sealed class EndToEndFlowTests
         using var indexJson = JsonDocument.Parse(indexBody);
         Assert.True(indexJson.RootElement.GetProperty("filesProcessed").GetInt32() >= 1);
 
-        // Buscar pelo conteúdo indexado.
+        
         var searchResponse = await client.PostAsJsonAsync("/api/search", new { query = "Lucene.NET", topK = 5 });
         var searchBody = await searchResponse.Content.ReadAsStringAsync();
         Assert.True(searchResponse.IsSuccessStatusCode, $"Busca falhou ({searchResponse.StatusCode}): {searchBody}");
@@ -53,8 +40,8 @@ public sealed class EndToEndFlowTests
         Assert.NotEmpty(results);
         Assert.Contains(results, r => r.GetProperty("fileName").GetString() == "manual.txt");
 
-        // Perguntar: sem LLM configurado, a API deve responder 400 com uma mensagem explicativa,
-        // não travar nem retornar 500 — o índice já foi consultado com sucesso antes de chegar ao LLM.
+        
+        
         var askResponse = await client.PostAsJsonAsync("/api/ask", new { question = "O que é o QuestResume?" });
         Assert.Equal(HttpStatusCode.BadRequest, askResponse.StatusCode);
         var askBody = await askResponse.Content.ReadAsStringAsync();
@@ -101,7 +88,7 @@ public sealed class EndToEndFlowTests
         using var factory = new QuestResumeApiFactory();
         AuthenticationTests.SeedAdminUser(factory, "preview-user", "SenhaForte123!");
 
-        // Gera um documento grande o suficiente para produzir várias páginas com pageSize pequeno.
+        
         var sampleFile = Path.Combine(factory.DocumentsFolder, "grande.txt");
         var paragraph = string.Concat(Enumerable.Repeat("Conteúdo de teste para paginação do preview. ", 50));
         await File.WriteAllTextAsync(sampleFile, paragraph);
@@ -113,7 +100,7 @@ public sealed class EndToEndFlowTests
         var indexResponse = await client.PostAsJsonAsync("/api/index", new { folderPath = factory.DocumentsFolder });
         Assert.True(indexResponse.IsSuccessStatusCode, await indexResponse.Content.ReadAsStringAsync());
 
-        // pageSize pequeno o suficiente para forçar mais de uma página.
+        
         var page1Response = await client.GetAsync($"/api/documents/preview?path={Uri.EscapeDataString(sampleFile)}&page=1&pageSize=100");
         var page1Body = await page1Response.Content.ReadAsStringAsync();
         Assert.True(page1Response.IsSuccessStatusCode, page1Body);
@@ -176,7 +163,7 @@ public sealed class EndToEndFlowTests
         var indexResponse = await client.PostAsJsonAsync("/api/index", new { folderPath = factory.DocumentsFolder });
         Assert.True(indexResponse.IsSuccessStatusCode, await indexResponse.Content.ReadAsStringAsync());
 
-        // "document" is the BrazilianAnalyzer-stemmed indexed term; "documenty" is a 1-edit typo.
+        
         var response = await client.GetAsync("/api/search/didyoumean?q=documenty");
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, body);
@@ -202,8 +189,8 @@ public sealed class EndToEndFlowTests
         var indexResponse = await client.PostAsJsonAsync("/api/index", new { folderPath = factory.DocumentsFolder });
         Assert.True(indexResponse.IsSuccessStatusCode, await indexResponse.Content.ReadAsStringAsync());
 
-        // The test factory doesn't configure EmbeddingsEnabled, so this must fail gracefully
-        // (400, not 500) rather than attempt vector search without a vector store.
+        
+        
         var response = await client.GetAsync($"/api/documents/similar?path={Uri.EscapeDataString(sampleFile)}");
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

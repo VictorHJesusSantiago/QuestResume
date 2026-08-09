@@ -3,10 +3,6 @@ using System.Text.Json;
 
 namespace QuestResume.Api.IntegrationTests;
 
-/// <summary>
-/// Testa os endpoints novos: detecção de hardware (item 6) e lista de personas (item 3). O
-/// benchmark (item 7) exige um modelo real carregado, então não é exercitado aqui.
-/// </summary>
 public sealed class NewEndpointsTests
 {
     [Fact]
