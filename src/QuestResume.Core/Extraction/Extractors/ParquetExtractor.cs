@@ -4,10 +4,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Extraction.Extractors;
 
-/// <summary>
-/// Extracts a Markdown representation (schema + up to <see cref="MaxRowsPerFile"/> sample rows)
-/// of an Apache Parquet file, via Parquet.Net.
-/// </summary>
 public sealed class ParquetExtractor : IFileExtractor
 {
     private const int MaxRowsPerFile = 100;
