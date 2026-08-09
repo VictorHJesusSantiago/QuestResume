@@ -6,12 +6,7 @@ namespace QuestResume.Mobile;
 
 public partial class App : Application
 {
-    /// <summary>
-    /// Provedor de serviços da aplicação, exposto estaticamente para que páginas criadas
-    /// manualmente fora do fluxo de navegação do Shell (ex.: troca de página após login/logout)
-    /// também consigam resolver <see cref="ApiClient"/>/<see cref="SessionService"/> via DI.
-    /// </summary>
-    public static IServiceProvider Services { get; private set; } = null!;
+        public static IServiceProvider Services { get; private set; } = null!;
 
     public static ApiClient CurrentApiClient => Services.GetRequiredService<ApiClient>();
 
@@ -28,7 +23,7 @@ public partial class App : Application
         var session = CurrentSession;
         var window = new Window(new ContentPage { Content = new ActivityIndicator { IsRunning = true, VerticalOptions = LayoutOptions.Center } });
 
-        // Carrega sessão salva (URL do servidor + token) antes de decidir a página inicial.
+        
         _ = InitializeStartPageAsync(window, session);
 
         return window;

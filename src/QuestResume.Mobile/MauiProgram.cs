@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using QuestResume.Mobile.Pages;
 using QuestResume.Mobile.Services;
 
@@ -17,8 +17,8 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
 			});
 
-		// Session/ApiClient são singletons: uma única sessão de login e um único HttpClient
-		// reutilizado por toda a aplicação. Páginas são transient (uma nova instância por navegação).
+		
+		
 		builder.Services.AddSingleton<SessionService>();
 		builder.Services.AddSingleton<ApiClient>();
 		builder.Services.AddTransient<LoginPage>();
