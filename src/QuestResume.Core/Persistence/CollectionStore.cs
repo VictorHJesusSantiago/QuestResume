@@ -3,18 +3,9 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Implementação em arquivo JSON (<c>collections.json</c>) de <see cref="ICollectionStore"/>,
-/// seguindo o mesmo padrão de sidecar de <see cref="TagStoreRepository"/>. Cada coleção tem seu
-/// próprio caminho físico de índice em <c>&lt;baseIndexPath&gt;/collections/&lt;nome&gt;/</c>.
-/// A coleção "default" é sempre implicitamente disponível, apontando para
-/// <c>&lt;baseIndexPath&gt;/</c> diretamente (compatibilidade com instalações anteriores à
-/// introdução de múltiplas coleções).
-/// </summary>
 public sealed class CollectionStore : ICollectionStore
 {
-    /// <summary>Nome reservado da coleção padrão, usada quando nenhuma é especificada.</summary>
-    public const string DefaultName = "default";
+        public const string DefaultName = "default";
 
     private const string FileName = "collections.json";
 
@@ -133,8 +124,8 @@ public sealed class CollectionStore : ICollectionStore
             return existing.Caminho;
         }
 
-        // Auto-cria a coleção na primeira referência (ex.: comando "index --collection novo"
-        // antes de "collection create novo"), evitando um passo manual obrigatório.
+        
+        
         return Create(name).Caminho;
     }
 }

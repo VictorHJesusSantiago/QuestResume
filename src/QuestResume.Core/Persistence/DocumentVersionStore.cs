@@ -5,13 +5,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Histórico de versões anteriores de documentos. Quando um documento é reindexado com conteúdo
-/// diferente do hash anterior, o chamador (indexador) chama <see cref="SaveVersion"/> para guardar
-/// o texto antigo antes de sobrescrever. Persistido num sidecar JSON
-/// <c>document-versions.json</c>. Limita a <paramref name="maxVersionsPerDocument"/> versões por
-/// documento (as mais antigas são descartadas).
-/// </summary>
 public sealed class DocumentVersionStore
 {
     public const string FileName = "document-versions.json";
@@ -49,12 +42,7 @@ public sealed class DocumentVersionStore
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Guarda uma versão do texto de um documento. Ignora (retorna <c>false</c>) se o hash do texto
-    /// coincidir com a versão mais recente já guardada (nada mudou). Aplica a retenção
-    /// (<see cref="_maxVersionsPerDocument"/>), descartando as mais antigas.
-    /// </summary>
-    public bool SaveVersion(string sourcePath, string fullText)
+        public bool SaveVersion(string sourcePath, string fullText)
     {
         var hash = ComputeHash(fullText);
         if (!_versions.TryGetValue(sourcePath, out var list))
@@ -74,7 +62,7 @@ public sealed class DocumentVersionStore
             SnapshotUtc = DateTime.UtcNow
         });
 
-        // Retenção: mantém só as N mais recentes e renumera 1..N.
+        
         if (list.Count > _maxVersionsPerDocument)
             list.RemoveRange(0, list.Count - _maxVersionsPerDocument);
         for (var i = 0; i < list.Count; i++)
@@ -87,12 +75,7 @@ public sealed class DocumentVersionStore
     public IReadOnlyList<DocumentVersion> GetVersions(string sourcePath) =>
         _versions.TryGetValue(sourcePath, out var list) ? list.ToList() : Array.Empty<DocumentVersion>();
 
-    /// <summary>
-    /// Diff simples linha a linha entre a versão <paramref name="versionNumber"/> e o
-    /// <paramref name="currentText"/> atual. Cada linha resultante é prefixada com <c>'+'</c>
-    /// (presente só no atual), <c>'-'</c> (presente só na versão antiga) ou <c>' '</c> (igual).
-    /// </summary>
-    public IReadOnlyList<string> DiffAgainstCurrent(string sourcePath, int versionNumber, string currentText)
+        public IReadOnlyList<string> DiffAgainstCurrent(string sourcePath, int versionNumber, string currentText)
     {
         var versions = GetVersions(sourcePath);
         var version = versions.FirstOrDefault(v => v.VersionNumber == versionNumber)
@@ -101,8 +84,7 @@ public sealed class DocumentVersionStore
         return DiffLines(version.FullTextSnapshot, currentText);
     }
 
-    /// <summary>Diff LCS simples linha a linha entre dois textos.</summary>
-    public static IReadOnlyList<string> DiffLines(string oldText, string newText)
+        public static IReadOnlyList<string> DiffLines(string oldText, string newText)
     {
         var a = oldText.Replace("\r\n", "\n").Split('\n');
         var b = newText.Replace("\r\n", "\n").Split('\n');
