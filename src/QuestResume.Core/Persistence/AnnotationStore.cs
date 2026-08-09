@@ -3,11 +3,6 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// Anotações e destaques do usuário por documento, persistidos num sidecar JSON
-/// <c>annotations.json</c> ao lado do índice. Preservado entre reindexações (é metadado do usuário,
-/// como <see cref="TagStore"/>).
-/// </summary>
 public sealed class AnnotationStore
 {
     public const string FileName = "annotations.json";
@@ -43,8 +38,7 @@ public sealed class AnnotationStore
         return annotation;
     }
 
-    /// <summary>Remove uma anotação por id. Retorna <c>true</c> se algo foi removido.</summary>
-    public bool Remove(string id)
+        public bool Remove(string id)
     {
         var removed = _annotations.RemoveAll(a => a.Id == id) > 0;
         if (removed) Save();

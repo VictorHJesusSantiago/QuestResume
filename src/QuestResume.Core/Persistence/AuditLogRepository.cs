@@ -4,20 +4,15 @@ using QuestResume.Core.Models;
 
 namespace QuestResume.Core.Persistence;
 
-/// <summary>
-/// File-backed implementation of <see cref="IAuditLogRepository"/> using a JSONL sidecar
-/// alongside the Lucene index. All I/O is best-effort (exceptions swallowed) so auditing
-/// never breaks the <c>AskAsync</c> caller path.
-/// </summary>
 public sealed class AuditLogRepository : IAuditLogRepository
 {
     private static readonly JsonSerializerOptions SerializerOptions = new();
 
-    // One semaphore per normalized index path so two AuditLogRepository instances pointed at
-    // the same file — e.g. RagQueryEngine's per-call Append/Rotate and
-    // AuditLogRotationService's background Rotate — never race on the same file.
-    // Without this, an interleaved ReadAllLines/WriteAllLines (Rotate) over an in-progress
-    // AppendAllText (Append) can silently lose entries or produce a corrupt JSONL line.
+    
+    
+    
+    
+    
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _fileLocks = new();
 
     private readonly string _indexPath;
@@ -73,9 +68,9 @@ public sealed class AuditLogRepository : IAuditLogRepository
         try
         {
             if (!File.Exists(FilePath)) return;
-            // Fast guard: each audit JSONL line is at least ~50 bytes. When the file is
-            // clearly under the limit we avoid the expensive ReadAllLines entirely, making
-            // per-call rotation from RagQueryEngine's hot-path nearly free.
+            
+            
+            
             if (new FileInfo(FilePath).Length < (long)maxLines * 50) return;
             var lines = File.ReadAllLines(FilePath);
             if (lines.Length <= maxLines) return;
