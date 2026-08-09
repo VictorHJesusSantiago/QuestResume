@@ -25,9 +25,9 @@ public class DocumentIndexerTests
             Assert.Equal(1, stats.FilesProcessed);
             var duplicate = Assert.Single(stats.Duplicates);
 
-            // Directory.EnumerateFiles doesn't guarantee ordering, so either file may be
-            // detected as the "original" depending on enumeration order — what matters is
-            // that one of the two identical files was flagged as a duplicate of the other.
+            
+            
+            
             var fileNames = new[] { Path.GetFileName(duplicate.Path), Path.GetFileName(duplicate.DuplicateOfPath) };
             Assert.Contains("copia.txt", fileNames);
             Assert.Contains("original.txt", fileNames);
@@ -43,9 +43,9 @@ public class DocumentIndexerTests
     [Fact]
     public async Task IndexFolderAsync_IndexesFilesFromAdditionalFolders()
     {
-        // Item 11: DocumentsFolder + AppOptions.AdditionalWatchedFolders — files that live
-        // outside DocumentsFolder must still be scanned and become searchable, keeping their
-        // original absolute path in the Lucene document.
+        
+        
+        
         var folder = Path.Combine(Path.GetTempPath(), $"multi-docs-{Guid.NewGuid()}");
         var extraFolder = Path.Combine(Path.GetTempPath(), $"multi-extra-{Guid.NewGuid()}");
         var indexPath = Path.Combine(Path.GetTempPath(), $"multi-index-{Guid.NewGuid()}");
@@ -287,9 +287,9 @@ public class DocumentIndexerTests
 
             var secondRun = await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
 
-            // The file is still counted as "processed" (it's still present in the index), but
-            // its manifest entry's chunks should have been reused rather than re-extracted —
-            // verified indirectly by checking the content is still fully searchable afterwards.
+            
+            
+            
             Assert.Equal(1, secondRun.FilesProcessed);
             Assert.Equal(firstRun.ChunksIndexed, secondRun.ChunksIndexed);
 
@@ -323,8 +323,8 @@ public class DocumentIndexerTests
             var indexer = new DocumentIndexer();
             await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
 
-            // Ensure a different LastWriteTimeUtc even on fast filesystems/CI, and change the
-            // content so the change is observable via search.
+            
+            
             await Task.Delay(50);
             await File.WriteAllTextAsync(filePath, "Texto totalmente novo após a alteração, palavra-chave: atualizado.");
             File.SetLastWriteTimeUtc(filePath, DateTime.UtcNow);
@@ -404,7 +404,7 @@ public class DocumentIndexerTests
             var indexer = new DocumentIndexer();
             await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
 
-            // Only doc2.txt changes.
+            
             await Task.Delay(50);
             await File.WriteAllTextAsync(paths[2], "Conteúdo totalmente novo, palavra-chave: modificadíssimo.");
             File.SetLastWriteTimeUtc(paths[2], DateTime.UtcNow);
@@ -413,12 +413,12 @@ public class DocumentIndexerTests
 
             var search = new SearchService(indexPath);
 
-            // The changed file reflects its new content.
+            
             var changedResults = search.Search("modificadíssimo", 10);
             Assert.Single(changedResults);
             Assert.Equal(paths[2], changedResults[0].SourcePath);
 
-            // Every other file is still searchable with its original content.
+            
             for (var i = 0; i < 5; i++)
             {
                 if (i == 2) continue;

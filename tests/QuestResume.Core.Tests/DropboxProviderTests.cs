@@ -7,16 +7,11 @@ using QuestResume.Core.Configuration;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// <see cref="HttpMessageHandler"/> em memória que responde com corpos JSON pré-programados por
-/// URL (sem depender de rede real), usado para testar <see cref="DropboxProvider"/>.
-/// </summary>
 internal sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Dictionary<string, (HttpStatusCode Status, string Body)> _responsesByUrlContains = new();
 
-    /// <summary>Snapshot (método, URL, corpo lido como texto, cabeçalhos) de cada requisição recebida.</summary>
-    public List<(HttpMethod Method, string Url, string Body, HttpRequestHeaders Headers)> Requests { get; } = new();
+        public List<(HttpMethod Method, string Url, string Body, HttpRequestHeaders Headers)> Requests { get; } = new();
 
     public void SetResponse(string urlContains, string body, HttpStatusCode status = HttpStatusCode.OK)
         => _responsesByUrlContains[urlContains] = (status, body);

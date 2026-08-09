@@ -4,19 +4,15 @@ using QuestResume.Core.Indexing;
 
 namespace QuestResume.Core.Tests;
 
-/// <summary>
-/// Covers items 9 (encoding detection), 10 (.questresumeignore), 12 (ReindexSingleFileAsync),
-/// 13 (moved/renamed file detection) and 14 (CleanOrphansAsync).
-/// </summary>
 public class DocumentIndexerAdvancedTests
 {
-    // --- Item 9: detecção automática de encoding ---
+    
 
     [Fact]
     public void EncodingDetector_DecodesCp1252BytesCorrectly()
     {
-        // "café résumé" with accented letters written as raw Windows-1252 bytes (no BOM), which
-        // are NOT valid UTF-8 sequences (0xE9 alone is an invalid UTF-8 continuation byte).
+        
+        
         var cp1252 = Encoding.GetEncoding(1252);
         var originalText = "café résumé açaí";
         var bytes = cp1252.GetBytes(originalText);
@@ -61,7 +57,7 @@ public class DocumentIndexerAdvancedTests
         }
     }
 
-    // --- Item 10: .questresumeignore ---
+    
 
     [Fact]
     public void GitIgnoreMatcher_MatchesBasicPatterns()
@@ -115,7 +111,7 @@ public class DocumentIndexerAdvancedTests
         }
     }
 
-    // --- Item 12: ReindexSingleFileAsync ---
+    
 
     [Fact]
     public async Task ReindexSingleFileAsync_UpdatesOnlyTargetFile()
@@ -134,7 +130,7 @@ public class DocumentIndexerAdvancedTests
             var indexer = new DocumentIndexer();
             await indexer.IndexFolderAsync(folder, indexPath);
 
-            // Change file A on disk, then reindex only it.
+            
             await File.WriteAllTextAsync(pathA, "Conteúdo ATUALIZADO do arquivo A.");
             var chunkCount = await indexer.ReindexSingleFileAsync(pathA, indexPath);
 
@@ -155,7 +151,7 @@ public class DocumentIndexerAdvancedTests
         }
     }
 
-    // --- Item 13: arquivo movido/renomeado ---
+    
 
     [Fact]
     public async Task IndexFolderAsync_DetectsMovedFile_ReusesCachedChunks()
@@ -177,12 +173,12 @@ public class DocumentIndexerAdvancedTests
             var originalChunks = search.GetChunksByPath(oldPath);
             Assert.NotEmpty(originalChunks);
 
-            // Simulate a move/rename: delete the old file, create a new one with identical content.
+            
             File.Delete(oldPath);
             var newPath = Path.Combine(folder, "renamed.txt");
             await File.WriteAllTextAsync(newPath, content);
-            // Preserve the same last-write time isn't required for the "moved" branch — only the
-            // hash needs to match a previous manifest entry whose path no longer exists on disk.
+            
+            
 
             await indexer.IndexFolderAsync(folder, indexPath, incrementalIndexingEnabled: true);
 
@@ -204,7 +200,7 @@ public class DocumentIndexerAdvancedTests
         }
     }
 
-    // --- Item 14: limpeza de órfãos ---
+    
 
     [Fact]
     public async Task CleanOrphansAsync_RemovesDocumentsForDeletedFiles()
@@ -223,7 +219,7 @@ public class DocumentIndexerAdvancedTests
             var indexer = new DocumentIndexer();
             await indexer.IndexFolderAsync(folder, indexPath);
 
-            // Remove the file from disk WITHOUT reindexing — its Lucene documents become orphans.
+            
             File.Delete(orphanPath);
 
             var removedCount = await indexer.CleanOrphansAsync(indexPath);
@@ -233,7 +229,7 @@ public class DocumentIndexerAdvancedTests
             Assert.Empty(search.GetChunksByPath(orphanPath));
             Assert.NotEmpty(search.GetChunksByPath(keepPath));
 
-            // Running again should find no more orphans.
+            
             var secondRun = await indexer.CleanOrphansAsync(indexPath);
             Assert.Equal(0, secondRun);
         }
