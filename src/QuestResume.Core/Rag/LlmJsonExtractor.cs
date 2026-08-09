@@ -2,24 +2,13 @@ using System.Text.RegularExpressions;
 
 namespace QuestResume.Core.Rag;
 
-/// <summary>
-/// Extrai defensivamente um bloco JSON (array ou objeto) de dentro de uma resposta de LLM que
-/// pode conter texto extra (explicações, cercas de código markdown, etc.), usado por
-/// <see cref="StructuredExtractionService"/> e <see cref="FlashcardService"/> antes de
-/// desserializar a resposta.
-/// </summary>
 public static class LlmJsonExtractor
 {
     private static readonly Regex FencedJsonRegex = new(
         @"```(?:json)?\s*(?<body>[\s\S]*?)```",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// Tenta isolar o conteúdo JSON de <paramref name="rawResponse"/>: primeiro procura um bloco
-    /// cercado por ```json ... ``` (ou ``` ... ```); se não encontrar, usa o trecho entre o
-    /// primeiro '[' ou '{' e o último ']' ou '}' correspondente na resposta.
-    /// </summary>
-    public static string ExtractJsonBlock(string rawResponse)
+        public static string ExtractJsonBlock(string rawResponse)
     {
         if (string.IsNullOrWhiteSpace(rawResponse))
         {
