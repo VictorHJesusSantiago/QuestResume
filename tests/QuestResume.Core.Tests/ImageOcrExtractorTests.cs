@@ -60,8 +60,7 @@ public class ImageOcrExtractorTests
         Assert.Contains(".gif", extractor.SupportedExtensions);
     }
 
-    /// <summary>1x1 transparent PNG, just enough for <c>Pix.LoadFromMemory</c> not to be reached.</summary>
-    private static byte[] CreateMinimalPng() =>
+        private static byte[] CreateMinimalPng() =>
     [
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
         0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,

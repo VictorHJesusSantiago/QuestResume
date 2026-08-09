@@ -16,17 +16,17 @@ public class HybridSearchServiceTests
         var b = MakeItem("b.txt", score: 1f);
         var c = MakeItem("c.txt", score: 5f);
 
-        // "a" ranks first in both lists; "b" only appears in the second (with a low BM25-style
-        // score that would lose under linear combination, but RRF only cares about rank).
+        
+        
         var bm25List = new[] { a, c };
         var vectorList = new[] { a, b };
 
         var combined = hybrid.CombineRrf(new[] { bm25List, vectorList }, topK: 3);
 
-        // "a" appears at rank 1 in both lists (RRF score 1/61 + 1/61 = 2/61 ≈ 0.0328), beating
-        // "c" (rank 2 in one list only, 1/62 ≈ 0.0161) and "b" (rank 2 in one list only), even
-        // though "a"'s own BM25-style Score field (10) isn't itself the RRF ranking score —
-        // CombineRrf ranks purely by reciprocal rank, not by the original per-list scores.
+        
+        
+        
+        
         Assert.Equal("a.txt", combined[0].SourcePath);
         Assert.Equal(3, combined.Count);
     }
@@ -111,8 +111,8 @@ public class HybridSearchServiceTests
         {
             var search = new SearchService(indexPath);
 
-            // "zzznadaaqui" alone doesn't match anything in the indexed text, but the LLM
-            // "expands" it to "perguntas", which does.
+            
+            
             var baseline = search.Search("zzznadaaqui", topK: 5);
             Assert.Empty(baseline);
 
@@ -143,7 +143,7 @@ public class HybridSearchServiceTests
             var hybrid = new HybridSearchService(
                 search, llmFactory: _ => Task.FromResult<ILlmProvider>(llm), queryExpansionEnabled: true);
 
-            // Best-effort: LLM failure during expansion must not break the underlying search.
+            
             var results = await hybrid.SearchAsync("perguntas e respostas", topK: 5);
 
             Assert.NotEmpty(results);
@@ -170,8 +170,8 @@ public class HybridSearchServiceTests
 
             var search = new SearchService(indexPath);
 
-            // The original question ("zzznadaaqui") matches nothing; the LLM-generated variation
-            // ("gato") does — multi-query retrieval should still surface it.
+            
+            
             var llm = new FakeLlmProvider(_ => "gato");
             var hybrid = new HybridSearchService(
                 search, llmFactory: _ => Task.FromResult<ILlmProvider>(llm), multiQueryEnabled: true, multiQueryVariations: 1);
@@ -206,8 +206,8 @@ public class HybridSearchServiceTests
 
             var results = await hybrid.SearchAsync("perguntas e respostas", topK: 5);
 
-            // HyDE generation ran (proves wiring), but with no usable embedding model configured
-            // the vector step best-effort falls back to BM25-only, same as without HyDE.
+            
+            
             Assert.Equal(1, llm.CompleteCallCount);
             Assert.NotEmpty(results);
         }

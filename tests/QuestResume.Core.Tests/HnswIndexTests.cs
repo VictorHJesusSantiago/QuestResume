@@ -78,7 +78,7 @@ public class HnswIndexTests
             hits += ann.Count(bruteTop.Contains);
         }
 
-        // Recall médio: esperamos alto (>0.85) para HNSW bem configurado neste tamanho.
+        
         var recall = hits / (double)(queries * k);
         Assert.True(recall > 0.85, $"Recall {recall:P0} abaixo do esperado.");
     }
@@ -126,7 +126,7 @@ public class VectorStoreAnnQuantizationTests
             query[3] = 1f;
             var results = store.Search(query, 3);
             Assert.NotEmpty(results);
-            // O melhor resultado deve ter alta similaridade de cosseno com a query.
+            
             Assert.True(results[0].Score > 0.9);
         }
         finally
